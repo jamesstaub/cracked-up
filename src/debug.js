@@ -128,9 +128,22 @@ cracked._getNode = function (uuid) {
 cracked._getNodeLookup = function () {
     return _nodeLookup;
 };
-
+/**
+ * debug method to set node UUIDs for a selector in the nodeLookup object.
+ * @category Debug
+ * @public
+ * @function
+ * @memberof cracked
+ * @name cracked#_setNodeLookup
+ * @param key 
+ * @param value<Array>
+ */
 cracked._setNodeLookup = function (key, value) {
-    _nodeLookup[key] = value;
+    if (__.isArr(value)) {
+        _nodeLookup[key] = value;
+    } else {
+        throw "Value must be an array";
+    }
 };
 
 /**

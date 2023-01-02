@@ -21,6 +21,7 @@ module.exports = function(grunt) {
         },
         uglify: {
             options: {
+                sourceMap: true,
                 mangle: false
             },
             dist: {

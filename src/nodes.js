@@ -485,12 +485,12 @@ function loadBufferFromFile(path_to_soundfile, buffersrc, callback) {
             _context.decodeAudioData(sndArray, function (buf) {
                 buffersrc.buffer = buf;
                 if (__.isFun(callback)){
-                    callback({buffer: buf})
+                    callback({buffer: buf});
                 }
                 logToConsole("sound loaded");
             }, function (e) {
                 if (__.isFun(callback)){
-                    callback({error: e})
+                    callback({error: e});
                 }
                 logToConsole("Couldn't load audio");
             });

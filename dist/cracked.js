@@ -1618,7 +1618,7 @@ cracked.buffer = function (userParams) {
         }
     };
     var buffersrc = createNode("buffer", creationParams, userParams);
-    loadBuffer(userParams, buffersrc);
+    loadBuffer(userParams, buffersrc, userParams.callback);
     return cracked;
 };
 
@@ -1627,9 +1627,9 @@ cracked.buffer = function (userParams) {
 * @function
 * @private
 */
-function loadBuffer(userParams, node) {
+function loadBuffer(userParams, node, callback) {
     if (userParams && userParams.path && node) {
-        loadBufferFromFile(userParams.path, node.getNativeNode());
+        loadBufferFromFile(userParams.path, node.getNativeNode(), callback);
     } else if (userParams && userParams.fn && node) {
         loadBufferWithData(userParams.fn, node.getNativeNode());
     }
@@ -1651,13 +1651,19 @@ function loadBufferWithData(dataFunction, buffersrc) {
 * @function
 * @private
 */
-function loadBufferFromFile(path_to_soundfile, buffersrc) {
+function loadBufferFromFile(path_to_soundfile, buffersrc, callback) {
     if (path_to_soundfile && buffersrc) {
         fetchSoundFile(path_to_soundfile, function (sndArray) {
             _context.decodeAudioData(sndArray, function (buf) {
                 buffersrc.buffer = buf;
+                if (__.isFun(callback)){
+                    callback({buffer: buf});
+                }
                 logToConsole("sound loaded");
             }, function (e) {
+                if (__.isFun(callback)){
+                    callback({error: e});
+                }
                 logToConsole("Couldn't load audio");
             });
         });
@@ -2861,9 +2867,22 @@ cracked._getNode = function (uuid) {
 cracked._getNodeLookup = function () {
     return _nodeLookup;
 };
-
+/**
+ * debug method to set node UUIDs for a selector in the nodeLookup object.
+ * @category Debug
+ * @public
+ * @function
+ * @memberof cracked
+ * @name cracked#_setNodeLookup
+ * @param key 
+ * @param value<Array>
+ */
 cracked._setNodeLookup = function (key, value) {
-    _nodeLookup[key] = value;
+    if (__.isArr(value)) {
+        _nodeLookup[key] = value;
+    } else {
+        throw "Value must be an array";
+    }
 };
 
 /**

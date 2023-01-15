@@ -23,12 +23,12 @@ cracked.play = function () {
  * @memberof cracked
  * @name cracked#scale
  * @public
- * @param {Number} position
- * @param {Number} inMin
- * @param {Number} inMax
- * @param {Number} outMin
- * @param {Number} outMax
- * @param {String} type
+ * @param {Number} position number to scale
+ * @param {Number} inMin input min
+ * @param {Number} inMax input max
+ * @param {Number} outMin scaled min
+ * @param {Number} outMax scaled max
+ * @param {String} type "linear" or "logarithmic"
  */
 cracked.scale = function(position, inMin, inMax, outMin, outMax, type) {
     if(type === "log" || type === "logarithmic") {

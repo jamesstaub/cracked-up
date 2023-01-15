@@ -164,6 +164,7 @@ cracked.in = function (params) {
  * @plugin
  * @category Miscellaneous
  * @param {Object} [params] map of optional values
+ * @param {Object} [params.pan=0] -1 to 1 value, 0 is center. 
  * @function
  * @memberof cracked
  * @name cracked#panner
@@ -190,11 +191,11 @@ cracked.panner = function (params) {
  * @name cracked#sampler
  * @public
  * @param {Object} [userParams] map of optional values
- * @param {Number} [userParams.speed=1]
- * @param {Number} [userParams.start=1]
- * @param {Number} [userParams.end=1]
+ * @param {Number} [userParams.speed=1] playback rate. 1 is normal, -1 is reverse
+ * @param {Number} [userParams.start=0 play head start value in seconds] 
+ * @param {Number} [userParams.end=1] play head end value in seconds
  * @param {String} [userParams.path=''] path to sound file to play
- * @param {Boolean} [userParams.loop=false]
+ * @param {Boolean} [userParams.loop=false] soundfile loops
  */
 cracked.sampler = function (userParams) {
     //sampler only plays sound files not data from functions

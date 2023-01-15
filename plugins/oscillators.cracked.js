@@ -12,9 +12,9 @@
  * @name cracked#sine
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine] oscillator type
  */
 cracked.sine = function (params) {
 
@@ -42,9 +42,9 @@ cracked.sine = function (params) {
  * @name cracked#square
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine]  oscillator type
  */
 cracked.square = function (params) {
 
@@ -72,9 +72,9 @@ cracked.square = function (params) {
  * @name cracked#saw
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine]  oscillator type
  */
 cracked.saw = function (params) {
 
@@ -102,9 +102,9 @@ cracked.saw = function (params) {
  * @name cracked#triangle
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine]  oscillator type
  */
 cracked.triangle = function (params) {
 

@@ -9,8 +9,8 @@
  * @memberof cracked
  * @name cracked#bitcrusher
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=0.1]
- * @param {Number} [params.bits=6]
+ * @param {Number} [params.frequency=0.1] normalized frequency (0 - 1)
+ * @param {Number} [params.bits=6] bits
  */
 cracked.bitcrusher = function (params) {
 //adapted from http://noisehack.com/custom-audio-effects-javascript-web-audio-api/
@@ -62,8 +62,8 @@ cracked.bitcrusher = function (params) {
  * @memberof cracked
  * @name cracked#ring
  * @param {Object} [params] map of optional values
- * @param {Number} [params.distortion=1]
- * @param {Number} [params.frequency=30]
+ * @param {Number} [params.distortion=1] distortion curve
+ * @param {Number} [params.frequency=30] modulation frequenct
  */
 cracked.ring = function (params) {
 //adapted from http://webaudio.prototyping.bbc.co.uk/ring-modulator/
@@ -218,9 +218,9 @@ cracked.ring = function (params) {
  * @memberof cracked
  * @name cracked#overdrive
  * @param {Object} [params] map of optional values
- * @param {Number} [params.drive=0.5]
- * @param {Number} [params.color=800]
- * @param {Number} [params.postCut=3000]
+ * @param {Number} [params.drive=0.5] distortion curve
+ * @param {Number} [params.color=800] pre-distortion bandpass frequency in hz
+ * @param {Number} [params.postCut=3000] post lowpass frequency in hz
  */
 cracked.overdrive = function (params) {
 

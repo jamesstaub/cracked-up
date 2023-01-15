@@ -10,10 +10,10 @@
  * @name cracked#lfo
  * @public
  * @param {Object} [userParams] map of optional values
- * @param {String} [userParams.modulates=frequency]
- * @param {String} [userParams.type=saw]
- * @param {Number} [userParams.frequency=6]
- * @param {Number} [userParams.gain=1000]
+ * @param {String} [userParams.modulates=frequency] the parameter of the target node to modulate
+ * @param {String} [userParams.type=sawtooth] LFO waveform (sine, sawtooth, square, triangle, white, pink, brown)
+ * @param {Number} [userParams.frequency=6] rate of the LFO in hz
+ * @param {Number} [userParams.gain=1000] the gain or amplitude of the LFO 
  */
 cracked.lfo = function (userParams) {
     var params = userParams || {};
@@ -59,10 +59,10 @@ cracked.lfo = function (userParams) {
  * @public
  * @param {Object} [params] map of optional values
  * @param {String} [params.modulates=frequency]
- * @param {Function} [params.fn=function to generate values (if not supplied, then random values between -1 & 1)]
- * @param {Number} [params.steps=number of steps in the buffer]
- * @param {Number} [params.length=length of the buffer in seconds]
- * @param {Number} [params.gain=1000]
+ * @param {Function} [params.fn=fn] function to generate values (if not supplied, then random values between -1 & 1)
+ * @param {Number} [params.steps=8] number of steps in the buffer
+ * @param {Number} [params.length=1] length of the buffer in seconds
+ * @param {Number} [params.gain=1000] gain value
  */
 cracked.stepper = function (params) {
     var userParams = params || {};

@@ -10,7 +10,7 @@
  * @name cracked#noise
  * @public
  * @param {Object} [params] map of optional values
- * @param {String} [params.type=white]
+ * @param {String} [params.type=white] noise type [white, pink, brown]
  */
 cracked.noise = function (params) {
     var userParams = params || {};
@@ -36,8 +36,8 @@ cracked.noise = function (params) {
  * @name cracked#pink
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.channels=1]
- * @param {Number} [params.length=1]
+ * @param {Number} [params.channels=1] number of channels of noise buffer
+ * @param {Number} [params.length=1] length in seconds of noise buffer
  */
 cracked.pink = function (params) {
 //http://noisehack.com/generate-noise-web-audio-api/
@@ -117,8 +117,8 @@ cracked.pink = function (params) {
  * @name cracked#white
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.channels=1]
- * @param {Number} [params.length=1]
+ * @param {Number} [params.channels=1] number of channels of noise buffer
+ * @param {Number} [params.length=1] length in seconds of noise buffer
  */
 cracked.white = function (params) {
 //http://noisehack.com/generate-noise-web-audio-api/
@@ -164,8 +164,8 @@ cracked.white = function (params) {
  * @name cracked#brown
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.channels=1]
- * @param {Number} [params.length=1]
+ * @param {Number} [params.channels=1] number of channels of noise buffer
+ * @param {Number} [params.length=1] length in seconds of noise buffer
  */
 cracked.brown = function (params) {
 //http://noisehack.com/generate-noise-web-audio-api/

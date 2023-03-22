@@ -192,7 +192,7 @@ cracked.panner = function (params) {
  * @public
  * @param {Object} [userParams] map of optional values
  * @param {Number} [userParams.speed=1] playback rate. 1 is normal, -1 is reverse
- * @param {Number} [userParams.start=0 play head start value in seconds] 
+ * @param {Number} [userParams.start=0] play head start value in seconds] 
  * @param {Number} [userParams.end=1] play head end value in seconds
  * @param {String} [userParams.path=''] path to sound file to play
  * @param {Boolean} [userParams.loop=false] soundfile loops

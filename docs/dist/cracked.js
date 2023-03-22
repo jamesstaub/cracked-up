@@ -3603,8 +3603,8 @@ cracked.comb = function (params) {
  * @memberof cracked
  * @name cracked#bitcrusher
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=0.1]
- * @param {Number} [params.bits=6]
+ * @param {Number} [params.frequency=0.1] normalized frequency (0 - 1)
+ * @param {Number} [params.bits=6] bits
  */
 cracked.bitcrusher = function (params) {
 //adapted from http://noisehack.com/custom-audio-effects-javascript-web-audio-api/
@@ -3656,8 +3656,8 @@ cracked.bitcrusher = function (params) {
  * @memberof cracked
  * @name cracked#ring
  * @param {Object} [params] map of optional values
- * @param {Number} [params.distortion=1]
- * @param {Number} [params.frequency=30]
+ * @param {Number} [params.distortion=1] distortion curve
+ * @param {Number} [params.frequency=30] modulation frequenct
  */
 cracked.ring = function (params) {
 //adapted from http://webaudio.prototyping.bbc.co.uk/ring-modulator/
@@ -3812,9 +3812,9 @@ cracked.ring = function (params) {
  * @memberof cracked
  * @name cracked#overdrive
  * @param {Object} [params] map of optional values
- * @param {Number} [params.drive=0.5]
- * @param {Number} [params.color=800]
- * @param {Number} [params.postCut=3000]
+ * @param {Number} [params.drive=0.5] distortion curve
+ * @param {Number} [params.color=800] pre-distortion bandpass frequency in hz
+ * @param {Number} [params.postCut=3000] post lowpass frequency in hz
  */
 cracked.overdrive = function (params) {
 
@@ -4429,6 +4429,7 @@ cracked.in = function (params) {
  * @plugin
  * @category Miscellaneous
  * @param {Object} [params] map of optional values
+ * @param {Object} [params.pan=0] -1 to 1 value, 0 is center. 
  * @function
  * @memberof cracked
  * @name cracked#panner
@@ -4455,11 +4456,11 @@ cracked.panner = function (params) {
  * @name cracked#sampler
  * @public
  * @param {Object} [userParams] map of optional values
- * @param {Number} [userParams.speed=1]
- * @param {Number} [userParams.start=1]
- * @param {Number} [userParams.end=1]
+ * @param {Number} [userParams.speed=1] playback rate. 1 is normal, -1 is reverse
+ * @param {Number} [userParams.start=0] play head start value in seconds] 
+ * @param {Number} [userParams.end=1] play head end value in seconds
  * @param {String} [userParams.path=''] path to sound file to play
- * @param {Boolean} [userParams.loop=false]
+ * @param {Boolean} [userParams.loop=false] soundfile loops
  */
 cracked.sampler = function (userParams) {
     //sampler only plays sound files not data from functions
@@ -4481,10 +4482,10 @@ cracked.sampler = function (userParams) {
  * @name cracked#lfo
  * @public
  * @param {Object} [userParams] map of optional values
- * @param {String} [userParams.modulates=frequency]
- * @param {String} [userParams.type=saw]
- * @param {Number} [userParams.frequency=6]
- * @param {Number} [userParams.gain=1000]
+ * @param {String} [userParams.modulates=frequency] the parameter of the target node to modulate
+ * @param {String} [userParams.type=sawtooth] LFO waveform (sine, sawtooth, square, triangle, white, pink, brown)
+ * @param {Number} [userParams.frequency=6] rate of the LFO in hz
+ * @param {Number} [userParams.gain=1000] the gain or amplitude of the LFO 
  */
 cracked.lfo = function (userParams) {
     var params = userParams || {};
@@ -4530,10 +4531,10 @@ cracked.lfo = function (userParams) {
  * @public
  * @param {Object} [params] map of optional values
  * @param {String} [params.modulates=frequency]
- * @param {Function} [params.fn=function to generate values (if not supplied, then random values between -1 & 1)]
- * @param {Number} [params.steps=number of steps in the buffer]
- * @param {Number} [params.length=length of the buffer in seconds]
- * @param {Number} [params.gain=1000]
+ * @param {Function} [params.fn=fn] function to generate values (if not supplied, then random values between -1 & 1)
+ * @param {Number} [params.steps=8] number of steps in the buffer
+ * @param {Number} [params.length=1] length of the buffer in seconds
+ * @param {Number} [params.gain=1000] gain value
  */
 cracked.stepper = function (params) {
     var userParams = params || {};
@@ -4596,7 +4597,7 @@ cracked.stepper = function (params) {
  * @name cracked#noise
  * @public
  * @param {Object} [params] map of optional values
- * @param {String} [params.type=white]
+ * @param {String} [params.type=white] noise type [white, pink, brown]
  */
 cracked.noise = function (params) {
     var userParams = params || {};
@@ -4622,8 +4623,8 @@ cracked.noise = function (params) {
  * @name cracked#pink
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.channels=1]
- * @param {Number} [params.length=1]
+ * @param {Number} [params.channels=1] number of channels of noise buffer
+ * @param {Number} [params.length=1] length in seconds of noise buffer
  */
 cracked.pink = function (params) {
 //http://noisehack.com/generate-noise-web-audio-api/
@@ -4703,8 +4704,8 @@ cracked.pink = function (params) {
  * @name cracked#white
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.channels=1]
- * @param {Number} [params.length=1]
+ * @param {Number} [params.channels=1] number of channels of noise buffer
+ * @param {Number} [params.length=1] length in seconds of noise buffer
  */
 cracked.white = function (params) {
 //http://noisehack.com/generate-noise-web-audio-api/
@@ -4750,8 +4751,8 @@ cracked.white = function (params) {
  * @name cracked#brown
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.channels=1]
- * @param {Number} [params.length=1]
+ * @param {Number} [params.channels=1] number of channels of noise buffer
+ * @param {Number} [params.length=1] length in seconds of noise buffer
  */
 cracked.brown = function (params) {
 //http://noisehack.com/generate-noise-web-audio-api/
@@ -4803,9 +4804,9 @@ cracked.brown = function (params) {
  * @name cracked#sine
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine] oscillator type
  */
 cracked.sine = function (params) {
 
@@ -4833,9 +4834,9 @@ cracked.sine = function (params) {
  * @name cracked#square
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine]  oscillator type
  */
 cracked.square = function (params) {
 
@@ -4863,9 +4864,9 @@ cracked.square = function (params) {
  * @name cracked#saw
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine]  oscillator type
  */
 cracked.saw = function (params) {
 
@@ -4893,9 +4894,9 @@ cracked.saw = function (params) {
  * @name cracked#triangle
  * @public
  * @param {Object} [params] map of optional values
- * @param {Number} [params.frequency=440]
- * @param {Number} [params.detune=0]
- * @param {String} [params.type=sine]
+ * @param {Number} [params.frequency=440] frequency in hz of the oscillator 
+ * @param {Number} [params.detune=0] detune amount in cents
+ * @param {String} [params.type=sine]  oscillator type
  */
 cracked.triangle = function (params) {
 
@@ -5590,12 +5591,12 @@ cracked.play = function () {
  * @memberof cracked
  * @name cracked#scale
  * @public
- * @param {Number} position
- * @param {Number} inMin
- * @param {Number} inMax
- * @param {Number} outMin
- * @param {Number} outMax
- * @param {String} type
+ * @param {Number} position number to scale
+ * @param {Number} inMin input min
+ * @param {Number} inMax input max
+ * @param {Number} outMin scaled min
+ * @param {Number} outMax scaled max
+ * @param {String} type "linear" or "logarithmic"
  */
 cracked.scale = function(position, inMin, inMax, outMin, outMax, type) {
     if(type === "log" || type === "logarithmic") {

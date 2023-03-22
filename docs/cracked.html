@@ -12001,7 +12001,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">normalized frequency (0 - 1)</td>
         </tr>
 
     
@@ -12040,7 +12040,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">bits</td>
         </tr>
 
     
@@ -12255,7 +12255,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">distortion curve</td>
         </tr>
 
     
@@ -12294,7 +12294,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">modulation frequenct</td>
         </tr>
 
     
@@ -12509,7 +12509,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">distortion curve</td>
         </tr>
 
     
@@ -12548,7 +12548,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">pre-distortion bandpass frequency in hz</td>
         </tr>
 
     
@@ -12587,7 +12587,7 @@ and returns it
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">post lowpass frequency in hz</td>
         </tr>
 
     
@@ -16327,7 +16327,76 @@ Alias for adc
 
             
 
-            <td class="description last">map of optional values</td>
+            <td class="description last">map of optional values
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>pan</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    0
+                
+                </td>
+            
+
+            <td class="description last">1 to 1 value, 0 is center.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
         </tr>
 
     
@@ -16535,7 +16604,7 @@ Alias for adc
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">playback rate. 1 is normal, -1 is reverse</td>
         </tr>
 
     
@@ -16569,12 +16638,12 @@ Alias for adc
             
                 <td class="default">
                 
-                    1
+                    0
                 
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">play head start value in seconds]</td>
         </tr>
 
     
@@ -16613,7 +16682,7 @@ Alias for adc
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">play head end value in seconds</td>
         </tr>
 
     
@@ -16691,7 +16760,7 @@ Alias for adc
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">soundfile loops</td>
         </tr>
 
     
@@ -16739,7 +16808,7 @@ Alias for adc
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="plugins_miscellaneous.cracked.js.html">plugins/miscellaneous.cracked.js</a>, <a href="plugins_miscellaneous.cracked.js.html#line181">line 181</a>
+        <a href="plugins_miscellaneous.cracked.js.html">plugins/miscellaneous.cracked.js</a>, <a href="plugins_miscellaneous.cracked.js.html#line182">line 182</a>
     </li></ul></dd>
     
 
@@ -16911,7 +16980,7 @@ Alias for adc
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">the parameter of the target node to modulate</td>
         </tr>
 
     
@@ -16945,12 +17014,12 @@ Alias for adc
             
                 <td class="default">
                 
-                    saw
+                    sawtooth
                 
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">LFO waveform (sine, sawtooth, square, triangle, white, pink, brown)</td>
         </tr>
 
     
@@ -16989,7 +17058,7 @@ Alias for adc
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">rate of the LFO in hz</td>
         </tr>
 
     
@@ -17028,7 +17097,7 @@ Alias for adc
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">the gain or amplitude of the LFO</td>
         </tr>
 
     
@@ -17277,12 +17346,12 @@ fill an audio buffer with a series of discrete values.
             
                 <td class="default">
                 
-                    function to generate values (if not supplied, then random values between -1 &amp; 1)
+                    fn
                 
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">function to generate values (if not supplied, then random values between -1 & 1)</td>
         </tr>
 
     
@@ -17316,12 +17385,12 @@ fill an audio buffer with a series of discrete values.
             
                 <td class="default">
                 
-                    number of steps in the buffer
+                    8
                 
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">number of steps in the buffer</td>
         </tr>
 
     
@@ -17355,12 +17424,12 @@ fill an audio buffer with a series of discrete values.
             
                 <td class="default">
                 
-                    length of the buffer in seconds
+                    1
                 
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">length of the buffer in seconds</td>
         </tr>
 
     
@@ -17399,7 +17468,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">gain value</td>
         </tr>
 
     
@@ -17619,7 +17688,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">noise type [white, pink, brown]</td>
         </tr>
 
     
@@ -17834,7 +17903,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">number of channels of noise buffer</td>
         </tr>
 
     
@@ -17873,7 +17942,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">length in seconds of noise buffer</td>
         </tr>
 
     
@@ -18088,7 +18157,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">number of channels of noise buffer</td>
         </tr>
 
     
@@ -18127,7 +18196,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">length in seconds of noise buffer</td>
         </tr>
 
     
@@ -18342,7 +18411,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">number of channels of noise buffer</td>
         </tr>
 
     
@@ -18381,7 +18450,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">length in seconds of noise buffer</td>
         </tr>
 
     
@@ -18601,7 +18670,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">frequency in hz of the oscillator</td>
         </tr>
 
     
@@ -18640,7 +18709,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">detune amount in cents</td>
         </tr>
 
     
@@ -18679,7 +18748,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">oscillator type</td>
         </tr>
 
     
@@ -18894,7 +18963,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">frequency in hz of the oscillator</td>
         </tr>
 
     
@@ -18933,7 +19002,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">detune amount in cents</td>
         </tr>
 
     
@@ -18972,7 +19041,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">oscillator type</td>
         </tr>
 
     
@@ -19187,7 +19256,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">frequency in hz of the oscillator</td>
         </tr>
 
     
@@ -19226,7 +19295,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">detune amount in cents</td>
         </tr>
 
     
@@ -19265,7 +19334,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">oscillator type</td>
         </tr>
 
     
@@ -19480,7 +19549,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">frequency in hz of the oscillator</td>
         </tr>
 
     
@@ -19519,7 +19588,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">detune amount in cents</td>
         </tr>
 
     
@@ -19558,7 +19627,7 @@ fill an audio buffer with a series of discrete values.
                 </td>
             
 
-            <td class="description last"></td>
+            <td class="description last">oscillator type</td>
         </tr>
 
     
@@ -21984,7 +22053,7 @@ Simple polyphonic synth
 
             
 
-            <td class="description last"></td>
+            <td class="description last">number to scale</td>
         </tr>
 
     
@@ -22007,7 +22076,7 @@ Simple polyphonic synth
 
             
 
-            <td class="description last"></td>
+            <td class="description last">input min</td>
         </tr>
 
     
@@ -22030,7 +22099,7 @@ Simple polyphonic synth
 
             
 
-            <td class="description last"></td>
+            <td class="description last">input max</td>
         </tr>
 
     
@@ -22053,7 +22122,7 @@ Simple polyphonic synth
 
             
 
-            <td class="description last"></td>
+            <td class="description last">scaled min</td>
         </tr>
 
     
@@ -22076,7 +22145,7 @@ Simple polyphonic synth
 
             
 
-            <td class="description last"></td>
+            <td class="description last">scaled max</td>
         </tr>
 
     
@@ -22099,7 +22168,7 @@ Simple polyphonic synth
 
             
 
-            <td class="description last"></td>
+            <td class="description last">"linear" or "logarithmic"</td>
         </tr>
 
     
@@ -23060,7 +23129,7 @@ web audio
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.6</a> on Sun Jan 01 2023 16:39:15 GMT-0800 (Pacific Standard Time) using the Minami theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.6</a> on Sat Jan 28 2023 20:08:42 GMT-0800 (Pacific Standard Time) using the Minami theme.
 </footer>
 
 <script>prettyPrint();</script>

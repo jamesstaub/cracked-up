@@ -1,3 +1,4 @@
+// This is a script to parse the js docs into a format that can be used in Euclip's Codemirror autocomplete config
 // run:  node parse-doc.js ./dist/cracked.js > out.txt
 
 /**
@@ -157,7 +158,7 @@ fs.readFile(filePath, "utf8", (err, data) => {
 });
 
 // TODO:
-// update cracked js docs to @params have description strings (cant seem to parse otherwise)
+// update cracked js docs so @params have description strings (cant seem to parse otherwise)
 // re-build cracked source
 // add parse-doc as a grunt task!
 // add `boost` param in function to generate based on category

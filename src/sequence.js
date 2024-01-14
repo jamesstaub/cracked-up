@@ -263,17 +263,17 @@ function _loopInit() {
  * @param {Array} data should the same length as the number of steps
  * @returns {cracked}
  */
-cracked.bind = function (eventType, fn, data) {
+cracked.bind = function (eventType, fn, data, opts) {
     if (eventType === "step" && __.isFun(fn)) {
         _loopListeners.push({
-            eventType: eventType,
-            callback: fn,
-            data: data || [],
-            loopStepSize : data.length || 0,
-            loopIndex : -1,
-            selection: _selectedNodes.slice(0),
-            selector: _currentSelector,
-            count:0
+          eventType: eventType,
+          callback: fn,
+          data: data || [],
+          loopStepSize: data.length || 0,
+          loopIndex:(__.isObj(opts) && __.isNum(opts.loopIndex)) ? opts.loopIndex : - 1,
+          selection: _selectedNodes.slice(0),
+          selector: _currentSelector,
+          count: 0,
         });
     }
     return cracked;

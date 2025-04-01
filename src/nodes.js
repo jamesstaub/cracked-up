@@ -442,7 +442,8 @@ cracked.buffer = function (userParams) {
             "speed": "playbackRate.value",
             "start": "loopStart",
             "end": "loopEnd",
-            "duration":"buffer.duration"
+            "duration":"buffer.duration",
+            "loop": "loop"
         }
     };
     var buffersrc = createNode("buffer", creationParams, userParams);

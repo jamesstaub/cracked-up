@@ -142,7 +142,7 @@ function getNodeWithUUID(uuid) {
         return _nodeStore[uuid];
     } else if (
         uuid && __.isObj(uuid) &&
-        uuid.constructor.name === "AudioNode"
+        uuid instanceof AudioNode
     ) {
         //its already an audio node so just return it
         return uuid;

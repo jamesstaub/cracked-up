@@ -64,7 +64,7 @@ function find() {
                 var selector = arguments[0];
                 _currentSelector = selector;
                 _selectedNodes = getNodesWithSelector(selector);
-            } else if(__.isObj(arguments[0]) && arguments[0].constructor.name === "AudioNode") {
+            } else if(__.isObj(arguments[0]) && arguments[0] instanceof AudioNode) {
                 _currentSelector = arguments[0].getType();
                 _selectedNodes = [arguments[0].getUUID()];
             }
@@ -100,7 +100,7 @@ function findInMacro() {
                     arr.splice(i, 1);
                 }
             });
-        } else if(__.isObj(arguments[0]) && arguments[0].constructor.name === "AudioNode") {
+        } else if(__.isObj(arguments[0]) && arguments[0] instanceof AudioNode) {
             _currentSelector = getCurrentMacroNamespace()+" "+arguments[0].getType();
             _selectedNodes = [arguments[0].getUUID()];
         }

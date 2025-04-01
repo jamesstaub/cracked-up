@@ -185,7 +185,7 @@ function applyParam(node, keyStr, value, map) {
             };
     for (var i = 0; i < keyArr.length; i++) {
         if ((i + 1) < keyArr.length && __.isNotUndef(node[keyArr[i]])) {
-            if (node[keyArr[i]].constructor.name === "AudioParam") {
+            if (node[keyArr[i]] instanceof AudioParam) {
                 setAudioParam(node[keyArr[i]], value);
             } else {
                 node = node[keyArr[i]];

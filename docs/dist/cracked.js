@@ -82,7 +82,7 @@ function find() {
                 var selector = arguments[0];
                 _currentSelector = selector;
                 _selectedNodes = getNodesWithSelector(selector);
-            } else if(__.isObj(arguments[0]) && arguments[0].constructor.name === "AudioNode") {
+            } else if(__.isObj(arguments[0]) && arguments[0] instanceof AudioNode) {
                 _currentSelector = arguments[0].getType();
                 _selectedNodes = [arguments[0].getUUID()];
             }
@@ -118,7 +118,7 @@ function findInMacro() {
                     arr.splice(i, 1);
                 }
             });
-        } else if(__.isObj(arguments[0]) && arguments[0].constructor.name === "AudioNode") {
+        } else if(__.isObj(arguments[0]) && arguments[0] instanceof AudioNode) {
             _currentSelector = getCurrentMacroNamespace()+" "+arguments[0].getType();
             _selectedNodes = [arguments[0].getUUID()];
         }
@@ -1129,7 +1129,7 @@ function applyParam(node, keyStr, value, map) {
             };
     for (var i = 0; i < keyArr.length; i++) {
         if ((i + 1) < keyArr.length && __.isNotUndef(node[keyArr[i]])) {
-            if (node[keyArr[i]].constructor.name === "AudioParam") {
+            if (node[keyArr[i]] instanceof AudioParam) {
                 setAudioParam(node[keyArr[i]], value);
             } else {
                 node = node[keyArr[i]];
@@ -1614,7 +1614,8 @@ cracked.buffer = function (userParams) {
             "speed": "playbackRate.value",
             "start": "loopStart",
             "end": "loopEnd",
-            "duration":"buffer.duration"
+            "duration":"buffer.duration",
+            "loop": "loop"
         }
     };
     var buffersrc = createNode("buffer", creationParams, userParams);
@@ -2135,7 +2136,7 @@ function getNodeWithUUID(uuid) {
         return _nodeStore[uuid];
     } else if (
         uuid && __.isObj(uuid) &&
-        uuid.constructor.name === "AudioNode"
+        uuid instanceof AudioNode
     ) {
         //its already an audio node so just return it
         return uuid;

@@ -1,2 +1,5 @@
-// Pure helper functions (scales, chords, pitch2freq, random) will live here.
-export {};
+export * from './duration';
+export * from './pattern';
+export * from './random';
+export * from './curves';
+export * from './music';

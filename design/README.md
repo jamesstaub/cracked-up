@@ -32,6 +32,24 @@ Then the declarations:
 
 `npm run typecheck` checks everything here.
 
+## What is implemented
+
+As of the graph core (Phase 1):
+
+| Area | State |
+|---|---|
+| Engine, scopes, buses, selections, chains, shortcut setters | Done |
+| Selector grammar | Done |
+| Parameters: base values, scheduled sets, ramps, offsets, modulation, metadata, change events | Done |
+| Node types | `gain`, `panner`, `compressor`, the eight filters, the four oscillators, `sampler` |
+| Buffer store, slices | Done |
+| Commands | Node, connection and bus commands done. `apply`, `sequence`, `setStep`, `clearSequence`, `transport` and `bypass` report `unsupported` |
+| `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
+| `build()` | Runs the builder; does not reconcile against existing nodes yet (Phase 4) |
+| `apply()`, `bypass`, macros, the transport, the remaining node types in the type map | Not yet. They throw or report `unsupported` |
+
+The type map in `src/api/nodes.ts` lists some node types (`adsr`, `lfo`, `delay`, `reverb`, `overdrive`, `bitcrusher`, `noise`, `polysynth`) ahead of their implementation, so the examples here type-check. Calling one of those chain methods today fails at runtime.
+
 ## Differences from Cracked that a script author will notice
 
 - `__()` returns a chain, and the chain must be continued from that value. Cracked let a later, separate statement (`__.lowpass()`) continue "the previous node"; that relied on global state and is gone.
@@ -51,7 +69,7 @@ Then the declarations:
 4. **`*` excludes macro internals**, with descendant selectors and `selection.select()` as the way in.
 5. **Buses carry no built-in meaning.** The library has no notion of tracks or a master. The engine has one bus, `main`, feeding the output. Any other bus is created by the caller and feeds `main` until routed elsewhere. `.to('name')` fails clearly if no bus of that name exists in the scope or its parents.
 6. **One transport per engine; sequences belong to it,** not to scopes. Related sequences share a `group` and can be cleared together.
-7. **Commands cover everything.** Every mutating method is implemented by dispatching a command, so the command set is complete by construction. Macros add their own operations as `methods`, reachable through the `call` command. `src/api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
+7. **Commands cover everything.** Every mutating method and its matching command run the same internal operation, so a command can do whatever a method can. Macros add their own operations as `methods`, reachable through the `call` command. `src/api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
 
 ## Open points
 

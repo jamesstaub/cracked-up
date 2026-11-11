@@ -6,7 +6,7 @@ cracked-up is a ground-up TypeScript reimagining of Bill Orcutt's
 
 ## Status
 
-Pre-alpha. The public API is being designed in `design/`; nothing is implemented yet.
+Pre-alpha. The graph core is implemented and tested: engine, scopes, selections, chains, parameters, buses, a sampler and the basic native nodes. The transport, macros and the remaining nodes are not. `design/README.md` has the API decisions and a table of what works today.
 
 ## Development
 

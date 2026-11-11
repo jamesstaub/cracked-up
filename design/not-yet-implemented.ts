@@ -3,24 +3,11 @@
  * switch to importing the real one and its line here is deleted.
  */
 
-import type {
-  Engine,
-  EngineOptions,
-  Link,
-  LinkOptions,
-  Remote,
-  RemoteOptions,
-  Scope,
-} from '../src/api';
+import type { Link, LinkOptions, Remote, RemoteOptions, Scope } from '../src/api';
 
 export type * from '../src/api';
-export { defineMacro, defineNode } from '../src/define';
-
-/** Loads worklet modules and returns a ready engine. */
-export declare function createEngine(options: EngineOptions): Promise<Engine>;
-
-/** Even pulses across steps: `euclid(3, 8)` is `[1,0,0,1,0,0,1,0]`. `rotate` shifts the start. */
-export declare function euclid(hits: number, steps: number, rotate?: number): number[];
+export { createEngine, defineMacro, defineNode } from '../src';
+export { euclid } from '../src/util';
 
 /** `cracked-up/remote`, inside the sandbox. */
 export declare function createRemote(options: RemoteOptions): Remote;

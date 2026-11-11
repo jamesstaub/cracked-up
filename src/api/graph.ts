@@ -262,7 +262,11 @@ export interface GraphError {
     | 'duplicate-id'
     | 'missing-target'
     | 'build-failed'
-    | 'buffer';
+    | 'buffer'
+    | 'invalid-selector'
+    | 'invalid-command'
+    /** The operation exists in the API but is not implemented in this version. */
+    | 'unsupported';
   readonly message: string;
   readonly nodeId?: string;
   readonly cause?: unknown;

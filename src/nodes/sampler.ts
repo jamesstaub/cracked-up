@@ -1,0 +1,159 @@
+import type { BufferRef, BufferSource } from '../api';
+import { defineNode } from '../define';
+
+/** Reversed copies, made once per buffer and dropped with it. */
+const reversedCopies = new WeakMap<AudioBuffer, AudioBuffer>();
+
+function reversed(buffer: AudioBuffer): AudioBuffer {
+  let copy = reversedCopies.get(buffer);
+  if (!copy) {
+    copy = new AudioBuffer({
+      length: buffer.length,
+      numberOfChannels: buffer.numberOfChannels,
+      sampleRate: buffer.sampleRate,
+    });
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      copy.copyToChannel(buffer.getChannelData(channel).slice().reverse(), channel);
+    }
+    reversedCopies.set(buffer, copy);
+  }
+  return copy;
+}
+
+interface Voice {
+  readonly source: AudioBufferSourceNode;
+  readonly startTime: number;
+}
+
+/**
+ * Plays a buffer. Every trigger starts a new one-shot voice, so there is nothing to stop or rewind
+ * between hits, and voices clean up after themselves when they end.
+ */
+export const sampler = defineNode({
+  type: 'sampler',
+  category: 'source',
+  description: 'Plays an audio buffer, or a slice of one, each time it is triggered.',
+  params: {
+    speed: { default: 1, min: 0.0625, max: 8, unit: 'ratio', curve: 'log', rate: 'control' },
+    start: { default: 0, min: 0, max: 60, unit: 'seconds', rate: 'control' },
+    end: {
+      default: 0,
+      min: 0,
+      max: 60,
+      unit: 'seconds',
+      rate: 'control',
+      description: 'End of the played region. At or before start means the end of the buffer.',
+    },
+    loop: { default: false },
+    reverse: { default: false },
+    gain: { default: 1, min: 0, max: 2, unit: 'gain' },
+  },
+  triggerable: true,
+  build(context, init) {
+    const out = new GainNode(context.audio);
+    const voices = new Set<Voice>();
+    const choke = init['choke'] !== false;
+    const maxVoices =
+      typeof init['voices'] === 'number' && init['voices'] >= 1 ? init['voices'] : 16;
+    const ref: BufferRef | null =
+      init['buffer'] === undefined ? null : context.buffer(init['buffer'] as BufferSource);
+
+    const stopVoicesBefore = (time: number) => {
+      for (const voice of voices) if (voice.startTime <= time) voice.source.stop(time);
+    };
+
+    return {
+      output: out,
+      params: {
+        gain: out.gain,
+        // Voices already sounding follow speed changes; the rest are read when a voice starts.
+        speed(value, at) {
+          for (const voice of voices) voice.source.playbackRate.setValueAtTime(value as number, at);
+        },
+        start() {},
+        end() {},
+        loop() {},
+        reverse() {},
+      },
+      trigger(options, at) {
+        const buffer = ref?.buffer;
+        if (!ref || !buffer) return;
+        const number = (name: string) =>
+          typeof options[name] === 'number' ? options[name] : (context.value(name, at) as number);
+        const flag = (name: string) =>
+          typeof options[name] === 'boolean' ? options[name] : (context.value(name, at) as boolean);
+
+        let start = number('start');
+        let end = number('end');
+        if (typeof options['slice'] === 'number') {
+          const boundaries = ref.slices;
+          const count = boundaries.length - 1;
+          if (count >= 1) {
+            const index = ((Math.floor(options['slice']) % count) + count) % count;
+            start = boundaries[index]!;
+            end = boundaries[index + 1]!;
+          }
+        }
+        const total = buffer.duration;
+        start = Math.min(Math.max(start, 0), total);
+        if (!(end > start)) end = total;
+        end = Math.min(end, total);
+        const length = end - start;
+        if (length <= 0) return;
+
+        const reverse = flag('reverse');
+        const loop = flag('loop');
+        const from = reverse ? total - end : start;
+
+        if (choke) {
+          stopVoicesBefore(at);
+        } else if (voices.size >= maxVoices) {
+          const oldest = [...voices].sort((a, b) => a.startTime - b.startTime)[0];
+          oldest?.source.stop(at);
+        }
+
+        const source = new AudioBufferSourceNode(context.audio, {
+          buffer: reverse ? reversed(buffer) : buffer,
+          playbackRate: number('speed'),
+        });
+        const velocity = typeof options['velocity'] === 'number' ? options['velocity'] : 1;
+        const level = velocity === 1 ? null : new GainNode(context.audio, { gain: velocity });
+        if (level) {
+          source.connect(level);
+          level.connect(out);
+        } else {
+          source.connect(out);
+        }
+
+        if (loop) {
+          source.loop = true;
+          source.loopStart = from;
+          source.loopEnd = from + length;
+          source.start(at, from);
+        } else {
+          source.start(at, from, length);
+        }
+        if (typeof options['duration'] === 'number') source.stop(at + options['duration']);
+
+        const voice: Voice = { source, startTime: at };
+        voices.add(voice);
+        source.onended = () => {
+          voices.delete(voice);
+          source.disconnect();
+          level?.disconnect();
+        };
+      },
+      release(_options, at) {
+        stopVoicesBefore(at);
+      },
+      dispose() {
+        for (const voice of voices) {
+          voice.source.onended = null;
+          voice.source.stop();
+          voice.source.disconnect();
+        }
+        voices.clear();
+      },
+    };
+  },
+});

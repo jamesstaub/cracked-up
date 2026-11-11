@@ -10,7 +10,7 @@
  */
 
 import type { At, ParamMetaInput, ParamValue } from './params';
-import type { BufferSource } from './engine';
+import type { BufferRef, BufferSource } from './engine';
 import type { ScopeApi } from './graph';
 
 type None = Record<never, never>;
@@ -39,6 +39,12 @@ export interface FilterParams {
   q: number;
 }
 
+export interface ShelfParams {
+  frequency: number;
+  /** Boost or cut in decibels. */
+  gain: number;
+}
+
 export interface OscillatorParams {
   frequency: number;
   detune: number;
@@ -47,7 +53,7 @@ export interface OscillatorParams {
 export interface SamplerParams {
   /** Playback rate. Negative is not reverse; use `reverse`. */
   speed: number;
-  /** Start and end of the played region, in seconds of the buffer. */
+  /** Start and end of the played region, in seconds of the buffer. An `end` at or before `start` means the end of the buffer. */
   start: number;
   end: number;
   loop: boolean;
@@ -96,6 +102,11 @@ export interface NodeTypeMap {
   lowpass: NodeShape<FilterParams, None, number>;
   highpass: NodeShape<FilterParams, None, number>;
   bandpass: NodeShape<FilterParams, None, number>;
+  notch: NodeShape<FilterParams, None, number>;
+  allpass: NodeShape<FilterParams, None, number>;
+  lowshelf: NodeShape<ShelfParams, None, number>;
+  highshelf: NodeShape<ShelfParams, None, number>;
+  peaking: NodeShape<FilterParams & { gain: number }, None, number>;
   sine: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   saw: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   square: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
@@ -225,8 +236,8 @@ export interface BuildContext {
   readonly audio: BaseAudioContext;
   /** Seeded random source, so offline renders repeat exactly. Returns 0 <= n < 1. */
   random(): number;
-  /** Resolves a buffer source to a decoded buffer through the engine's shared store. */
-  buffer(source: BufferSource): Promise<AudioBuffer>;
+  /** Resolves a buffer source through the engine's shared store. The entry may still be loading. */
+  buffer(source: BufferSource): BufferRef;
   /**
    * The effective value of one of this node's own parameters at an audio time (base value plus any
    * offset active then). For nodes that create voices on trigger and need the value the voice starts with.
@@ -261,6 +272,8 @@ export interface NodeDefinition<K extends string = string> {
   readonly params: Readonly<Record<string, ParamMetaInput>>;
   /** Which parameter a bare argument sets, e.g. `'frequency'` so that `.lowpass(800)` works. */
   readonly shorthand?: string;
+  /** Whether `trigger()` and `release()` do anything on this type. */
+  readonly triggerable?: boolean;
   build(context: BuildContext, init: Readonly<Record<string, unknown>>): BuiltNode;
 }
 

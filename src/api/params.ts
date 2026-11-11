@@ -75,8 +75,8 @@ export type ParamMetaInput =
       unit?: Unit;
       curve?: Curve;
     })
-  | (Omit<BooleanParamMeta, 'name' | 'rate'> & { rate?: ParamRate })
-  | (Omit<ChoiceParamMeta, 'name' | 'rate'> & { rate?: ParamRate });
+  | (Omit<BooleanParamMeta, 'name' | 'rate' | 'kind'> & { kind?: 'boolean'; rate?: ParamRate })
+  | (Omit<ChoiceParamMeta, 'name' | 'rate' | 'kind'> & { kind?: 'choice'; rate?: ParamRate });
 
 /**
  * When an operation takes effect, in audio-clock seconds (`context.currentTime` units).

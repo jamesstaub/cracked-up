@@ -106,6 +106,25 @@ describe('buses', () => {
     expect(valueAt(await rerouted.render(), 0.1)).toBeCloseTo(0.05, 6);
   });
 
+  it('main carries stereo: a signal panned hard left reaches only the left channel', async () => {
+    const engine = await offlineEngine(0.2, 2);
+    constant(engine, 0.2).panner(-1).to('main');
+    const audio = await engine.render();
+    const at = Math.round(0.1 * audio.sampleRate);
+    expect(audio.numberOfChannels).toBe(2);
+    expect(audio.getChannelData(0)[at]).toBeCloseTo(1, 5);
+    expect(audio.getChannelData(1)[at]).toBeCloseTo(0, 5);
+  });
+
+  it('a mono signal sent to main is heard equally on both sides', async () => {
+    const engine = await offlineEngine(0.2, 2);
+    constant(engine, 0.2).gain(0.5).to('main');
+    const audio = await engine.render();
+    const at = Math.round(0.1 * audio.sampleRate);
+    expect(audio.getChannelData(0)[at]).toBeCloseTo(0.5, 6);
+    expect(audio.getChannelData(1)[at]).toBeCloseTo(0.5, 6);
+  });
+
   it('a scope finds buses in its parents, and can shadow one with its own', async () => {
     const engine = await offlineEngine(0.2);
     engine.bus('send').gain.set(0.5);

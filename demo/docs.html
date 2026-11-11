@@ -40,7 +40,12 @@
         <p>
           <code>main</code> is the engine's output. It is a <em>bus</em>: a named point where any
           number of chains are mixed together. The engine creates <code>main</code> for you and
-          connects it to your speakers. It is the only bus that exists until you make another.
+          connects it to your speakers. It is the only bus that exists until you make another. You
+          never define it yourself, and it cannot be removed.
+        </p>
+        <p>
+          <code>main</code> is stereo. A mono sound sent to it is heard equally on both sides; use a
+          <code>panner</code> before it to place a sound left or right.
         </p>
         <p>
           In the original Cracked library every chain ended with its own <code>.dac()</code> node.

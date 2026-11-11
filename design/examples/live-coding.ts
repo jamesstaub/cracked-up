@@ -63,7 +63,15 @@ __('sampler').speed(0.5);
 // Nodes without an id can be picked by position.
 __('gain:nth(0)').gain(0.7);
 
-// Group sequences to clear them together.
-t.steps('clap', 'x.x.', () => {});
-t.sequence('shaker', { steps: 7, span: '1 bar', group: 'perc' }, () => {});
-t.clear({ group: 'perc' });
+// A pattern is an array of numbers or a string: 'x' is 1 and '.' is 0, so these two are the same.
+t.sequence('clap', { steps: [0, 0, 1, 0], step: '1/8' }, (ev) => {
+  if (ev.value) __('#hat').trigger({ speed: 0.5 });
+});
+t.sequence('clap', { steps: '..x.', step: '1/8' }, (ev) => {
+  if (ev.value) __('#hat').trigger({ speed: 0.5 });
+});
+
+// Remove one sequence by name, or keep the handle and stop it.
+const shaker = t.sequence('shaker', { steps: 7, span: '1 bar' }, () => {});
+shaker.stop();
+t.clear('clap');

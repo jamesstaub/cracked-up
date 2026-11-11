@@ -68,7 +68,7 @@ The type map in `src/api/nodes.ts` lists some node types (`adsr`, `lfo`, `delay`
 3. **Shortcut setters: yes**, generated from the registered parameter names. A parameter whose name is already a selection method (today only `release`) is set with `.set()`.
 4. **`*` excludes macro internals**, with descendant selectors and `selection.select()` as the way in.
 5. **Buses carry no built-in meaning.** The library has no notion of tracks or a master. The engine has one bus, `main`, feeding the output. Any other bus is created by the caller and feeds `main` until routed elsewhere. `.to('name')` fails clearly if no bus of that name exists in the scope or its parents.
-6. **One transport per engine; sequences belong to it,** not to scopes. Related sequences share a `group` and can be cleared together.
+6. **One transport per engine; sequences belong to it,** not to scopes. A host that ties sequences to something of its own (a track, say) keeps the handles `sequence()` returns, or their names, and stops them itself.
 7. **Commands cover everything.** Every mutating method and its matching command run the same internal operation, so a command can do whatever a method can. Macros add their own operations as `methods`, reachable through the `call` command. `src/api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
 
 ## Open points

@@ -423,7 +423,7 @@ export interface Scope {
 
   /**
    * Disposes every node, bus and child scope. Sequences belong to the transport, not to scopes; a host
-   * that ties sequences to a scope gives them a `group` and clears that group.
+   * that ties sequences to a scope keeps their handles (or names) and stops them itself.
    */
   dispose(): void;
 }

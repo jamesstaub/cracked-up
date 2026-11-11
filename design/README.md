@@ -1,6 +1,6 @@
 # API design (Phase 0)
 
-Status: approved by the owner on 2026-11-11 with the decisions below. Phase 1 implements `api/` except `remote.ts` and `global.ts`, which come later.
+Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. Phase 1 implements them except `remote.ts`; the global entry point (`design/global-entry.ts`) also comes later.
 
 This folder is the proposed public API for Phases 1 and 2 of cracked-up (graph core and transport), written as TypeScript declarations, plus example programs that are type-checked against it. The plan it belongs to is in the Euclip repo: `docs/plans/cracked-up-and-euclip-v2.md`.
 
@@ -22,13 +22,13 @@ Then the declarations:
 
 | File | Covers |
 |---|---|
-| `api/engine.ts` | `createEngine`, the buffer store, seeded random, offline `render` |
-| `api/graph.ts` | Nodes, selections and the selector grammar, chains, buses, scopes, the graph as data, commands |
-| `api/params.ts` | `Param`: base value, ramps, temporary offsets, modulators, metadata |
-| `api/nodes.ts` | The node type map, `defineNode`, `defineMacro`, the registry |
-| `api/transport.ts` | Transport, sequences, the event object, durations |
-| `api/global.ts` | The `cracked-up/global` entry point for live coding |
-| `api/remote.ts` | The `cracked-up/remote` entry point: the same scripting API inside a sandbox |
+| `src/api/engine.ts` | `createEngine`, the buffer store, seeded random, offline `render` |
+| `src/api/graph.ts` | Nodes, selections and the selector grammar, chains, buses, scopes, the graph as data, commands |
+| `src/api/params.ts` | `Param`: base value, ramps, temporary offsets, modulators, metadata |
+| `src/api/nodes.ts` | The node type map, `defineNode`, `defineMacro`, the registry |
+| `src/api/transport.ts` | Transport, sequences, the event object, durations |
+| `design/global-entry.ts` | The `cracked-up/global` entry point for live coding |
+| `src/api/remote.ts` | The `cracked-up/remote` entry point: the same scripting API inside a sandbox |
 
 `npm run typecheck` checks everything here.
 
@@ -51,7 +51,7 @@ Then the declarations:
 4. **`*` excludes macro internals**, with descendant selectors and `selection.select()` as the way in.
 5. **Buses carry no built-in meaning.** The library has no notion of tracks or a master. The engine has one bus, `main`, feeding the output. Any other bus is created by the caller and feeds `main` until routed elsewhere. `.to('name')` fails clearly if no bus of that name exists in the scope or its parents.
 6. **One transport per engine; sequences belong to it,** not to scopes. Related sequences share a `group` and can be cleared together.
-7. **Commands cover everything.** Every mutating method is implemented by dispatching a command, so the command set is complete by construction. Macros add their own operations as `methods`, reachable through the `call` command. `api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
+7. **Commands cover everything.** Every mutating method is implemented by dispatching a command, so the command set is complete by construction. Macros add their own operations as `methods`, reachable through the `call` command. `src/api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
 
 ## Open points
 

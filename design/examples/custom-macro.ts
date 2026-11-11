@@ -2,8 +2,8 @@
  * Example 5: a custom macro with its own method, called directly and as a command.
  */
 
-import { defineMacro, createEngine } from '../api';
-import type { Command } from '../api';
+import { defineMacro, createEngine } from '../not-yet-implemented';
+import type { Command } from '../not-yet-implemented';
 
 /** Two detuned saws through a filter, with a `sweep` method of its own. */
 const supersaw = defineMacro({

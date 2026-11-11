@@ -36,9 +36,6 @@ export type Position = Duration;
  */
 export type Pattern = readonly number[] | string;
 
-/** Even pulses across steps: `euclid(3, 8)` is `[1,0,0,1,0,0,1,0]`. `rotate` shifts the start. */
-export declare function euclid(hits: number, steps: number, rotate?: number): number[];
-
 export interface SequenceOptions {
   /** The pattern, or a step count for an unvalued pulse (every step has value 1). */
   steps: Pattern | number;

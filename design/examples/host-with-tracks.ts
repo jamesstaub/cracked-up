@@ -3,8 +3,8 @@
  * "Track" is the host's idea; the library only sees scopes.
  */
 
-import { createEngine } from '../api';
-import type { Command, Engine, GraphData, NumberParamMeta, Scope } from '../api';
+import { createEngine } from '../not-yet-implemented';
+import type { Command, Engine, GraphData, NumberParamMeta, Scope } from '../not-yet-implemented';
 
 declare const sliderForTrack: (
   trackId: string,

@@ -26,9 +26,6 @@ export interface EngineOptions {
   workletUrl?: string | URL;
 }
 
-/** Loads worklet modules and returns a ready engine. */
-export declare function createEngine(options: EngineOptions): Promise<Engine>;
-
 // ---------------------------------------------------------------------------------------------------
 // Buffers
 // ---------------------------------------------------------------------------------------------------

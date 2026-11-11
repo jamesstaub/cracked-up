@@ -3,11 +3,11 @@
  * and the docs playground. This is the only entry point that creates a context or holds module state.
  */
 
-import type { Engine } from './engine';
-import type { ScopeApi } from './graph';
-import type { Transport } from './transport';
+import type { Engine } from '../src/api';
+import type { ScopeApi } from '../src/api';
+import type { Transport } from '../src/api';
 
-export { euclid } from './transport';
+export { euclid } from './not-yet-implemented';
 
 /** Resolves once the default engine's worklets have loaded. */
 export declare const ready: Promise<Engine>;

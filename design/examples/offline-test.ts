@@ -2,7 +2,7 @@
  * Example 3: rendering offline, as the library's own tests and a host's export will.
  */
 
-import { createEngine } from '../api';
+import { createEngine } from '../not-yet-implemented';
 
 declare const findOnsets: (
   buffer: AudioBuffer,

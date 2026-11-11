@@ -40,7 +40,6 @@ import type {
   StepCallback,
   Duration,
 } from './transport';
-import type { Scope } from './graph';
 
 /** A sequence event as data. The remote rebuilds the event object (including `at()`) from it. */
 export interface SequenceEventData {
@@ -127,9 +126,6 @@ export interface Remote {
   receive(message: HostMessage): void;
 }
 
-/** Runs inside the sandbox. */
-export declare function createRemote(options: RemoteOptions): Remote;
-
 export interface LinkOptions {
   /** Delivers messages to the sandbox. */
   send(message: HostMessage): void;
@@ -146,6 +142,3 @@ export interface Link {
   /** Stops forwarding and removes the sequences and macro types the remote created. */
   dispose(): void;
 }
-
-/** Runs on the host. Ties one scope to one remote; the remote cannot affect anything outside that scope. */
-export declare function linkRemote(scope: Scope, options: LinkOptions): Link;

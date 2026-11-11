@@ -62,6 +62,15 @@ export interface EnvelopeParams {
   release: number;
 }
 
+export interface OscillatorInit {
+  /**
+   * Oscillators run from creation. With the gate open (the default) they are heard at once, as a drone;
+   * `release()` closes the gate and `trigger()` opens it. Start with `'closed'` for a voice that is
+   * silent until triggered.
+   */
+  gate?: 'open' | 'closed';
+}
+
 /** Options for anything with a gate: oscillators behind an envelope, envelopes, synth voices. */
 export interface GateTrigger {
   /** Seconds until an automatic release. Omitted: held until `release()`. */
@@ -87,10 +96,10 @@ export interface NodeTypeMap {
   lowpass: NodeShape<FilterParams, None, number>;
   highpass: NodeShape<FilterParams, None, number>;
   bandpass: NodeShape<FilterParams, None, number>;
-  sine: NodeShape<OscillatorParams, None, number, GateTrigger>;
-  saw: NodeShape<OscillatorParams, None, number, GateTrigger>;
-  square: NodeShape<OscillatorParams, None, number, GateTrigger>;
-  triangle: NodeShape<OscillatorParams, None, number, GateTrigger>;
+  sine: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
+  saw: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
+  square: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
+  triangle: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   noise: NodeShape<{ gain: number }, { color?: 'white' | 'pink' | 'brown' }>;
   sampler: NodeShape<
     SamplerParams,
@@ -218,6 +227,11 @@ export interface BuildContext {
   random(): number;
   /** Resolves a buffer source to a decoded buffer through the engine's shared store. */
   buffer(source: BufferSource): Promise<AudioBuffer>;
+  /**
+   * The effective value of one of this node's own parameters at an audio time (base value plus any
+   * offset active then). For nodes that create voices on trigger and need the value the voice starts with.
+   */
+  value(name: string, at: number): ParamValue;
   /** Creates an AudioWorkletNode for a processor the library or the host has registered. */
   worklet(name: string, options?: AudioWorkletNodeOptions): AudioWorkletNode;
 }
@@ -250,11 +264,6 @@ export interface NodeDefinition<K extends string = string> {
   build(context: BuildContext, init: Readonly<Record<string, unknown>>): BuiltNode;
 }
 
-/** Returns the definition unchanged; exists for type inference and as the one documented entry point. */
-export declare function defineNode<K extends string>(
-  definition: NodeDefinition<K>,
-): NodeDefinition<K>;
-
 /** An exposed macro parameter and the inner parameters it drives. */
 export type MacroParam = ParamMetaInput & {
   /** Inner targets, selected within the macro's own scope. */
@@ -283,10 +292,6 @@ export interface MacroDefinition<K extends string = string> {
     (scope: ScopeApi, args: Readonly<Record<string, unknown>>, at: number) => void
   >;
 }
-
-export declare function defineMacro<K extends string>(
-  definition: MacroDefinition<K>,
-): MacroDefinition<K>;
 
 /** Runtime description of a registered type, as exported to hosts for controls, docs and autocomplete. */
 export interface NodeTypeInfo {

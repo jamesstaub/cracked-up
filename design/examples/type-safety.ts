@@ -3,7 +3,7 @@
  * rejecting the mistake below it.
  */
 
-import type { Engine } from '../api';
+import type { Engine } from '../not-yet-implemented';
 
 export function checks(engine: Engine): void {
   // A selection by type name knows its parameters.

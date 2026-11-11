@@ -174,7 +174,10 @@ export class ScopeImpl {
       tags: (source['tags'] as Tags | undefined) ?? {},
       values,
       init,
-      modulates: typeof modulates === 'string' ? modulates : null,
+      modulates:
+        typeof modulates === 'string'
+          ? modulates
+          : ((entry.definition as { modulates?: string }).modulates ?? null),
     });
     this.nodeList.push(node);
     this.byId.set(id, node);
@@ -215,7 +218,9 @@ export class ScopeImpl {
 
   bus(name: string): BusImpl {
     this.assertLive();
-    let bus = this.buses.get(name);
+    let bus = this.lineage()
+      .map((scope) => scope.buses.get(name))
+      .find((found) => found !== undefined);
     if (!bus) {
       bus = new BusImpl(this, name);
       this.buses.set(name, bus);

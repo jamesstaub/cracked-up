@@ -125,20 +125,24 @@ describe('buses', () => {
     expect(audio.getChannelData(1)[at]).toBeCloseTo(0.5, 6);
   });
 
-  it('a scope finds buses in its parents, and can shadow one with its own', async () => {
+  it('bus(name) returns the nearest bus of that name and creates one only when there is none', async () => {
     const engine = await offlineEngine(0.2);
-    engine.bus('send').gain.set(0.5);
     const a = engine.scope('a');
-    const b = engine.scope('b');
-    b.bus('send').gain.set(0.25);
+    // From any scope, `main` is the engine's output bus.
+    expect(a.bus('main')).toBe(engine.bus('main'));
+    expect(a.$.bus('main')).toBe(engine.bus('main'));
+
+    // A name nobody has yet is created in the scope that asked, so sibling scopes do not see it.
+    const own = a.bus('send');
+    own.gain.set(0.5);
+    expect(a.bus('send')).toBe(own);
+    expect(() => engine.scope('b').chain().gain().to('send')).toThrowError(/no bus called "send"/);
+
     a.chain()
       .sampler({ id: 's', buffer: ones(0.2) })
       .to('send');
-    b.chain()
-      .sampler({ id: 's', buffer: ones(0.2) })
-      .to('send');
-    engine.select('sampler').trigger({ at: 0 });
-    expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(0.75, 6);
+    a.select('#s').trigger({ at: 0 });
+    expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(0.5, 6);
   });
 });
 

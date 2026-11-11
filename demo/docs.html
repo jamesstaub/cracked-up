@@ -53,7 +53,7 @@
           set the overall level, and later to meter or record everything.
         </p>
         <pre><code>__().sine(220).gain(0.2).to('main');
-engine.bus('main').gain.set(0.5); // overall level</code></pre>
+__.bus('main').gain.set(0.5); // overall level</code></pre>
         <p>
           You can make more buses to group sounds, for example a shared effect. A new bus feeds
           <code>main</code> until you route it somewhere else.

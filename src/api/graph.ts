@@ -265,6 +265,8 @@ export interface GraphError {
     | 'buffer'
     | 'invalid-selector'
     | 'invalid-command'
+    /** A sequence or scheduled callback threw. */
+    | 'callback'
     /** The operation exists in the API but is not implemented in this version. */
     | 'unsupported';
   readonly message: string;
@@ -387,9 +389,10 @@ export interface Scope {
   select(selector: string): Selection;
 
   /**
-   * Gets or creates a bus in this scope. `.to('name')` on a chain looks the name up in the chain's own
-   * scope first, then outward through parent scopes, and fails with a `missing-target` error if no such
-   * bus exists. `main` always resolves, because the engine has one.
+   * Returns the nearest bus of that name, looking in this scope and then outward through its parents,
+   * and creates one in this scope only if there is none. So `bus('main')` is always the engine's output
+   * bus, from any scope. `.to('name')` on a chain looks names up the same way, but fails with a
+   * `missing-target` error instead of creating a bus.
    */
   bus(name: string): Bus;
 

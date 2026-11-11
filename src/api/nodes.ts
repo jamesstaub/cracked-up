@@ -286,6 +286,12 @@ export interface NodeDefinition<K extends string = string> {
   readonly shorthand?: string;
   /** Whether `trigger()` and `release()` do anything on this type. */
   readonly triggerable?: boolean;
+  /**
+   * For modulators: the parameter this node drives when it is chained into another node, unless the
+   * caller passes its own `modulates` option. `__().lfo().lowpass()` then moves the filter's frequency
+   * instead of feeding its input.
+   */
+  readonly modulates?: string;
   /** Documents the creation-only options `build` reads from `init`. */
   readonly options?: Readonly<Record<string, OptionInfo>>;
   /** Documents the options `trigger()` accepts besides `at` and per-voice parameter values. */

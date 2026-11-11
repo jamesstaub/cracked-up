@@ -22,6 +22,16 @@ npm test                          # Chromium, headless
 npm run test:all-browsers         # Chromium, Firefox and WebKit
 ```
 
+### Live demo
+
+```sh
+npm run demo
+```
+
+Opens a page with a code box that re-runs on every key up (`demo/index.html`). While the code has an
+error, the last working version keeps playing. The transport is not built yet, so the demo supplies a
+temporary `every(seconds, fn)` timer in its place.
+
 Tests run in real browsers through Vitest browser mode and Playwright, because they need Web Audio
 (`OfflineAudioContext`).
 

@@ -39,6 +39,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "demo": "vite demo --open",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project chromium",
     "test:all-browsers": "vitest run --project chromium --project firefox --project webkit",
@@ -54,6 +55,7 @@
     "tsup": "^8.5.1",
     "typescript": "~5.9",
     "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.8",
     "vitest": "^5.1.0"
   }
 }

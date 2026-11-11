@@ -52,6 +52,9 @@ export interface Node<K extends NodeType = NodeType> {
   trigger(options?: TriggerOptions<K>): this;
   release(options?: ReleaseOptions): this;
 
+  /** Calls a method the node's definition declares (see `methods` on node and macro definitions). */
+  call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
+
   /** Native output, for hosts that need to attach their own analyser or visualiser. Read-only use. */
   readonly output: AudioNode | null;
 
@@ -84,9 +87,13 @@ export interface Edge {
  *   delay > gain       child: directly inside
  *   sine, saw          list (whitespace is ignored)
  *   :not(.muted)       negation
+ *   lowpass:nth(1)     the second match, counting from 0 in creation order
  *   *                  everything in the scope, excluding macro internals
+ *
+ * Macro internals are never matched by a plain selector. Reach them with a descendant selector
+ * (`polysynth lowpass`, `polysynth *`) or with `selection.select(...)` on the macro.
  */
-export interface Selection<K extends NodeType = NodeType> extends Iterable<Node<K>> {
+export interface SelectionBase<K extends NodeType = NodeType> extends Iterable<Node<K>> {
   readonly length: number;
   readonly nodes: readonly Node<K>[];
   first(): Node<K> | undefined;
@@ -111,6 +118,7 @@ export interface Selection<K extends NodeType = NodeType> extends Iterable<Node<
 
   trigger(options?: TriggerOptions<K>): this;
   release(options?: ReleaseOptions): this;
+  call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
 
   /** Connects every selected node to the target. */
   connect(target: string | Selection | Node | Bus | Param<number>): this;
@@ -123,6 +131,36 @@ export interface Selection<K extends NodeType = NodeType> extends Iterable<Node<
 
   dispose(): void;
 }
+
+type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (
+  x: infer I,
+) => void
+  ? I
+  : never;
+type AnyParams = UnionToIntersection<NodeTypeMap[NodeType]['params']>;
+
+/**
+ * One setter per parameter name, generated from the registered node types: `.frequency(200)`,
+ * `.gain(0.5, { at })`. Each is shorthand for `.set({ name: value })`.
+ *
+ * A parameter whose name is already a selection method gets no setter and is set with `.set()`.
+ * Today that is only `release` (on envelopes and compressors), which is the gate-release method.
+ */
+export type SelectionSetters<K extends NodeType> = [NodeType] extends [K]
+  ? {
+      readonly [P in Exclude<keyof AnyParams & string, keyof SelectionBase>]: (
+        value: ParamValue,
+        options?: At,
+      ) => Selection;
+    }
+  : {
+      readonly [P in Exclude<keyof ParamsOf<K> & string, keyof SelectionBase>]: (
+        value: ParamsOf<K>[P],
+        options?: At,
+      ) => Selection<K>;
+    };
+
+export type Selection<K extends NodeType = NodeType> = SelectionBase<K> & SelectionSetters<K>;
 
 // ---------------------------------------------------------------------------------------------------
 // Chains
@@ -159,12 +197,16 @@ export type Chain = ChainBase & {
 // Buses
 // ---------------------------------------------------------------------------------------------------
 
-/** A named mix point. Chains end at a bus; a bus feeds a parent bus or the engine output. */
+/**
+ * A named mix point: several chains go in, one signal comes out. The library attaches no meaning to
+ * the names. The only bus that exists by default is the engine's `main`, which feeds the context
+ * destination. Every other bus is created by the caller and feeds `main` until told otherwise.
+ */
 export interface Bus {
   readonly name: string;
   readonly scope: Scope;
   readonly gain: Param<number>;
-  /** Where this bus sends its mix. The root scope's `main` bus feeds the context destination. */
+  /** Where this bus sends its mix. Default: the engine's `main` bus. */
   to(target: string | Bus): this;
   readonly input: AudioNode;
   readonly output: AudioNode;
@@ -230,24 +272,65 @@ export interface GraphError {
 // Commands
 // ---------------------------------------------------------------------------------------------------
 
+/** Which nodes a command acts on: a selector resolved within the scope, or explicit node ids. */
+export type CommandTarget = string | { readonly ids: readonly string[] };
+
 /**
- * Every node operation as plain data. A sandboxed script produces these instead of calling methods;
- * the host passes them to `scope.dispatch`. `target` is a selector resolved within the scope.
+ * Every operation that changes anything, as plain data.
+ *
+ * The library's own methods are implemented by building a command and dispatching it, so there is
+ * exactly one code path, and anything a script can do by calling methods can also be done by sending
+ * commands. That is what lets a sandboxed script, which cannot touch the audio graph, do everything an
+ * unsandboxed one can (see `remote.ts`).
+ *
+ * A command is always dispatched to one scope and cannot reach outside it.
  */
 export type Command =
-  | { op: 'trigger'; target: string; at: number; options?: Readonly<Record<string, Json>> }
-  | { op: 'release'; target: string; at: number; pitch?: number }
-  | { op: 'set'; target: string; at: number; values: Readonly<Record<string, ParamValue>> }
+  // Nodes
+  | { op: 'trigger'; target: CommandTarget; at: number; options?: Readonly<Record<string, Json>> }
+  | { op: 'release'; target: CommandTarget; at: number; pitch?: number }
+  | { op: 'set'; target: CommandTarget; at: number; values: Readonly<Record<string, ParamValue>> }
   | {
       op: 'ramp';
-      target: string;
+      target: CommandTarget;
       at: number;
       param: string;
       to: number;
       duration: number;
       curve?: 'linear' | 'exp';
+      from?: number;
     }
-  | { op: 'offset'; target: string; at: number; param: string; amount: number; duration?: number };
+  | {
+      op: 'offset';
+      target: CommandTarget;
+      at: number;
+      param: string;
+      amount: number | null;
+      duration?: number;
+    }
+  | { op: 'cancel'; target: CommandTarget; at: number; param?: string }
+  | { op: 'bypass'; target: CommandTarget; at: number; bypass: boolean }
+  /** A method declared by a node or macro definition. This is how a custom macro adds its own commands. */
+  | {
+      op: 'call';
+      target: CommandTarget;
+      at: number;
+      method: string;
+      args?: Readonly<Record<string, Json>>;
+    }
+  // Graph
+  | { op: 'apply'; graph: GraphData }
+  | { op: 'connect'; target: CommandTarget; to: EdgeTarget }
+  | { op: 'disconnect'; target: CommandTarget; to?: EdgeTarget }
+  | { op: 'dispose'; target: CommandTarget }
+  | { op: 'bus'; name: string; to?: string; gain?: number }
+  // Sequences (the callback stays with whoever created the sequence; see remote.ts)
+  | { op: 'sequence'; name: string; options: import('./transport').SequenceOptions }
+  | { op: 'setStep'; name: string; index: number; value: number }
+  | { op: 'clearSequence'; name: string }
+  // Transport and buffers. A host may refuse these from a sandbox.
+  | { op: 'transport'; set: { bpm?: number; swing?: number } }
+  | { op: 'loadBuffer'; key: string; url: string };
 
 // ---------------------------------------------------------------------------------------------------
 // Scopes
@@ -273,6 +356,13 @@ export interface ScopeApi {
   bus(name: string): Bus;
 }
 
+/** A scope's readable state as plain data: its graph with current base values, and its buses. */
+export interface ScopeSnapshot {
+  readonly name: string;
+  readonly graph: GraphData;
+  readonly buses: readonly { name: string; to: string | null; gain: number }[];
+}
+
 /**
  * A named subtree of the graph with its own id namespace. Selecting from a scope searches only that
  * scope and its child scopes. A host typically creates one per track.
@@ -293,9 +383,9 @@ export interface Scope {
   select(selector: string): Selection;
 
   /**
-   * Gets or creates a bus in this scope. A chain's `.to('main')` resolves the name in its own scope
-   * first, then outward through parents. A new bus feeds the same-named bus of the parent scope if one
-   * exists, otherwise the parent's `main`.
+   * Gets or creates a bus in this scope. `.to('name')` on a chain looks the name up in the chain's own
+   * scope first, then outward through parent scopes, and fails with a `missing-target` error if no such
+   * bus exists. `main` always resolves, because the engine has one.
    */
   bus(name: string): Bus;
 
@@ -310,9 +400,12 @@ export interface Scope {
 
   /**
    * Runs `fn`, collects everything it builds into a description, and applies it once at the end.
-   * Re-running the same builder leaves unchanged nodes sounding. Nodes created without an explicit id
-   * get ids from their type and position (`lowpass-1`), so inserting a node ahead of others of the
-   * same type renames them; give ids to nodes that must survive edits.
+   * Re-running the same builder leaves unchanged nodes sounding.
+   *
+   * Nodes with an explicit id are matched by id. Nodes without one are matched by position: the old and
+   * new lists of un-id'd nodes are aligned by type in creation order, so inserting or removing one node
+   * leaves the nodes after it matched to their previous selves. They can be selected by position too
+   * (`lowpass:nth(1)`).
    */
   build(fn: (__: ScopeApi) => void): Promise<ApplyResult>;
 
@@ -321,6 +414,12 @@ export interface Scope {
 
   on<E extends keyof ScopeEvents>(event: E, listener: ScopeEvents[E]): Unsubscribe;
 
-  /** Disposes every node, bus and child scope, and cancels the scope's sequences. */
+  /** Everything a remote mirror needs to reproduce this scope's readable state. See `remote.ts`. */
+  snapshot(): ScopeSnapshot;
+
+  /**
+   * Disposes every node, bus and child scope. Sequences belong to the transport, not to scopes; a host
+   * that ties sequences to a scope gives them a `group` and clears that group.
+   */
   dispose(): void;
 }

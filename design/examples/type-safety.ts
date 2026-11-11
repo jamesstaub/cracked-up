@@ -15,6 +15,15 @@ export function checks(engine: Engine): void {
   samplers.ramp('cutoff', 1, { duration: 1 });
   samplers.trigger({ slice: 3, speed: 0.5 });
 
+  // Shortcut setters exist for the type's own parameters only.
+  samplers.speed(2).loop(true);
+  // @ts-expect-error samplers have no `frequency` setter
+  samplers.frequency(440);
+  // @ts-expect-error speed is a number
+  samplers.speed('fast');
+  // On an envelope, `release` is the gate-release method, so the release time is set with `set`.
+  engine.select('adsr').set({ release: 0.2 }).release();
+
   // Chain methods check their options.
   engine.chain().lowpass({ frequency: 800, q: 2 }).gain(0.5).to('main');
   // @ts-expect-error `resonance` is not a lowpass option

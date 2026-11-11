@@ -5,7 +5,8 @@
  * due, passing the exact audio-clock time at which it should sound. Callbacks schedule audio at that
  * time, so timing is sample-accurate anywhere in a bar, not only on a step grid.
  *
- * All sequences read one transport position. Different step lengths and pattern lengths therefore
+ * There is one transport per engine, and every sequence belongs to it. All sequences read its one
+ * position. Different step lengths and pattern lengths therefore
  * stay phase-locked, and a sequence added or replaced while playing takes its place from the position.
  */
 
@@ -55,6 +56,8 @@ export interface SequenceOptions {
   order?: number;
   /** Whether the callback is also called for rests (value 0). Default true. */
   rests?: boolean;
+  /** A label shared by related sequences, so they can be cleared or muted together. */
+  group?: string;
 }
 
 /** What a sequence callback receives. */
@@ -176,8 +179,9 @@ export interface Transport {
 
   /** Looks up a named sequence. */
   get(name: string): Sequence | undefined;
-  /** Removes one named sequence, or everything scheduled on the transport. */
+  /** Removes one named sequence, every sequence in a group, or everything scheduled on the transport. */
   clear(name?: string): this;
+  clear(filter: { group: string }): this;
 
   /**
    * Calls back on an animation frame at the moment each sequence event is heard. Use this, never the

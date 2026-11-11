@@ -55,3 +55,15 @@ const tops = __('.tops');
 t.every('4 bars', () => {
   tops.ramp('gain', 0, { duration: t.seconds('1 bar') });
 });
+
+// Every parameter has a shortcut setter.
+__('#bass-filter').frequency(900).q(4);
+__('sampler').speed(0.5);
+
+// Nodes without an id can be picked by position.
+__('gain:nth(0)').gain(0.7);
+
+// Group sequences to clear them together.
+t.steps('clap', 'x.x.', () => {});
+t.sequence('shaker', { steps: 7, span: '1 bar', group: 'perc' }, () => {});
+t.clear({ group: 'perc' });

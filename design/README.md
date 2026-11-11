@@ -1,10 +1,10 @@
 # API design (Phase 0)
 
-Status: proposed, awaiting the owner's review. Nothing in this folder is implemented.
+Status: approved by the owner on 2026-11-11 with the decisions below. Phase 1 implements `api/` except `remote.ts` and `global.ts`, which come later.
 
 This folder is the proposed public API for Phases 1 and 2 of cracked-up (graph core and transport), written as TypeScript declarations, plus example programs that are type-checked against it. The plan it belongs to is in the Euclip repo: `docs/plans/cracked-up-and-euclip-v2.md`.
 
-Implementation starts once the declarations are approved. After Phase 2 a throwaway host prototype is built against the real thing, and one revision of this API is expected then.
+After Phase 2 a throwaway host prototype is built against the real thing, and one revision of this API is expected then.
 
 ## What to read
 
@@ -16,6 +16,7 @@ Start with the examples; they show how the API feels in use.
 | `examples/host-with-tracks.ts` | A host with tracks: one scope per track, controls from metadata, adding an effect by editing graph data, sandboxed-script commands |
 | `examples/offline-test.ts` | Rendering offline and asserting on the audio |
 | `examples/type-safety.ts` | Mistakes the types reject |
+| `examples/custom-macro.ts` | A macro with its own method, called directly and as a command |
 
 Then the declarations:
 
@@ -27,6 +28,7 @@ Then the declarations:
 | `api/nodes.ts` | The node type map, `defineNode`, `defineMacro`, the registry |
 | `api/transport.ts` | Transport, sequences, the event object, durations |
 | `api/global.ts` | The `cracked-up/global` entry point for live coding |
+| `api/remote.ts` | The `cracked-up/remote` entry point: the same scripting API inside a sandbox |
 
 `npm run typecheck` checks everything here.
 
@@ -34,22 +36,28 @@ Then the declarations:
 
 - `__()` returns a chain, and the chain must be continued from that value. Cracked let a later, separate statement (`__.lowpass()`) continue "the previous node"; that relied on global state and is gone.
 - `__('sel')` returns a selection that can be kept and reused.
-- `.attr({ ... })` is `.set({ ... })`. Reading is `.param('name').value`.
+- `.attr({ ... })` is `.set({ ... })`. Reading is `.param('name').value`. Every parameter also has a shortcut setter: `.frequency(200)`, `.gain(0.5)`.
 - `.start()` / `.stop()` on sources are `.trigger()` / `.release()`. Samplers no longer need `stop()` before `start()`.
 - `.connect('#main-output')` is `.to('main')`: chains end at a named bus.
 - `class` takes space-separated names, not comma-separated.
+- `*` does not include the nodes inside macros. Reach those with `polysynth lowpass` or `polysynth *`.
 - `__.loop(...)` and `.bind('step', ...)` are `transport.steps(...)` and `transport.sequence(...)`. The callback receives an event with the exact audio time.
-- Per-node shortcut setters (`.frequency(200)`, `.volume(0.5)`) are not in this draft. See question 3.
 
-## Questions for review
+## Decisions (from the owner, 2026-11-11)
 
-1. **Implicit event time.** Inside a sequence callback, an operation with no `at` uses the event's time. This keeps live code short, but it is a small piece of ambient state on the engine (set while a callback runs, cleared after), and it does not carry across `await` or `setTimeout`. The alternative is to require `at` everywhere. The draft includes the implicit form.
-2. **Ids of nodes created without one.** `scope.build` gives them ids from type and position (`lowpass-1`). Inserting a node ahead of another of the same type renames the later ones, so a rebuild treats them as different nodes. Hosts should assign ids; the question is whether un-id'd nodes should instead be matched by position in their chain.
-3. **Shortcut setters on selections.** Cracked has `.frequency(n)`, `.volume(n)`, `.fadeIn()`. They could be generated from parameter names for typed selections. Left out for now to keep the surface small; easy to add in `cracked-up/global` only.
-4. **`*` excludes macro internals.** In Cracked `*` returns containers and their inner nodes together. Here inner nodes are reached with a descendant selector (`polysynth lowpass`) or `selection.select(...)`.
-5. **Bus routing default.** A bus created in a child scope feeds the same-named bus in the parent if there is one, otherwise the parent's `main`. That makes `to('main')` in a track mean "this track's output", which then flows to the master. Check this matches how track and master should relate in Euclip.
-6. **Sequences belong to the transport, not to a scope.** A scope's `dispose()` cancels sequences that were created through it, which needs sequences to record an owner. The draft's `transport.sequence` has no scope argument yet; the likely shape is `scope.sequence(...)` as a thin wrapper. To settle before Phase 2.
-7. **Commands.** `Command` covers trigger, release, set, ramp and offset. Graph edits from a sandboxed setup script would travel as `GraphData`. Is anything else needed across the sandbox boundary (sequence edits such as `setStep`)?
+1. **Implicit event time: yes.** Inside a sequence callback, an operation with no `at` fires at the event's time. Anywhere else it fires now. Code that continues after an `await` or a timer passes a time explicitly.
+2. **Nodes without an id are matched by position.** On a rebuild, the old and new un-id'd nodes are aligned by type in creation order, so an insertion does not disturb the nodes after it. They can be selected by position: `lowpass:nth(1)`.
+3. **Shortcut setters: yes**, generated from the registered parameter names. A parameter whose name is already a selection method (today only `release`) is set with `.set()`.
+4. **`*` excludes macro internals**, with descendant selectors and `selection.select()` as the way in.
+5. **Buses carry no built-in meaning.** The library has no notion of tracks or a master. The engine has one bus, `main`, feeding the output. Any other bus is created by the caller and feeds `main` until routed elsewhere. `.to('name')` fails clearly if no bus of that name exists in the scope or its parents.
+6. **One transport per engine; sequences belong to it,** not to scopes. Related sequences share a `group` and can be cleared together.
+7. **Commands cover everything.** Every mutating method is implemented by dispatching a command, so the command set is complete by construction. Macros add their own operations as `methods`, reachable through the `call` command. `api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
+
+## Open points
+
+- **Remote sequences need a name.** A callback that lives in a sandbox is addressed by its sequence name, so `RemoteTransport.sequence` requires one.
+- **Round-trip budget.** A sandboxed sequence callback must answer within the transport's look-ahead (default 100 ms). To be measured when the remote entry point is built.
+- **Custom node types in chains.** A type registered at runtime gets a chain method at runtime, but TypeScript only knows about it if `NodeTypeMap` is augmented. Graph data works for any type.
 
 ## Not in this draft
 

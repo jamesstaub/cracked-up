@@ -235,6 +235,8 @@ export interface BuiltNode {
   params: Record<string, AudioParam | ParamHandler>;
   trigger?(options: At & Record<string, unknown>, at: number): void;
   release?(options: ReleaseOptions, at: number): void;
+  /** Extra operations, reachable as `node.call(name, args)` and as `call` commands. */
+  methods?: Record<string, (args: Readonly<Record<string, unknown>>, at: number) => void>;
   dispose?(): void;
 }
 
@@ -272,6 +274,14 @@ export interface MacroDefinition<K extends string = string> {
   build(scope: ScopeApi, init: Readonly<Record<string, unknown>>): void;
   trigger?(scope: ScopeApi, options: At & Record<string, unknown>): void;
   release?(scope: ScopeApi, options: ReleaseOptions): void;
+  /**
+   * The macro's own operations, reachable as `node.call(name, args)` and as `call` commands. Each
+   * receives the instance's private scope and the audio time the call applies at.
+   */
+  methods?: Record<
+    string,
+    (scope: ScopeApi, args: Readonly<Record<string, unknown>>, at: number) => void
+  >;
 }
 
 export declare function defineMacro<K extends string>(

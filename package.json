@@ -1,0 +1,59 @@
+{
+  "name": "cracked-up",
+  "version": "0.0.0",
+  "description": "A TypeScript reimagining of \"I Dropped My Phone The Screen Cracked\" by Bill Orcutt: build and sequence Web Audio graphs.",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://github.com/billorcutt/i_dropped_my_phone_the_screen_cracked",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./nodes": {
+      "types": "./dist/nodes/index.d.ts",
+      "import": "./dist/nodes/index.js"
+    },
+    "./worklets": {
+      "types": "./dist/worklets/index.d.ts",
+      "import": "./dist/worklets/index.js"
+    },
+    "./util": {
+      "types": "./dist/util/index.d.ts",
+      "import": "./dist/util/index.js"
+    },
+    "./global": {
+      "types": "./dist/global/index.d.ts",
+      "import": "./dist/global/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project chromium",
+    "test:all-browsers": "vitest run --project chromium --project firefox --project webkit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@vitest/browser-playwright": "^5.1.0",
+    "eslint": "^9.39.5",
+    "playwright": "^1.65.0",
+    "prettier": "^3.10.0",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}

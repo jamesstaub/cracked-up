@@ -265,6 +265,18 @@ export interface BuiltNode {
   dispose?(): void;
 }
 
+/**
+ * Describes one option that is not a parameter, for documentation and editor help. The library does
+ * not check values against it.
+ */
+export interface OptionInfo {
+  /** The accepted type, written the way a person would read it: `'boolean'`, `"'open' | 'closed'"`. */
+  readonly type: string;
+  /** The default, as text. Omit when the option has none. */
+  readonly default?: string;
+  readonly description: string;
+}
+
 export interface NodeDefinition<K extends string = string> {
   readonly type: K;
   readonly category: NodeCategory;
@@ -274,6 +286,10 @@ export interface NodeDefinition<K extends string = string> {
   readonly shorthand?: string;
   /** Whether `trigger()` and `release()` do anything on this type. */
   readonly triggerable?: boolean;
+  /** Documents the creation-only options `build` reads from `init`. */
+  readonly options?: Readonly<Record<string, OptionInfo>>;
+  /** Documents the options `trigger()` accepts besides `at` and per-voice parameter values. */
+  readonly triggerOptions?: Readonly<Record<string, OptionInfo>>;
   build(context: BuildContext, init: Readonly<Record<string, unknown>>): BuiltNode;
 }
 
@@ -289,6 +305,8 @@ export interface MacroDefinition<K extends string = string> {
   readonly description?: string;
   readonly params: Readonly<Record<string, MacroParam>>;
   readonly shorthand?: string;
+  readonly options?: Readonly<Record<string, OptionInfo>>;
+  readonly triggerOptions?: Readonly<Record<string, OptionInfo>>;
   /**
    * Builds the inner graph. `scope` is private to this instance, so inner ids never collide with
    * another instance's. Connect to `scope.bus('in')` and `scope.bus('out')` to expose the macro's ports.
@@ -315,6 +333,10 @@ export interface NodeTypeInfo {
   readonly triggerable: boolean;
   readonly shorthand: string | null;
   readonly params: readonly import('./params').ParamMeta[];
+  /** Creation-only options, by name. */
+  readonly options: Readonly<Record<string, OptionInfo>>;
+  /** Options `trigger()` accepts, by name. Empty when the type cannot be triggered. */
+  readonly triggerOptions: Readonly<Record<string, OptionInfo>>;
 }
 
 export interface Registry {

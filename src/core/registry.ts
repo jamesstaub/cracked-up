@@ -109,6 +109,8 @@ export class RegistryImpl implements Registry {
         triggerable,
         shorthand: definition.shorthand ?? null,
         params: [...params.values()],
+        options: definition.options ?? {},
+        triggerOptions: definition.triggerOptions ?? {},
       },
     };
     this.entries.set(type, entry);

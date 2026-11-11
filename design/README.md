@@ -43,6 +43,7 @@ As of the graph core (Phase 1):
 | Parameters: base values, scheduled sets, ramps, offsets, modulation, metadata, change events | Done |
 | Node types | `gain`, `panner`, `compressor`, the eight filters, the four oscillators, `sampler` |
 | Buffer store, slices | Done |
+| Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. A test fails if a built-in type, parameter or option lacks a description |
 | Commands | Node, connection and bus commands done. `apply`, `sequence`, `setStep`, `clearSequence`, `transport` and `bypass` report `unsupported` |
 | `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
 | `build()` | Runs the builder; does not reconcile against existing nodes yet (Phase 4) |

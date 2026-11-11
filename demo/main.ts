@@ -261,7 +261,20 @@ function fillReference(target: Engine): void {
 
 // --- Wiring -----------------------------------------------------------------------------------------
 
+/** Code passed in the address as `#code=...`, which is how the docs page opens an example here. */
+function codeFromAddress(): string | null {
+  const match = /^#code=(.*)$/s.exec(location.hash);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1] ?? '');
+  } catch {
+    return null;
+  }
+}
+
 function initialCode(): string {
+  const fromAddress = codeFromAddress();
+  if (fromAddress !== null) return fromAddress;
   try {
     return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CODE;
   } catch {
@@ -292,6 +305,14 @@ reset.addEventListener('click', () => {
   lastTried = null;
   if (engine) run(engine);
   editor.focus();
+});
+
+// Opening another example from the docs while this page is already open only changes the address.
+window.addEventListener('hashchange', () => {
+  const code = codeFromAddress();
+  if (code === null) return;
+  editor.value = code;
+  if (engine) run(engine);
 });
 
 updateStatus();

@@ -1,12 +1,18 @@
 import { defineNode } from '../define';
 
-/** Multiplies the signal by a factor. */
 export const gain = defineNode({
   type: 'gain',
   category: 'utility',
-  description: 'Changes the level of a signal.',
+  description:
+    'Multiplies the signal by a factor: 1 leaves it unchanged, 0.5 halves it, 0 silences it. Also used to set how strongly one signal modulates a parameter.',
   params: {
-    gain: { default: 1, min: 0, max: 2, unit: 'gain' },
+    gain: {
+      default: 1,
+      min: 0,
+      max: 2,
+      unit: 'gain',
+      description: 'The factor. May go beyond the control range, including negative values.',
+    },
   },
   shorthand: 'gain',
   build(context) {
@@ -15,13 +21,18 @@ export const gain = defineNode({
   },
 });
 
-/** Places the signal between the left and right channels. */
 export const panner = defineNode({
   type: 'panner',
   category: 'utility',
-  description: 'Stereo position, from -1 (left) to 1 (right).',
+  description: 'Places the signal between the left and right speakers.',
   params: {
-    pan: { default: 0, min: -1, max: 1, unit: 'pan' },
+    pan: {
+      default: 0,
+      min: -1,
+      max: 1,
+      unit: 'pan',
+      description: '-1 is left, 0 centre, 1 right.',
+    },
   },
   shorthand: 'pan',
   build(context) {
@@ -30,17 +41,48 @@ export const panner = defineNode({
   },
 });
 
-/** Reduces the level of loud passages. */
 export const compressor = defineNode({
   type: 'compressor',
   category: 'dynamics',
-  description: 'Dynamics compressor.',
+  description: 'Turns loud passages down, evening out the level.',
   params: {
-    threshold: { default: -24, min: -100, max: 0, unit: 'db' },
-    knee: { default: 30, min: 0, max: 40, unit: 'db' },
-    ratio: { default: 12, min: 1, max: 20, unit: 'ratio' },
-    attack: { default: 0.003, min: 0, max: 1, unit: 'seconds', curve: 'exp' },
-    release: { default: 0.25, min: 0, max: 1, unit: 'seconds', curve: 'exp' },
+    threshold: {
+      default: -24,
+      min: -100,
+      max: 0,
+      unit: 'db',
+      description: 'Level above which the signal is turned down.',
+    },
+    knee: {
+      default: 30,
+      min: 0,
+      max: 40,
+      unit: 'db',
+      description: 'How gradually compression sets in around the threshold.',
+    },
+    ratio: {
+      default: 12,
+      min: 1,
+      max: 20,
+      unit: 'ratio',
+      description: 'How strongly levels above the threshold are reduced.',
+    },
+    attack: {
+      default: 0.003,
+      min: 0,
+      max: 1,
+      unit: 'seconds',
+      curve: 'exp',
+      description: 'How quickly it reacts to a loud signal.',
+    },
+    release: {
+      default: 0.25,
+      min: 0,
+      max: 1,
+      unit: 'seconds',
+      curve: 'exp',
+      description: 'How quickly it lets go afterwards. Set with set({ release }).',
+    },
   },
   build(context) {
     const node = new DynamicsCompressorNode(context.audio);

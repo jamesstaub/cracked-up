@@ -28,7 +28,9 @@ npm run test:all-browsers         # Chromium, Firefox and WebKit
 npm run demo
 ```
 
-Opens a page with a code box that re-runs on every key up (`demo/index.html`). While the code has an
+Opens a page with a code box that re-runs on every key up (`demo/index.html`), with a docs page
+beside it (`demo/docs.html`). The docs explain the concepts and list every node type; that list is
+generated from the node definitions, and each example opens in the demo. While the code has an
 error, the last working version keeps playing. The transport is not built yet, so the demo supplies a
 temporary `every(seconds, fn)` timer in its place.
 

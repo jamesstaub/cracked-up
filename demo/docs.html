@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cracked-up docs</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="docs">
+    <header>
+      <h1>cracked-up docs</h1>
+      <a class="nav" href="./index.html" target="cracked-up-demo">Live demo</a>
+      <span id="status">Pre-alpha. The node reference below is generated from the library.</span>
+    </header>
+    <div class="docs-layout">
+      <nav id="toc" aria-label="Contents"></nav>
+      <article>
+        <h2 id="basics">The basics</h2>
+        <p>
+          You build sound by chaining <em>nodes</em>. A node makes sound (an oscillator, a sampler)
+          or changes it (a filter, a gain). <code>__()</code> starts a chain; each method adds a
+          node and connects the previous one to it.
+        </p>
+        <pre><code>__().saw(110).lowpass(800).gain(0.3).to('main');</code></pre>
+        <p>
+          That is a sawtooth oscillator at 110 Hz, into a low-pass filter at 800 Hz, into a gain of
+          0.3, into the output. A chain you do not send anywhere makes no sound.
+        </p>
+        <p>
+          Give a node an <code>id</code> when you want to reach it later. Pass options as an object;
+          a bare value sets the node's main parameter, so <code>lowpass(800)</code> is short for
+          <code>lowpass({ frequency: 800 })</code>.
+        </p>
+        <pre><code>__().saw({ id: 'bass', frequency: 55 })
+  .lowpass({ id: 'filter', frequency: 400, q: 8 })
+  .gain(0.3)
+  .to('main');</code></pre>
+
+        <h2 id="output">Where sound goes: <code>main</code></h2>
+        <p>
+          <code>main</code> is the engine's output. It is a <em>bus</em>: a named point where any
+          number of chains are mixed together. The engine creates <code>main</code> for you and
+          connects it to your speakers. It is the only bus that exists until you make another.
+        </p>
+        <p>
+          In the original Cracked library every chain ended with its own <code>.dac()</code> node.
+          Here every chain ends at the one shared <code>main</code>, which gives a single place to
+          set the overall level, and later to meter or record everything.
+        </p>
+        <pre><code>__().sine(220).gain(0.2).to('main');
+engine.bus('main').gain.set(0.5); // overall level</code></pre>
+        <p>
+          You can make more buses to group sounds, for example a shared effect. A new bus feeds
+          <code>main</code> until you route it somewhere else.
+        </p>
+        <pre><code>__.bus('drums').gain.set(0.8);
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
+every(0.25, () => __('sampler').trigger());</code></pre>
+        <p>
+          Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
+        </p>
+
+        <h2 id="connecting"><code>to</code>, <code>connect</code> and <code>modulate</code></h2>
+        <p>
+          All three make a connection from the end of a chain. They differ in what they connect to.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Connects to</th>
+                <th>A string means</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>.to('main')</code></td>
+                <td>A bus</td>
+                <td>The bus's name</td>
+              </tr>
+              <tr>
+                <td><code>.connect('#filter')</code></td>
+                <td>The input of one or more existing nodes</td>
+                <td>A selector that finds the nodes</td>
+              </tr>
+              <tr>
+                <td><code>.modulate('#filter', 'frequency')</code></td>
+                <td>A parameter of existing nodes, so the signal moves that parameter</td>
+                <td>A selector that finds the nodes</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          So <code>.to('main')</code> and <code>.connect(engine.bus('main'))</code> do the same
+          thing. <code>to</code> exists because ending a chain at a bus is the common case, and
+          because a string there is a bus name, while a string given to <code>connect</code> is a
+          selector.
+        </p>
+        <pre><code>// Two oscillators into one filter.
+__().lowpass({ id: 'filter', frequency: 600 }).gain(0.2).to('main');
+__().saw(110).connect('#filter');
+__().square(165).connect('#filter');
+
+// A slow sine moves the filter's cutoff by +/- 300 Hz.
+__().sine(0.5).gain(300).modulate('#filter', 'frequency');</code></pre>
+        <p>
+          When something modulates a parameter, its signal is <em>added</em> to the parameter's own
+          value. An oscillator swings between -1 and 1, so a <code>gain</code> after it sets how far
+          the parameter moves.
+        </p>
+
+        <h2 id="selecting">Selecting nodes</h2>
+        <p>
+          <code>__('selector')</code> finds nodes you have already made and returns them as a
+          <em>selection</em>. Whatever you call on a selection applies to every node in it.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Selector</th>
+                <th>Finds</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>sampler</code></td>
+                <td>Every node of that type</td>
+              </tr>
+              <tr>
+                <td><code>#kick</code></td>
+                <td>The node with that id</td>
+              </tr>
+              <tr>
+                <td><code>.drums</code>, <code>.drums.loud</code></td>
+                <td>Nodes with that class, or with all of several classes</td>
+              </tr>
+              <tr>
+                <td><code>[role=send]</code>, <code>[solo]</code></td>
+                <td>Nodes with a tag of that value, or with that tag at all</td>
+              </tr>
+              <tr>
+                <td><code>sine, saw</code></td>
+                <td>Either</td>
+              </tr>
+              <tr>
+                <td><code>sampler:not(.muted)</code></td>
+                <td>Samplers without the class</td>
+              </tr>
+              <tr>
+                <td><code>gain:nth(1)</code></td>
+                <td>The second gain, counting from 0 in the order they were made</td>
+              </tr>
+              <tr>
+                <td><code>*</code></td>
+                <td>Everything</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick', class: 'drums' }).to('main');
+__().sampler({ id: 'hat', buffer: 'hat', class: 'drums' }).to('main');
+
+let n = 0;
+every(0.25, () => {
+  __(n++ % 2 ? '#hat' : '#kick').trigger();
+});</code></pre>
+        <p>
+          Classes and tags are set when a node is made:
+          <code>{ class: 'drums loud', tags: { role: 'send' } }</code>.
+        </p>
+
+        <h2 id="parameters">Changing parameters</h2>
+        <p>
+          Every node has parameters, listed in the reference below. Each one has a
+          <em>base value</em>: the value you set, and the one a slider would show.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Call</th>
+                <th>Does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>.set({ frequency: 800, q: 4 })</code></td>
+                <td>Sets base values</td>
+              </tr>
+              <tr>
+                <td><code>.frequency(800)</code></td>
+                <td>The same, for one parameter. There is a setter for every parameter name</td>
+              </tr>
+              <tr>
+                <td><code>.ramp('frequency', 2000, { duration: 2 })</code></td>
+                <td>Glides the base value to a target over a number of seconds</td>
+              </tr>
+              <tr>
+                <td><code>.offset('frequency', 500, { duration: 0.1 })</code></td>
+                <td>Adds an amount on top of the base value for a while, then returns to it</td>
+              </tr>
+              <tr>
+                <td><code>.param('frequency').value</code></td>
+                <td>Reads the base value</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>__().saw(110).lowpass({ id: 'filter', frequency: 200, q: 6 }).gain(0.2).to('main');
+__('#filter').ramp('frequency', 3000, { duration: 4 });</code></pre>
+        <p>
+          The one exception to the setter rule is a parameter called <code>release</code> (on the
+          compressor): <code>.release()</code> already means "release the note", so that parameter
+          is set with <code>.set({ release: 0.2 })</code>.
+        </p>
+        <p>
+          The minimum and maximum in the reference are the range a control would cover. They are not
+          limits: you can set a gain of 300 when it is scaling a modulation.
+        </p>
+
+        <h2 id="triggering">Starting and stopping sounds</h2>
+        <p>
+          <code>.trigger()</code> starts a sound and <code>.release()</code> ends it. What that
+          means depends on the node.
+        </p>
+        <p>
+          A <strong>sampler</strong> plays its buffer once per trigger. Each trigger is a new voice,
+          so you never need to stop or rewind it before the next hit. Options given to
+          <code>trigger</code> apply to that hit only.
+        </p>
+        <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
+let n = 0;
+every(0.125, () => {
+  __('#hat').trigger({ speed: 1 + (n++ % 4) * 0.2, velocity: 0.6 });
+});</code></pre>
+        <p>
+          An <strong>oscillator</strong> runs from the moment it is made and is heard straight away,
+          as a drone. <code>release()</code> closes its gate and <code>trigger()</code> opens it. To
+          make one that is silent until triggered, create it with <code>gate: 'closed'</code>.
+        </p>
+        <pre><code>__().square({ id: 'blip', frequency: 660, gate: 'closed' }).gain(0.15).to('main');
+every(0.5, () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
+
+        <h2 id="buffers">Samplers and where their audio comes from</h2>
+        <p>
+          A sampler plays a <em>buffer</em>: a piece of recorded sound held in memory. The engine
+          keeps a store of named buffers, <code>engine.buffers</code>, so the same sound is decoded
+          once and shared by every sampler that uses it.
+        </p>
+        <p>A sampler's <code>buffer</code> option accepts three things:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>You pass</th>
+                <th>What happens</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A name already in the store, such as <code>'kick'</code></td>
+                <td>That buffer is used</td>
+              </tr>
+              <tr>
+                <td>Any other string</td>
+                <td>
+                  It is treated as a URL: the file is fetched, decoded, and stored under that URL.
+                  The sampler is silent until loading finishes. The server must allow requests from
+                  this page.
+                </td>
+              </tr>
+              <tr>
+                <td>An <code>AudioBuffer</code> you made or decoded yourself</td>
+                <td>It is used directly</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          In the live demo, <code>'kick'</code>, <code>'snare'</code> and <code>'hat'</code> are not
+          files. The demo page generates them with a few lines of maths when audio starts and adds
+          them to the store by name:
+        </p>
+        <pre data-static><code>engine.buffers.add('kick', audioBuffer);</code></pre>
+        <p>
+          A buffer can be cut into <em>slices</em> by giving it boundaries in seconds. A trigger can
+          then play one slice by number.
+        </p>
+        <pre><code>const kit = engine.buffers.get('snare');
+kit.slices = [0, 0.03, 0.1, 0.25];
+__().sampler({ id: 's', buffer: 'snare' }).to('main');
+let n = 0;
+every(0.2, () => __('#s').trigger({ slice: n++ }));</code></pre>
+
+        <h2 id="time">Time</h2>
+        <p>
+          Most calls take an optional <code>at</code>: the moment the change should happen, in
+          seconds on the audio clock (<code>engine.context.currentTime</code>). Leave it out and the
+          change happens now. Scheduled changes land on the exact sample.
+        </p>
+        <pre><code>const now = engine.context.currentTime;
+__().sine({ id: 'tone', frequency: 220 }).gain(0.2).to('main');
+__('#tone').set({ frequency: 330 }, { at: now + 1 });
+__('#tone').set({ frequency: 440 }, { at: now + 2 });</code></pre>
+        <div class="note">
+          <p>
+            Sequencing (patterns, tempo, polyrhythms) belongs to the transport, which is not built
+            yet. Until then the demo provides <code>every(seconds, fn)</code>, a plain timer whose
+            timing is loose. It is not part of the library.
+          </p>
+        </div>
+
+        <h2 id="demo-names">Names available in the live demo</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>What it is</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>__</code></td>
+                <td>
+                  Starts a chain (<code>__()</code>) or selects nodes (<code>__('selector')</code>).
+                  Also
+                  <code>__.bus('name')</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>engine</code></td>
+                <td>The engine itself: <code>engine.buffers</code>, <code>engine.context</code></td>
+              </tr>
+              <tr>
+                <td><code>every(seconds, fn)</code></td>
+                <td>Temporary timer, provided by the demo page only</td>
+              </tr>
+              <tr>
+                <td><code>euclid(hits, steps, rotate)</code></td>
+                <td>An evenly spread rhythm as an array of 0s and 1s</td>
+              </tr>
+              <tr>
+                <td><code>pitchToFreq</code>, <code>freqToPitch</code></td>
+                <td>Convert between MIDI note numbers and Hz</td>
+              </tr>
+              <tr>
+                <td><code>scales(name)</code>, <code>chords(name)</code></td>
+                <td>Lists of semitone steps, such as <code>scales('minor')</code></td>
+              </tr>
+              <tr>
+                <td><code>dbToGain</code></td>
+                <td>Converts decibels to a gain factor</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Each time the demo re-runs your code it starts from nothing: the nodes and timers from the
+          previous run are removed once the new code has run without an error.
+        </p>
+
+        <h2 id="common-options">Options every node accepts</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>id</code></td>
+                <td>
+                  A name for the node, unique among the nodes made together. Select it with
+                  <code>#id</code>. Nodes without one get a generated id such as <code>gain-0</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>class</code></td>
+                <td>One or more class names separated by spaces. Select with <code>.name</code></td>
+              </tr>
+              <tr>
+                <td><code>tags</code></td>
+                <td>
+                  An object of extra labels, such as <code>{ role: 'send' }</code>. Select with
+                  <code>[role=send]</code>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="reference">Node reference</h2>
+        <p>
+          This section is generated from the library's own node definitions when the page loads, so
+          it always matches the code.
+        </p>
+        <div id="reference-body"></div>
+      </article>
+    </div>
+    <script type="module" src="./docs.ts"></script>
+  </body>
+</html>

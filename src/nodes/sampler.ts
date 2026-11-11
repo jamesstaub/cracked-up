@@ -32,21 +32,66 @@ interface Voice {
 export const sampler = defineNode({
   type: 'sampler',
   category: 'source',
-  description: 'Plays an audio buffer, or a slice of one, each time it is triggered.',
+  description:
+    'Plays a recorded sound each time it is triggered. Every trigger starts a new voice, so nothing needs stopping or rewinding between hits. Silent until it has a buffer.',
+  options: {
+    buffer: {
+      type: 'string | AudioBuffer | BufferRef',
+      description:
+        'The sound to play. A string is looked up in engine.buffers by name; if nothing has that name it is loaded as a URL.',
+    },
+    choke: {
+      type: 'boolean',
+      default: 'true',
+      description:
+        'A new trigger cuts off voices that are still sounding. Turn off to let hits overlap.',
+    },
+    voices: {
+      type: 'number',
+      default: '16',
+      description:
+        'Most voices sounding at once when choke is off. The oldest is cut to make room.',
+    },
+  },
+  triggerOptions: {
+    slice: {
+      type: 'number',
+      description:
+        "Plays one slice of the buffer by index, using the buffer's slice boundaries. Wraps past the last slice.",
+    },
+    duration: { type: 'seconds', description: 'Stops the voice after this long.' },
+    velocity: { type: 'number', default: '1', description: 'Level of this voice.' },
+  },
   params: {
-    speed: { default: 1, min: 0.0625, max: 8, unit: 'ratio', curve: 'log', rate: 'control' },
-    start: { default: 0, min: 0, max: 60, unit: 'seconds', rate: 'control' },
+    speed: {
+      default: 1,
+      min: 0.0625,
+      max: 8,
+      unit: 'ratio',
+      curve: 'log',
+      rate: 'control',
+      description:
+        'Playback rate. 2 is twice as fast and an octave up; 0.5 is half speed, an octave down.',
+    },
+    start: {
+      default: 0,
+      min: 0,
+      max: 60,
+      unit: 'seconds',
+      rate: 'control',
+      description: 'Where in the buffer playback begins.',
+    },
     end: {
       default: 0,
       min: 0,
       max: 60,
       unit: 'seconds',
       rate: 'control',
-      description: 'End of the played region. At or before start means the end of the buffer.',
+      description: 'Where playback stops. At or before start means the end of the buffer.',
     },
-    loop: { default: false },
-    reverse: { default: false },
-    gain: { default: 1, min: 0, max: 2, unit: 'gain' },
+    loop: { default: false, description: 'Repeats the region until released.' },
+    reverse: { default: false, description: 'Plays the region backwards.' },
+    gain: { default: 1, min: 0, max: 2, unit: 'gain', description: 'Output level.' },
   },
   triggerable: true,
   build(context, init) {

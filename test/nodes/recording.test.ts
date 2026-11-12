@@ -402,6 +402,42 @@ describe('capturing any part of a graph', () => {
     expect(mix[9600]).toBeCloseTo(drums[9600]! + synth[9600]!, 5);
   });
 
+  it('a chain continued from an outer bus belongs to the scope that made it', async () => {
+    const engine = await offlineEngine(0.3);
+    engine.buffers.add('ones', ones(0.3));
+    const scope = engine.scope('script');
+    const program = (tap: boolean) =>
+      scope.build((__) => {
+        __().sampler({ id: 'dc', buffer: 'ones' }).gain(0.5).to('main');
+        const recorder = tap ? __.bus('main').chain() : __();
+        recorder.recorder({ id: 'tape', channels: 1 });
+      });
+    await program(true);
+    // The recorder is the script's own node: it can select it, and the engine's top scope has nothing.
+    expect(scope.select('#tape')).toHaveLength(1);
+    expect(engine.root.select('recorder')).toHaveLength(1);
+    expect(engine.root.describe().nodes).toHaveLength(0);
+    const tape = scope.select('#tape').first()!;
+    expect(tape.inputs).toHaveLength(1);
+
+    // Re-running keeps it; a version that no longer taps the bus disconnects it; then it comes back.
+    await program(true);
+    expect(scope.select('#tape').first()).toBe(tape);
+    expect(tape.inputs).toHaveLength(1);
+    await program(false);
+    expect(tape.inputs).toHaveLength(0);
+    await program(true);
+
+    scope.select('#dc').trigger({ at: 0 });
+    scope.select('#tape').trigger({ at: 0.1, duration: 0.1 });
+    await engine.render();
+    const take = await engine.buffers.get('tape')!.ready;
+    expect(take.getChannelData(0)[100]).toBeCloseTo(0.5, 6);
+
+    scope.dispose();
+    expect(tape.disposed).toBe(true);
+  });
+
   it('re-routing a bus leaves the chain that continues from it connected', async () => {
     const engine = await offlineEngine(0.2);
     engine.buffers.add('ones', ones(0.2));

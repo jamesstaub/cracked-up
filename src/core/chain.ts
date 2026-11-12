@@ -1,5 +1,5 @@
 import type { Bus, Node, Selection } from '../api';
-import type { BusImpl } from './bus';
+import { busOf } from './bus';
 import type { EngineImpl } from './engine';
 import { CrackedUpError } from './errors';
 import { NodeImpl, connect } from './node';
@@ -51,10 +51,7 @@ export class ChainImpl {
   to(bus: string | Bus): ChainImpl {
     this.requireTail('to()');
     for (const node of this.tailNodes) {
-      connect(
-        node,
-        typeof bus === 'string' ? node.scope.resolveBus(bus) : (bus as unknown as BusImpl),
-      );
+      connect(node, typeof bus === 'string' ? node.scope.resolveBus(bus) : requireBus(bus));
     }
     return this;
   }
@@ -95,4 +92,10 @@ export class ChainImpl {
       );
     }
   }
+}
+
+function requireBus(value: unknown) {
+  const bus = busOf(value);
+  if (!bus) throw new CrackedUpError('missing-target', 'to() needs a bus or the name of one.');
+  return bus;
 }

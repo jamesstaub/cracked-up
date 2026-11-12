@@ -496,22 +496,54 @@ __.transport.every('4 bars', () =&gt; {
         <p>
           Recorders and loopers take whatever is connected to them, not just a microphone. The usual
           way to choose what gets captured is a bus: send any number of chains to it, and continue
-          from the bus into the recorder or looper.
+          from the bus into the recorder or looper. Nothing is captured until you
+          <code>trigger()</code> the recorder or looper, so a complete example needs three things:
+          the routing, something playing, and a trigger.
         </p>
-        <pre
-          data-static
-        ><code>// Listen in. The bus keeps feeding the output; the recorder hears what passes.
-__.bus('drums').chain().recorder({ id: 'tape', into: 'drum-bar' });
+        <pre><code>// ROUTING. Anything sent to 'loop-in' can be looped. to(null) stops the bus feeding the
+// output by itself, so its one way out is through the looper. Without it you would hear
+// everything twice.
+__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '1 bar' }).to('main');
 
-// Sit in the path. to(null) stops the bus feeding the output by itself, so its one way
-// out is through the looper. Without it you would hear the input twice.
-__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '2 bars' }).to('main');
+// SOMETHING PLAYING. Two different chains feed the bus: a synth, and a sampler through a filter.
+__().polysynth({ id: 'keys', release: 0.2 }).gain(0.5).to('loop-in');
+__().sampler({ id: 'hat', buffer: 'hat' }).highpass(5000).gain(0.4).to('loop-in');
 
-__().saw({ id: 'bass' }).gain(0.2).to('loop-in');
-__().polysynth({ id: 'keys' }).to('loop-in');
+// They are only played in the first bar of every four.
+__.transport.sequence('keys', { steps: [60, 0, 67, 0, 63, 0, 70, 0], step: '1/8' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 === 0) __('#keys').trigger({ pitch: ev.value, duration: 0.15 });
+});
+__.transport.sequence('hats', { steps: 'x.xx', step: '1/8' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 === 0) __('#hat').trigger();
+});
 
-// The whole mix.
-__.bus('main').chain().recorder({ id: 'all', into: 'mix' });</code></pre>
+// A TRIGGER. On that first bar, empty the looper and record. For the other three bars
+// nothing is being played: what you hear is the loop.
+__.transport.every('4 bars', () =&gt; __('#loop').call('clear').trigger());</code></pre>
+        <p>
+          A recorder is routed the same way. Chained from a bus without <code>to(null)</code> it
+          listens in while the bus plays on as normal, and from <code>main</code> it hears
+          everything:
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('main');
+__.transport.sequence('kick', { steps: 'x..x..x.', step: '1/8' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 &lt; 2) __('#kick').trigger();
+});
+__.transport.sequence('snare', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 &lt; 2) __('#snare').trigger();
+});
+
+// A recorder on the whole mix, and a sampler that plays what it recorded.
+__.bus('main').chain().recorder({ id: 'tape', into: 'mix-bar' });
+__().sampler({ id: 'tape-play', buffer: 'mix-bar', speed: 0.5 }).to('main');
+
+// The drums play for two bars in every four. Record the second of them, exactly one bar...
+__.transport.every('4 bars', () =&gt; {
+  __('#tape').trigger({ duration: __.transport.seconds('1 bar') });
+}, { offset: '1 bar' });
+// ...and play it at half speed over the two silent bars.
+__.transport.every('4 bars', () =&gt; __('#tape-play').trigger(), { offset: '2 bars' });</code></pre>
         <p>
           Recordings and loops stay in time if you start them on a bar line and measure them in
           bars: start from a transport callback (<code>every('4 bars', ...)</code>), give a recorder

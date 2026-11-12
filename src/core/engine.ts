@@ -81,7 +81,7 @@ export class EngineImpl {
 
     this.transportImpl = new TransportImpl(this);
     this.root = new ScopeImpl(this, 'root', null);
-    this.mainBus = this.root.bus('main');
+    this.mainBus = this.root.busImpl('main');
 
     if (!this.offline) {
       this.context.addEventListener('statechange', () => {
@@ -239,7 +239,7 @@ export class EngineImpl {
   }
 
   bus(name: string): BusImpl {
-    return this.root.bus(name);
+    return this.root.busImpl(name);
   }
 
   async resume(): Promise<void> {

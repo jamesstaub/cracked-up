@@ -62,8 +62,8 @@ export class BusImpl {
       this.unroute();
       return this;
     }
-    const bus =
-      typeof target === 'string' ? this.scope.resolveBus(target) : (target as unknown as BusImpl);
+    const bus = typeof target === 'string' ? this.scope.resolveBus(target) : busOf(target);
+    if (!bus) throw new CrackedUpError('missing-target', 'A bus can only be sent to a bus.');
     if (bus === this) {
       throw new CrackedUpError('missing-target', `Bus "${this.name}" cannot be routed to itself.`);
     }
@@ -101,4 +101,52 @@ export class BusImpl {
     this.unroute();
     this.node.dispose();
   }
+}
+
+/**
+ * A bus as seen from a scope other than its own, which is what `scope.bus('main')` gives a child
+ * scope. It is the same bus; the difference is that a chain continued from it is built in the scope
+ * that asked, so those nodes belong to, and are found and rebuilt with, that scope.
+ */
+export class BusView {
+  constructor(
+    readonly bus: BusImpl,
+    private from: ScopeImpl,
+  ) {}
+
+  get name(): string {
+    return this.bus.name;
+  }
+
+  get scope(): ScopeImpl {
+    return this.bus.scope;
+  }
+
+  get gain(): Param<number> {
+    return this.bus.gain;
+  }
+
+  get input(): AudioNode {
+    return this.bus.input;
+  }
+
+  get output(): AudioNode {
+    return this.bus.output;
+  }
+
+  to(target: string | Bus | null): this {
+    this.bus.to(target);
+    return this;
+  }
+
+  chain(): ChainImpl {
+    return this.from.engine.createChain(this.from, [this.bus.node], []);
+  }
+}
+
+/** The bus behind anything a caller may pass as a bus, or null if it is not one. */
+export function busOf(value: unknown): BusImpl | null {
+  if (value instanceof BusImpl) return value;
+  if (value instanceof BusView) return value.bus;
+  return null;
 }

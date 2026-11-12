@@ -129,8 +129,9 @@ describe('buses', () => {
     const engine = await offlineEngine(0.2);
     const a = engine.scope('a');
     // From any scope, `main` is the engine's output bus.
-    expect(a.bus('main')).toBe(engine.bus('main'));
-    expect(a.$.bus('main')).toBe(engine.bus('main'));
+    expect(a.bus('main').input).toBe(engine.bus('main').input);
+    expect(a.$.bus('main').gain).toBe(engine.bus('main').gain);
+    expect(a.bus('main').scope).toBe(engine.root);
 
     // A name nobody has yet is created in the scope that asked, so sibling scopes do not see it.
     const own = a.bus('send');

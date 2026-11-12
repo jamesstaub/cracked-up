@@ -12,7 +12,7 @@ import type {
 } from '../api';
 import { matchesCompound, select } from '../selector';
 import type { SelectableTree } from '../selector';
-import { BusImpl } from './bus';
+import { busOf } from './bus';
 import type { ChainImpl } from './chain';
 import type { EngineImpl } from './engine';
 import { CrackedUpError } from './errors';
@@ -160,10 +160,11 @@ export class SelectionImpl implements Iterable<NodeImpl> {
 
   to(bus: string | Bus): this {
     for (const node of this.nodes) {
-      connect(
-        node,
-        typeof bus === 'string' ? node.scope.resolveBus(bus) : (bus as unknown as BusImpl),
-      );
+      const target = typeof bus === 'string' ? node.scope.resolveBus(bus) : busOf(bus);
+      if (!target) {
+        throw new CrackedUpError('missing-target', 'to() needs a bus or the name of one.');
+      }
+      connect(node, target);
     }
     return this;
   }
@@ -195,9 +196,9 @@ export function resolveEnds(scope: ScopeImpl, target: ConnectTarget): readonly E
     return nodes;
   }
   if (target instanceof SelectionImpl) return target.nodes;
-  if (target instanceof NodeImpl || target instanceof BusImpl || target instanceof ParamImpl) {
-    return [target];
-  }
+  if (target instanceof NodeImpl || target instanceof ParamImpl) return [target];
+  const bus = busOf(target);
+  if (bus) return [bus];
   throw new CrackedUpError(
     'missing-target',
     'connect() needs a selector, selection, node, bus or parameter.',

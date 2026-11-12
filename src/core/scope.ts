@@ -15,7 +15,7 @@ import type {
 } from '../api';
 import { SelectorError, select } from '../selector';
 import type { SelectableTree } from '../selector';
-import { BusImpl } from './bus';
+import { BusImpl, BusView } from './bus';
 import type { ChainImpl } from './chain';
 import { execute } from './commands';
 import type { EngineImpl } from './engine';
@@ -345,6 +345,11 @@ export class ScopeImpl {
     else this.building.claimedEdges.add(edge);
   }
 
+  /** Whether a connection comes into this scope from a bus of an outer one (a chain continued from it). */
+  private fromOuterBus(edge: EdgeImpl): boolean {
+    return edge.from.scope !== this && edge.to instanceof NodeImpl && edge.to.scope === this;
+  }
+
   /**
    * The private scope of a macro instance. It has no parent, so nothing inside can reach the buses or
    * nodes outside, and it is not listed among this scope's children.
@@ -384,7 +389,13 @@ export class ScopeImpl {
 
   // --- Buses --------------------------------------------------------------------------------------
 
-  bus(name: string): BusImpl {
+  bus(name: string): BusImpl | BusView {
+    const bus = this.busImpl(name);
+    return bus.scope === this ? bus : new BusView(bus, this);
+  }
+
+  /** The bus itself, whichever scope it belongs to. */
+  busImpl(name: string): BusImpl {
     this.assertLive();
     let bus = this.lineage()
       .map((scope) => scope.buses.get(name))
@@ -639,6 +650,12 @@ export class ScopeImpl {
       newBuses: [],
       routed: new Set(),
     };
+    if (options.full) {
+      // Chains continued from an outer scope's bus are this scope's to keep or drop too.
+      for (const node of before) {
+        for (const edge of node.inputs) if (this.fromOuterBus(edge)) build.preEdges.add(edge);
+      }
+    }
     const sources = [...before, ...[...this.buses.values()].map((bus) => bus.node)];
     for (const node of sources) {
       for (const edge of node.outputs) {

@@ -119,7 +119,7 @@ export function execute(scope: ScopeImpl, command: Command): void {
       return;
     }
     case 'bus': {
-      const bus = scope.bus(command.name);
+      const bus = scope.busImpl(command.name);
       // A command cannot reach outside its scope: an outer bus can be sent to, but not changed.
       if (bus.scope !== scope && (command.to !== undefined || command.gain !== undefined)) {
         throw new CrackedUpError(

@@ -127,8 +127,8 @@ export class NodeImpl {
   ): BuiltNode {
     const inner = this.scope.createInnerScope(this);
     this.innerScope = inner;
-    const input = inner.bus('in');
-    const output = inner.bus('out');
+    const input = inner.busImpl('in');
+    const output = inner.busImpl('out');
 
     const context = (time: number): MacroContext => ({
       id: this.id,
@@ -423,6 +423,7 @@ export function connect(from: NodeImpl, to: EdgeEnd): void {
   const existing = from.outputs.find((edge) => edge.to === to);
   if (existing) {
     from.scope.noteEdge(existing, false);
+    if (to instanceof NodeImpl && to.scope !== from.scope) to.scope.noteEdge(existing, false);
     return;
   }
   if (!from.output) {
@@ -460,6 +461,7 @@ export function connect(from: NodeImpl, to: EdgeEnd): void {
   }
   from.outputs.push(edge);
   from.scope.noteEdge(edge, true);
+  if (to instanceof NodeImpl && to.scope !== from.scope) to.scope.noteEdge(edge, true);
 }
 
 export function disconnectEdge(edge: EdgeImpl): void {

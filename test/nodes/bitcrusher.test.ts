@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createEngine } from '../../src';
 import type { Engine } from '../../src';
-import { bitcrusher } from '../../src/nodes/bitcrusher';
 import { SAMPLE_RATE, makeBuffer } from '../core/setup';
 
-// Registered here until it joins the built-in list.
 async function engine(seconds: number): Promise<Engine> {
   const context = new OfflineAudioContext(1, Math.round(SAMPLE_RATE * seconds), SAMPLE_RATE);
-  const created = await createEngine({ context });
-  if (!created.registry.has('bitcrusher')) created.registry.register(bitcrusher);
-  return created;
+  return createEngine({ context });
 }
 
 type WithCrusher = { bitcrusher(init?: object): { to(bus: string): unknown } };

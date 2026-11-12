@@ -7,9 +7,10 @@ cracked-up is a ground-up TypeScript reimagining of Bill Orcutt's
 ## Status
 
 Pre-alpha. Implemented and tested: the graph core (engine, scopes, selections, chains, parameters,
-buses), the transport (sequences, polyrhythm, swing, tempo changes, offline rendering), a sampler and a
-set of native and effect nodes. Not yet: macros and synths, graph reconciliation, sandboxed scripts,
-recording and MIDI. `design/README.md` has the API decisions and a table of what works today.
+buses), the transport (sequences, polyrhythm, swing, tempo changes, offline rendering), macros, and 29
+node types: sources, filters, effects, envelopes, modulators and two synths. Not yet: graph
+reconciliation, sandboxed scripts, recording and MIDI. `design/README.md` has the API decisions and a
+table of what works today.
 
 ## Development
 

@@ -1,4 +1,4 @@
-import type { NodeDefinition } from '../api';
+import type { MacroDefinition, NodeDefinition } from '../api';
 import { compressor, gain, panner } from './basic';
 import {
   allpass,
@@ -10,6 +10,7 @@ import {
   notch,
   peaking,
 } from './filters';
+import { bitcrusher } from './bitcrusher';
 import { comb, delay } from './delays';
 import { overdrive, ring, waveshaper } from './distortion';
 import { adsr } from './envelopes';
@@ -18,9 +19,10 @@ import { noise } from './noise';
 import { saw, sine, square, triangle } from './oscillators';
 import { reverb } from './reverb';
 import { sampler } from './sampler';
+import { monosynth, polysynth } from './synths';
 
 /** The node types every engine starts with. */
-export const builtinNodes: readonly NodeDefinition[] = [
+export const builtinNodes: readonly (NodeDefinition | MacroDefinition)[] = [
   gain,
   panner,
   compressor,
@@ -47,4 +49,7 @@ export const builtinNodes: readonly NodeDefinition[] = [
   overdrive,
   waveshaper,
   ring,
+  bitcrusher,
+  monosynth,
+  polysynth,
 ];

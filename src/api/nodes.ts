@@ -79,6 +79,23 @@ export interface EchoParams {
   mix: number;
 }
 
+export type SynthShape = 'sine' | 'saw' | 'square' | 'triangle';
+
+/** The parameters `monosynth` and `polysynth` share. */
+export interface SynthParams extends EnvelopeParams {
+  /** Hz: lowpass frequency. */
+  cutoff: number;
+  /** Emphasis at the cutoff (the filter's q). */
+  resonance: number;
+  /** Cents. */
+  detune: number;
+  /** Hz: speed of the pitch wobble. */
+  lfoRate: number;
+  /** Hz of pitch movement each side. */
+  lfoDepth: number;
+  gain: number;
+}
+
 export interface OscillatorInit {
   /**
    * Oscillators run from creation. With the gate open (the default) they are heard at once, as a drone;
@@ -177,22 +194,8 @@ export interface NodeTypeMap {
     attack: number;
     release: number;
   }>;
-  polysynth: NodeShape<
-    {
-      cutoff: number;
-      resonance: number;
-      attack: number;
-      decay: number;
-      sustain: number;
-      release: number;
-      lfoRate: number;
-      lfoDepth: number;
-      gain: number;
-    },
-    { shape?: 'sine' | 'saw' | 'square' | 'triangle'; voices?: number },
-    never,
-    NoteTrigger
-  >;
+  monosynth: NodeShape<SynthParams, { shape?: SynthShape }, never, NoteTrigger>;
+  polysynth: NodeShape<SynthParams, { shape?: SynthShape; voices?: number }, never, NoteTrigger>;
 }
 
 export type NodeType = keyof NodeTypeMap & string;

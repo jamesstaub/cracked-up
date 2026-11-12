@@ -45,6 +45,13 @@ export function exampleFor(info: NodeTypeInfo): string {
         `__().saw(110).${type}({ id: 'env' }).gain(0.2).to('main');\n` +
         `t.every('1/4', () => __('#env').trigger({ duration: 0.1 }));`
       );
+    case 'synth':
+      // Plays a short arpeggio from a sequence.
+      return (
+        `__().${type}({ id: 'synth', shape: 'saw', cutoff: 1500, release: 0.3 }).to('main');\n` +
+        `t.sequence({ steps: 8, step: '1/8' }, (ev) =>\n` +
+        `  __('#synth').trigger({ pitch: [48, 55, 60, 64][ev.index % 4], duration: 0.15 }));`
+      );
     case 'delay':
     case 'distortion':
       // Easier to hear on a short sound than on a drone.

@@ -49,7 +49,7 @@ Then the declarations:
 | Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. Tests fail if a built-in type, parameter or option lacks a description, or if a type's generated example does not run |
 | `apply()`, `bypass`, `cracked-up/remote`, external clock sources | Not yet. They throw or report `unsupported` |
 
-Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. `bitcrusher` and `polysynth` are in the type map ahead of their implementation; calling those chain methods today fails at runtime.
+Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. Every type in the type map is implemented.
 
 ## Differences from Cracked that a script author will notice
 

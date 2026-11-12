@@ -1,6 +1,6 @@
 # API design (Phase 0)
 
-Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. Phase 1 implements them except `remote.ts`; the global entry point (`design/global-entry.ts`) also comes later.
+Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. `remote.ts` is declared there but not implemented yet.
 
 This folder is the proposed public API for Phases 1 and 2 of cracked-up (graph core and transport), written as TypeScript declarations, plus example programs that are type-checked against it. The plan it belongs to is in the Euclip repo: `docs/plans/cracked-up-and-euclip-v2.md`.
 
@@ -27,29 +27,28 @@ Then the declarations:
 | `src/api/params.ts` | `Param`: base value, ramps, temporary offsets, modulators, metadata |
 | `src/api/nodes.ts` | The node type map, `defineNode`, `defineMacro`, the registry |
 | `src/api/transport.ts` | Transport, sequences, the event object, durations |
-| `design/global-entry.ts` | The `cracked-up/global` entry point for live coding |
+| `src/global/index.ts` | The `cracked-up/global` entry point for live coding |
 | `src/api/remote.ts` | The `cracked-up/remote` entry point: the same scripting API inside a sandbox |
 
 `npm run typecheck` checks everything here.
 
 ## What is implemented
 
-As of the graph core (Phase 1):
-
 | Area | State |
 |---|---|
 | Engine, scopes, buses, selections, chains, shortcut setters | Done |
 | Selector grammar | Done |
 | Parameters: base values, scheduled sets, ramps, offsets, modulation, metadata, change events | Done |
-| Node types | `gain`, `panner`, `compressor`, the eight filters, the four oscillators, `sampler` |
+| Transport: sequences, polyrhythm, swing, tempo changes, loop region, live and offline scheduling | Done. `onDisplay` and the Worker timer are exercised only through the demo, not by automated tests |
 | Buffer store, slices | Done |
-| Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. A test fails if a built-in type, parameter or option lacks a description |
-| Commands | Node, connection and bus commands done. `apply`, `sequence`, `setStep`, `clearSequence`, `transport` and `bypass` report `unsupported` |
+| `cracked-up/global` | Done |
+| Commands | Node, connection, bus, `setStep`, `clearSequence` and `transport` commands done. `apply`, `sequence` and `bypass` report `unsupported` |
 | `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
 | `build()` | Runs the builder; does not reconcile against existing nodes yet (Phase 4) |
-| `apply()`, `bypass`, macros, the transport, the remaining node types in the type map | Not yet. They throw or report `unsupported` |
+| Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. Tests fail if a built-in type, parameter or option lacks a description, or if a type's generated example does not run |
+| `apply()`, `bypass`, macros, `cracked-up/remote`, external clock sources | Not yet. They throw or report `unsupported` |
 
-The type map in `src/api/nodes.ts` lists some node types (`adsr`, `lfo`, `delay`, `reverb`, `overdrive`, `bitcrusher`, `noise`, `polysynth`) ahead of their implementation, so the examples here type-check. Calling one of those chain methods today fails at runtime.
+Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. `bitcrusher` and `polysynth` are in the type map ahead of their implementation; calling those chain methods today fails at runtime.
 
 ## Differences from Cracked that a script author will notice
 

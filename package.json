@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "homepage": "https://github.com/billorcutt/i_dropped_my_phone_the_screen_cracked",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/global/*"
+  ],
   "engines": {
     "node": ">=22.12"
   },

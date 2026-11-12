@@ -3,7 +3,7 @@
  * Type-checked against the proposed API; nothing here runs yet.
  */
 
-import { __, transport as t, euclid, play } from '../global-entry';
+import { __, transport as t, euclid, play } from '../../src/global';
 
 // Build three voices. Each chain owns its own tail, so the order of these lines does not matter.
 __().sampler({ id: 'kick', buffer: '/samples/kick.wav' }).gain(0.9).to('main');

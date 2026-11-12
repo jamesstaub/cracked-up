@@ -41,12 +41,13 @@ Then the declarations:
 | Parameters: base values, scheduled sets, ramps, offsets, modulation, metadata, change events | Done |
 | Transport: sequences, polyrhythm, swing, tempo changes, loop region, live and offline scheduling | Done. `onDisplay` and the Worker timer are exercised only through the demo, not by automated tests |
 | Buffer store, slices | Done |
+| Macros: `defineMacro`, private inner scope with `in` and `out` buses, exposed parameters, methods, nesting | Done |
 | `cracked-up/global` | Done |
 | Commands | Node, connection, bus, `setStep`, `clearSequence` and `transport` commands done. `apply`, `sequence` and `bypass` report `unsupported` |
 | `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
 | `build()` | Runs the builder; does not reconcile against existing nodes yet (Phase 4) |
 | Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. Tests fail if a built-in type, parameter or option lacks a description, or if a type's generated example does not run |
-| `apply()`, `bypass`, macros, `cracked-up/remote`, external clock sources | Not yet. They throw or report `unsupported` |
+| `apply()`, `bypass`, `cracked-up/remote`, external clock sources | Not yet. They throw or report `unsupported` |
 
 Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. `bitcrusher` and `polysynth` are in the type map ahead of their implementation; calling those chain methods today fails at runtime.
 

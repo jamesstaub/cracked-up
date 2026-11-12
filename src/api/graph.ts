@@ -208,6 +208,8 @@ export interface Bus {
   readonly gain: Param<number>;
   /** Where this bus sends its mix. Default: the engine's `main` bus. */
   to(target: string | Bus): this;
+  /** Starts a chain fed by this bus's mix, for processing everything sent to it. */
+  chain(): Chain;
   readonly input: AudioNode;
   readonly output: AudioNode;
 }

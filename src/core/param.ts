@@ -21,6 +21,12 @@ type ParamEvents = {
   modulators: (modulators: readonly Modulation[]) => void;
 };
 
+/** An inner parameter that a macro's exposed parameter drives. */
+export interface ParamLink {
+  readonly param: ParamImpl;
+  readonly scale?: (value: number) => number;
+}
+
 /** What a parameter drives: a native AudioParam, a function, or nothing yet. */
 export type ParamTarget = AudioParam | ParamHandler | undefined;
 
@@ -39,6 +45,8 @@ export class ParamImpl {
   private baseLine: Timeline<ParamValue>;
   private offsetLine = new Timeline<number>(0);
   private target: ParamTarget;
+  /** For a macro's exposed parameter: finds the inner parameters it drives right now. */
+  private links: (() => readonly ParamLink[]) | null = null;
   /** Offsets on an AudioParam are a separate constant signal added to it, so they never disturb the base. */
   private offsetSource: ConstantSourceNode | null = null;
   private mods: Modulation[] = [];
@@ -60,6 +68,32 @@ export class ParamImpl {
     } else if (target) {
       target(this.base, this.node.engine.now());
     }
+  }
+
+  /**
+   * Makes this a macro's exposed parameter: setting it sets the inner parameters `resolve` returns.
+   * They are looked up on every change, so nodes the macro creates later follow too.
+   */
+  bindLinks(resolve: () => readonly ParamLink[]): void {
+    this.links = resolve;
+    this.bind((value, at) => {
+      for (const link of resolve()) {
+        link.param.applySet(
+          link.scale && typeof value === 'number' ? link.scale(value) : value,
+          at,
+        );
+      }
+    });
+  }
+
+  /** Every native AudioParam a modulator of this parameter should be connected to. */
+  audioParams(): AudioParam[] {
+    if (isAudioParam(this.target)) return [this.target];
+    if (!this.links) return [];
+    // A scaled link cannot be modulated faithfully: the scaling happens in code, not in the signal.
+    return this.links()
+      .filter((link) => !link.scale)
+      .flatMap((link) => link.param.audioParams());
   }
 
   get value(): ParamValue {
@@ -116,6 +150,26 @@ export class ParamImpl {
 
   applyRamp(target: number, at: number, options: Omit<RampOptions, 'at'>): void {
     const audio = this.audioParam;
+    if (this.meta.kind === 'number' && !audio && this.links) {
+      // A macro's exposed parameter: ramp each inner parameter it drives.
+      const to = this.coerce(target) as number;
+      const from = options.from;
+      for (const link of this.links()) {
+        const scale = link.scale ?? ((value: number) => value);
+        link.param.applyRamp(scale(to), at, {
+          ...options,
+          ...(from === undefined ? {} : { from: scale(from) }),
+        });
+      }
+      const previous = this.base;
+      const end = at + options.duration;
+      this.base = to;
+      this.baseLine.set(end, to);
+      if (to !== previous) {
+        this.events.emit('change', { param: this.asPublic(), value: to, previous, at: end });
+      }
+      return;
+    }
     if (this.meta.kind !== 'number' || !audio) {
       throw this.error(`cannot be ramped: only audio-rate number parameters can`);
     }

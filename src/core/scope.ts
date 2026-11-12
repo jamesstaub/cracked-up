@@ -41,6 +41,8 @@ export class ScopeImpl {
   readonly name: string;
   readonly engine: EngineImpl;
   readonly parent: ScopeImpl | null;
+  /** For a macro's private scope: the macro instance it belongs to. */
+  readonly owner: NodeImpl | null;
   readonly $: ScopeApi;
 
   private childScopes: ScopeImpl[] = [];
@@ -56,10 +58,16 @@ export class ScopeImpl {
     children: (parent) => (parent === null ? this.topLevelNodes() : parent.inner),
   };
 
-  constructor(engine: EngineImpl, name: string, parent: ScopeImpl | null) {
+  constructor(
+    engine: EngineImpl,
+    name: string,
+    parent: ScopeImpl | null,
+    owner: NodeImpl | null = null,
+  ) {
     this.engine = engine;
     this.name = name;
     this.parent = parent;
+    this.owner = owner;
 
     const api = ((selector?: string) =>
       selector === undefined ? this.chain() : this.select(selector)) as unknown as ScopeApi;
@@ -116,13 +124,6 @@ export class ScopeImpl {
   createNode(type: string, rawInit: unknown): NodeImpl {
     this.assertLive();
     const entry = this.engine.registryImpl.entry(type);
-    if (entry.isMacro) {
-      throw new CrackedUpError(
-        'unsupported',
-        `"${type}" is a macro, and macros are not implemented yet.`,
-      );
-    }
-
     let source: Record<string, unknown>;
     if (rawInit === undefined || rawInit === null) {
       source = {};
@@ -185,6 +186,14 @@ export class ScopeImpl {
     return node;
   }
 
+  /**
+   * The private scope of a macro instance. It has no parent, so nothing inside can reach the buses or
+   * nodes outside, and it is not listed among this scope's children.
+   */
+  createInnerScope(owner: NodeImpl): ScopeImpl {
+    return new ScopeImpl(this.engine, `${this.name}/${owner.id}`, null, owner);
+  }
+
   /** A node that belongs to the scope's internals (a bus's gain) and is not listed or selectable. */
   createHiddenNode(type: string, id: string): NodeImpl {
     return new NodeImpl(this, this.engine.registryImpl.entry(type), {
@@ -224,9 +233,9 @@ export class ScopeImpl {
     if (!bus) {
       bus = new BusImpl(this, name);
       this.buses.set(name, bus);
-      // The engine's own `main` feeds the output. Every other bus feeds that one until rerouted.
-      const main = this.engine.mainBus;
-      bus.route(main ?? null);
+      // The engine's own `main` feeds the output. Every other bus feeds that one until rerouted,
+      // except inside a macro, whose buses are its ports and are wired up by whoever uses the macro.
+      if (!this.owner) bus.route(this.engine.mainBus ?? null);
     }
     return bus;
   }

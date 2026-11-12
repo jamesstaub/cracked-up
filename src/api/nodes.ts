@@ -325,9 +325,13 @@ export interface NodeDefinition<K extends string = string> {
   build(context: BuildContext, init: Readonly<Record<string, unknown>>): BuiltNode;
 }
 
-/** An exposed macro parameter and the inner parameters it drives. */
+/**
+ * An exposed macro parameter and the inner parameters it drives. The targets are looked up each time
+ * the parameter changes, so nodes the macro makes later are included. A parameter may drive nothing
+ * (`drives: []`) when the macro only reads it through `MacroContext.value`.
+ */
 export type MacroParam = ParamMetaInput & {
-  /** Inner targets, selected within the macro's own scope. */
+  /** Inner targets, selected within the macro's own scope. `scale` converts the value on the way. */
   drives: readonly { select: string; param: string; scale?: (value: number) => number }[];
 };
 
@@ -341,19 +345,44 @@ export interface MacroDefinition<K extends string = string> {
   readonly triggerOptions?: Readonly<Record<string, OptionInfo>>;
   /**
    * Builds the inner graph. `scope` is private to this instance, so inner ids never collide with
-   * another instance's. Connect to `scope.bus('in')` and `scope.bus('out')` to expose the macro's ports.
+   * another instance's. Two buses exist in it from the start:
+   * - `out`: send to it (`.to('out')`) and that is the macro's output.
+   * - `in`: whatever is connected to the macro arrives here. Continue from it with
+   *   `scope.bus('in').chain()`.
+   * A macro that never uses `in` has no input, and one that never sends to `out` has no output.
    */
-  build(scope: ScopeApi, init: Readonly<Record<string, unknown>>): void;
-  trigger?(scope: ScopeApi, options: At & Record<string, unknown>): void;
-  release?(scope: ScopeApi, options: ReleaseOptions): void;
+  build(scope: ScopeApi, init: Readonly<Record<string, unknown>>, macro: MacroContext): void;
+  /** Inside `trigger`, `release` and methods, operations with no `at` happen at the call's time. */
+  trigger?(scope: ScopeApi, options: At & Record<string, unknown>, macro: MacroContext): void;
+  release?(scope: ScopeApi, options: ReleaseOptions, macro: MacroContext): void;
   /**
    * The macro's own operations, reachable as `node.call(name, args)` and as `call` commands. Each
    * receives the instance's private scope and the audio time the call applies at.
    */
   methods?: Record<
     string,
-    (scope: ScopeApi, args: Readonly<Record<string, unknown>>, at: number) => void
+    (
+      scope: ScopeApi,
+      args: Readonly<Record<string, unknown>>,
+      at: number,
+      macro: MacroContext,
+    ) => void
   >;
+}
+
+/** What a macro's functions can ask about the instance they are running for. */
+export interface MacroContext {
+  /** The instance's id. */
+  readonly id: string;
+  /** The audio time the current call applies at. */
+  readonly time: number;
+  /**
+   * The value of one of the macro's own exposed parameters at an audio time. For macros that make
+   * nodes after `build` (a synth making a voice per note) and need the settings to give them.
+   */
+  value(name: string, at?: number): ParamValue;
+  /** Seeded random source. Returns 0 <= n < 1. */
+  random(): number;
 }
 
 /** Runtime description of a registered type, as exported to hosts for controls, docs and autocomplete. */

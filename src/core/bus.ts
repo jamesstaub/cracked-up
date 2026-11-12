@@ -1,4 +1,5 @@
 import type { Bus, Param } from '../api';
+import type { ChainImpl } from './chain';
 import { CrackedUpError } from './errors';
 import type { EdgeImpl, NodeImpl } from './node';
 import { disconnectEdge } from './node';
@@ -32,6 +33,15 @@ export class BusImpl {
 
   get output(): AudioNode {
     return this.node.output!;
+  }
+
+  /** Whether anything continues from this bus (a chain started with `chain()`). */
+  get hasListeners(): boolean {
+    return this.node.outputs.length > 0;
+  }
+
+  chain(): ChainImpl {
+    return this.scope.engine.createChain(this.scope, [this.node], []);
   }
 
   /** The name of the bus this one feeds, or null when it feeds the context's output. */

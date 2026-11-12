@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cracked-up sandboxed script demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="demo">
+    <header>
+      <h1>cracked-up sandboxed script</h1>
+      <button id="toggle" type="button">Start audio</button>
+      <a class="nav" href="./index.html">Live demo</a>
+      <a class="nav" href="./docs.html#sandbox" target="cracked-up-docs">Docs</a>
+      <span id="status">Audio is off. Press Start, or just type.</span>
+    </header>
+    <main>
+      <textarea
+        id="editor"
+        spellcheck="false"
+        autocomplete="off"
+        autocapitalize="off"
+        aria-label="Code"
+      ></textarea>
+      <aside>
+        <h2>What is different here</h2>
+        <p>
+          The code on the left does not run in this page. It runs in a frame that has no origin, so
+          it cannot read this page, its storage, or anything on this site. It has no audio either:
+          everything it does reaches the engine in this page as commands.
+        </p>
+        <h2>Round trip</h2>
+        <p>
+          Each sequence step is sent to the frame ahead of time and the frame's commands must come
+          back before the step sounds.
+        </p>
+        <ul id="timing"></ul>
+      </aside>
+    </main>
+    <div id="message" role="status"></div>
+    <!-- allow-scripts only: no same-origin, so the frame's origin is opaque. -->
+    <iframe id="frame" sandbox="allow-scripts" src="./sandbox-frame.html" hidden></iframe>
+    <script type="module" src="./sandbox.ts"></script>
+  </body>
+</html>

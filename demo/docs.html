@@ -529,6 +529,73 @@ result.unchanged; // [saw]</code></pre>
           restores a graph, or edits one from a user interface.
         </p>
 
+        <h2 id="sandbox">Running scripts in a sandbox</h2>
+        <p>
+          Code from someone else should not run in your page, where it could read the page, its
+          storage and the signed-in session. <code>cracked-up/remote</code> lets the same code run
+          somewhere it can do no harm, such as a frame with <code>sandbox="allow-scripts"</code>,
+          while the engine stays in the page.
+        </p>
+        <p>
+          Inside the sandbox, <code>createRemote</code> gives the script the same <code>__</code>.
+          It has no audio behind it: reads are answered from a copy of the scope's state, and
+          everything the script does is sent to the page as plain-data commands. In the page,
+          <code>linkRemote</code> applies those commands to one scope and nothing else. Sequence
+          callbacks run in the sandbox: the page sends each step a little ahead of time, and the
+          commands the callback makes land exactly on the step.
+        </p>
+        <pre data-static><code>// In the page
+import { linkRemote } from 'cracked-up/remote';
+
+const link = linkRemote(engine.scope('guest'), {
+  send: (message) =&gt; frame.contentWindow.postMessage(message, '*'),
+  allow: (command) =&gt; command.op !== 'loadBuffer',   // refuse what you do not want
+});
+frame.contentWindow.postMessage({ init: link.state() }, '*');
+window.addEventListener('message', (event) =&gt; {
+  if (event.source === frame.contentWindow) link.receive(event.data);
+});
+
+// In the sandboxed frame
+import { createRemote } from 'cracked-up/remote';
+
+const remote = createRemote({ ...state, send: (message) =&gt; parent.postMessage(message, '*') });
+window.addEventListener('message', (event) =&gt; remote.receive(event.data));
+
+remote.build((__) =&gt; {
+  __().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+  __.transport.sequence('kick', { steps: 'x...' }, (ev) =&gt; {
+    if (ev.value) __('#kick').trigger();
+  });
+});</code></pre>
+        <p>What differs from running next to the engine:</p>
+        <ul>
+          <li>A sequence needs a name, and there is no <code>every</code> or <code>at</code>.</li>
+          <li>
+            Outside a sequence callback there is no clock, so an operation without a time happens
+            when it reaches the page.
+          </li>
+          <li>
+            A script can send audio to an outer bus such as <code>main</code>, but cannot change
+            that bus, and cannot select or change nodes outside its scope.
+          </li>
+          <li>
+            Nodes inside a macro can be written to (<code>__('polysynth lowpass').set(...)</code>)
+            but not read: the sandbox's copy does not include them.
+          </li>
+          <li>
+            Macros have to be registered in the page. Defining one inside the sandbox is not built
+            yet.
+          </li>
+        </ul>
+        <p>
+          The frame keeps a script away from your page, not from the network or the processor. Give
+          the frame a content security policy to stop it making requests, and expect that a script
+          stuck in a loop stops its own sequences. The
+          <a href="./sandbox.html">sandboxed demo</a> shows all of this running, with the measured
+          round-trip time.
+        </p>
+
         <h2 id="demo-names">Names available in the live demo</h2>
         <div class="table-wrap">
           <table>

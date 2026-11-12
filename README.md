@@ -6,7 +6,10 @@ cracked-up is a ground-up TypeScript reimagining of Bill Orcutt's
 
 ## Status
 
-Pre-alpha. The graph core is implemented and tested: engine, scopes, selections, chains, parameters, buses, a sampler and the basic native nodes. The transport, macros and the remaining nodes are not. `design/README.md` has the API decisions and a table of what works today.
+Pre-alpha. Implemented and tested: the graph core (engine, scopes, selections, chains, parameters,
+buses), the transport (sequences, polyrhythm, swing, tempo changes, offline rendering), a sampler and a
+set of native and effect nodes. Not yet: macros and synths, graph reconciliation, sandboxed scripts,
+recording and MIDI. `design/README.md` has the API decisions and a table of what works today.
 
 ## Development
 
@@ -31,8 +34,7 @@ npm run demo
 Opens a page with a code box that re-runs on every key up (`demo/index.html`), with a docs page
 beside it (`demo/docs.html`). The docs explain the concepts and list every node type; that list is
 generated from the node definitions, and each example opens in the demo. While the code has an
-error, the last working version keeps playing. The transport is not built yet, so the demo supplies a
-temporary `every(seconds, fn)` timer in its place.
+error, the last working version keeps playing, and a new version comes in exactly in time.
 
 Tests run in real browsers through Vitest browser mode and Playwright, because they need Web Audio
 (`OfflineAudioContext`).

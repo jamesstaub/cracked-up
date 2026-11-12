@@ -14,6 +14,31 @@ export function exampleFor(info: NodeTypeInfo): string {
   if (type === 'sampler') {
     return `__().sampler({ id: 'hit', buffer: 'kick' }).to('main');\n__.transport.every('1/4', () => __('#hit').trigger());`;
   }
+  if (type === 'recorder') {
+    return (
+      `__().sampler({ id: 'hit', buffer: 'snare' }).recorder({ id: 'rec', into: 'take' }).gain(0.5).to('main');\n` +
+      `__().sampler({ id: 'again', buffer: 'take', speed: 0.5 }).to('main');\n` +
+      `__.transport.every('1/4', () => __('#hit').trigger());\n` +
+      `// Every two bars, record half a bar. Every bar, play the latest take at half speed.\n` +
+      `__.transport.every('2 bars', () => __('#rec').trigger({ duration: __.transport.seconds('1/2') }));\n` +
+      `__.transport.every('1 bar', () => __('#again').trigger());`
+    );
+  }
+  if (type === 'looper') {
+    return (
+      `__().sampler({ id: 'hit', buffer: 'kick' }).looper({ id: 'loop', length: '1 bar' }).gain(0.6).to('main');\n` +
+      `// The kick plays for one bar in every four. The looper records that bar and repeats it.\n` +
+      `__.transport.sequence('feed', { steps: 'x..x..x.' + '.'.repeat(24), step: '1/8' }, (ev) => {\n` +
+      `  if (ev.value) __('#hit').trigger();\n` +
+      `});\n` +
+      `__.transport.every('4 bars', () => {\n` +
+      `  __('#loop').call('clear').trigger();\n` +
+      `});`
+    );
+  }
+  if (type === 'input') {
+    return `// Asks for the microphone. Use headphones, or the speakers will feed back.\n__().input().delay(0.3).gain(0.5).to('main');`;
+  }
   switch (info.category) {
     case 'source':
       return `__().${type}(${argument}).gain(0.2).to('main');`;

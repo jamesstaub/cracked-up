@@ -457,6 +457,80 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
 
+        <h2 id="recording">Recording, looping and live input</h2>
+        <p>
+          A <code>recorder</code> sits in a chain, passes the sound through, and records it when
+          triggered. The recording goes into the buffer store under a key, where a sampler can play
+          it. Starting and stopping are exact to the sample, so recorders started together make
+          recordings that line up.
+        </p>
+        <pre><code>__().sampler({ id: 'hit', buffer: 'snare' }).recorder({ id: 'rec', into: 'take' }).gain(0.5).to('main');
+__().sampler({ id: 'again', buffer: 'take', speed: 0.5 }).to('main');
+__.transport.every('1/4', () =&gt; __('#hit').trigger());
+
+// Every two bars, record half a bar. Every bar, play the latest take at half speed.
+__.transport.every('2 bars', () =&gt; __('#rec').trigger({ duration: __.transport.seconds('1/2') }));
+__.transport.every('1 bar', () =&gt; __('#again').trigger());</code></pre>
+        <p>
+          Make the recorder before the sampler that plays its key, so the key exists. Each new take
+          replaces the last one under that key; give <code>trigger</code> a <code>key</code> to keep
+          takes apart.
+        </p>
+        <p>
+          A <code>looper</code> records a loop of a fixed length and plays it round and round. Each
+          later <code>trigger()</code> adds a layer; <code>call('undo')</code> removes the newest
+          and <code>call('clear')</code> empties it. Start the first layer on a bar line and it
+          stays on the bar: the loop is timed against the audio clock itself, so it does not drift,
+          though it will not follow a later change of tempo.
+        </p>
+        <pre><code>__().sampler({ id: 'hit', buffer: 'kick' }).looper({ id: 'loop', length: '1 bar' }).gain(0.6).to('main');
+
+// The kick plays for one bar in every four. The looper records that bar and repeats it.
+__.transport.sequence('feed', { steps: 'x..x..x.' + '.'.repeat(24), step: '1/8' }, (ev) =&gt; {
+  if (ev.value) __('#hit').trigger();
+});
+__.transport.every('4 bars', () =&gt; {
+  __('#loop').call('clear').trigger();
+});</code></pre>
+        <p>
+          <code>input</code> is a microphone or audio interface. The browser asks for permission the
+          first time. Sound from an input arrives late, by the time it takes to get through the
+          audio hardware and back. Tell a recorder or looper how late with its
+          <code>latency</code> parameter and it shifts what it records to match, so an overdub lines
+          up with what the player heard. A reasonable starting value is
+          <code>engine.context.outputLatency</code> plus the input's own delay; let people adjust it
+          by ear.
+        </p>
+        <pre
+          data-static
+        ><code>__().input().looper({ id: 'loop', length: '2 bars', latency: 0.02 }).to('main');</code></pre>
+        <h3>Stems and files</h3>
+        <p>
+          To render a piece to separate files, build it on an offline engine, put a recorder on each
+          bus you want a stem of, and render. A take still open when the render ends is finished
+          there, so every stem is as long as the mix.
+        </p>
+        <pre data-static><code>import { createEngine } from 'cracked-up';
+import { encodeWav } from 'cracked-up/util';
+
+const context = new OfflineAudioContext(2, 48000 * 60, 48000);
+const engine = await createEngine({ context });
+
+const drums = engine.scope('drums');
+drums.bus('out').chain().recorder({ id: 'stem', into: 'stem:drums' });
+// ...build the drums, sending them to 'out', and the other tracks the same way...
+
+engine.select('recorder').trigger({ at: 0 });
+engine.transport.start();
+const mix = await engine.render();
+const drumStem = await engine.buffers.get('stem:drums').ready;
+
+const file = new Blob([encodeWav(mix, { bitDepth: 24 })], { type: 'audio/wav' });</code></pre>
+        <p>
+          <code>encodeWav</code> writes 16-bit, 24-bit or 32-bit floating-point files from any
+          recording or render.
+        </p>
+
         <h2 id="bypass">Bypassing a node</h2>
         <p>
           A bypassed effect passes its input straight to its output. A bypassed source, or a

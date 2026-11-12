@@ -53,7 +53,10 @@ t.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step: '1/8' }, (
 });
 `;
 
-const STORAGE_KEY = 'cracked-up-demo-code';
+// The key carries a version. Bump it whenever the names available to demo code change, so code saved
+// by an older version of the page (which may use names that no longer exist) is not loaded.
+const STORAGE_KEY = 'cracked-up-demo-code-v2';
+const OLD_STORAGE_KEYS = ['cracked-up-demo-code'];
 
 const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
 const toggle = document.querySelector<HTMLButtonElement>('#toggle')!;
@@ -370,6 +373,7 @@ function initialCode(): string {
   const fromAddress = codeFromAddress();
   if (fromAddress !== null) return fromAddress;
   try {
+    for (const key of OLD_STORAGE_KEYS) localStorage.removeItem(key);
     return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CODE;
   } catch {
     return DEFAULT_CODE;

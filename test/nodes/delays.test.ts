@@ -127,3 +127,44 @@ describe('comb', () => {
     expect(Math.abs(data[0]!)).toBe(0); // mix 1 by default: no dry click
   });
 });
+
+describe('delayline', () => {
+  it('passes a click once, exactly `time` later, and nothing else', async () => {
+    const engine = await offlineEngine(1);
+    engine.chain().sampler({ id: 'in', buffer: click() }).delayline(0.25).to('main');
+    engine.select('#in').trigger({ at: 0 });
+    const expected = new Float32Array(48000);
+    expected[T] = 1;
+    expect(samples(await engine.render())).toEqual(expected);
+  });
+
+  it('makes a feedback loop when its output is sent back to its input', async () => {
+    // Firefox silences a loop that has a way round its delay, which is why the loop is built from this
+    // node and not from `delay` (whose unprocessed path is such a way round, even at mix 1).
+    const engine = await offlineEngine(1.2);
+    engine
+      .chain()
+      .sampler({ id: 'in', buffer: click() })
+      .delayline({ id: 'line', time: 0.25 })
+      .gain(0.5)
+      .connect('#line');
+    engine.select('#line').to('main');
+    engine.select('#in').trigger({ at: 0 });
+    const audio = await engine.render();
+    const data = audio.getChannelData(0);
+    const onsets = findOnsets(audio, { threshold: 0.05, minGapSamples: 1000 });
+    expect(onsets.length).toBe(4);
+    // One 128-sample block more per trip round the loop in Chromium and WebKit; none in Firefox.
+    onsets.forEach((onset, k) => {
+      const late = onset - (k + 1) * T;
+      expect(late === 0 || late === 128 * k).toBe(true);
+      expect(data[onset]).toBe(0.5 ** k);
+    });
+  });
+
+  it('has a time of a quarter of a second unless told otherwise', async () => {
+    const engine = await offlineEngine(0.1);
+    engine.chain().delayline({ id: 'line' });
+    expect(engine.select('#line').param('time').value).toBe(0.25);
+  });
+});

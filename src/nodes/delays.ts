@@ -106,3 +106,28 @@ export const comb = echo('comb', {
   cutoff: 3000,
   mix: 1,
 });
+
+export const delayline = defineNode({
+  type: 'delayline',
+  category: 'delay',
+  description:
+    'A plain delay: the sound comes out once, later, and nothing else happens to it. It is the piece to build your own echoes, choruses and flangers from: send its output back to its input through a gain for repeats, or move its time with an lfo to bend the pitch of what is inside it. For a ready-made echo use delay.',
+  params: {
+    time: {
+      default: 0.25,
+      min: 0,
+      max: 5,
+      unit: 'seconds',
+      curve: 'exp',
+      description:
+        'How late the sound comes out, in seconds. While the time is moving, the pitch of the sound inside bends: down as it lengthens, up as it shortens.',
+    },
+  },
+  shorthand: 'time',
+  build(context) {
+    // Nothing but the delay lies between input and output. A loop made through this node therefore
+    // always has a delay in it, which browsers require: Firefox silences a loop that has a way round.
+    const node = new DelayNode(context.audio, { maxDelayTime: 5 });
+    return { input: node, output: node, params: { time: node.delayTime } };
+  },
+});

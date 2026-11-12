@@ -120,6 +120,25 @@ describe('waveshaper', () => {
     expect(maxDiff(changed, high, at + 64)).toBe(0);
   });
 
+  it('adds no delay with oversample none, and some with the default', async () => {
+    const hump = makeBuffer(0.02, (i) => (i < 96 ? 0.5 * Math.sin((Math.PI * i) / 96) : 0));
+    const peakAt = async (init: { oversample?: 'none' | '4x' }) => {
+      const engine = await offlineEngine(0.05);
+      engine
+        .chain()
+        .sampler({ id: 'in', buffer: hump })
+        .waveshaper({ drive: 6, ...init })
+        .to('main');
+      engine.select('#in').trigger({ at: 0 });
+      const data = samples(await engine.render());
+      return data.indexOf(Math.max(...data));
+    };
+    // The hump peaks at sample 48. With the default '4x' it comes out 192 samples (4 ms)
+    // later in Chromium and WebKit and 8 samples later in Firefox.
+    expect(await peakAt({ oversample: 'none' })).toBe(48);
+    expect(await peakAt({})).toBeGreaterThan(48);
+  });
+
   it('takes drive as its shorthand', async () => {
     const engine = await offlineEngine(0.1);
     engine.chain().waveshaper({ id: 'ws' });

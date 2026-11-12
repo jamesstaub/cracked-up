@@ -45,6 +45,7 @@ function scheduledShaper(
 }
 
 const DEG = Math.PI / 180;
+const OVERSAMPLE: readonly OverSampleType[] = ['none', '2x', '4x'];
 
 /** The soft-clipping curve both distortions use; `k` is how hard it bends. */
 function curveFor(k: number, samples: number): Float32Array<ArrayBuffer> {
@@ -132,8 +133,17 @@ export const waveshaper = defineNode({
     },
   },
   shorthand: 'drive',
-  build(context) {
-    const shaper = scheduledShaper(context.audio, (drive) => curveFor(drive, 44100), '4x');
+  options: {
+    oversample: {
+      type: "'none' | '2x' | '4x'",
+      default: "'4x'",
+      description:
+        "How finely the distortion is worked out. '4x' keeps harsh false tones out of the top end but makes the sound late, by 4 milliseconds in Chrome and Safari; 'none' is rougher and adds no lateness, which matters inside a feedback loop.",
+    },
+  },
+  build(context, init) {
+    const oversample = OVERSAMPLE.find((choice) => choice === init['oversample']) ?? '4x';
+    const shaper = scheduledShaper(context.audio, (drive) => curveFor(drive, 44100), oversample);
     return {
       input: shaper.input,
       output: shaper.output,

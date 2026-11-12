@@ -79,6 +79,49 @@ export interface EchoParams {
   mix: number;
 }
 
+/** The parameters of `multiband`: two crossovers, then a threshold, ratio and level for each of three bands. */
+export interface MultibandParams {
+  /** Hz: where the low band ends and the middle band begins. */
+  lowCrossover: number;
+  /** Hz: where the middle band ends and the high band begins. */
+  highCrossover: number;
+  /** Decibels. */
+  lowThreshold: number;
+  lowRatio: number;
+  /** Decibels, after the band's compressor. */
+  lowGain: number;
+  midThreshold: number;
+  midRatio: number;
+  midGain: number;
+  highThreshold: number;
+  highRatio: number;
+  highGain: number;
+  /** Seconds, for every band. */
+  attack: number;
+  release: number;
+  /** 0 is only the original sound, 1 only the compressed. */
+  mix: number;
+}
+
+export interface TapeDelayParams {
+  /** Seconds between repeats. A change glides. */
+  time: number;
+  /** 0..1.1: above 1 the repeats grow instead of fading. */
+  feedback: number;
+  /** 0..1: slow pitch drift. */
+  wow: number;
+  /** 0..1: fast pitch shimmer. */
+  flutter: number;
+  /** Hz: lowpass on the repeats. */
+  tone: number;
+  /** Hz: highpass on the repeats. */
+  lowCut: number;
+  /** 0..1: saturation. */
+  drive: number;
+  /** 0 is only the original sound, 1 only the repeats. */
+  mix: number;
+}
+
 export type SynthShape = 'sine' | 'saw' | 'square' | 'triangle';
 
 /** The parameters `monosynth` and `polysynth` share. */
@@ -179,21 +222,36 @@ export interface NodeTypeMap {
   >;
   delay: NodeShape<EchoParams, None, number>;
   comb: NodeShape<EchoParams, None, number>;
+  /** A delay and nothing else, for building feedback loops and modulated delays. */
+  delayline: NodeShape<{ time: number }, None, number>;
   reverb: NodeShape<
     { mix: number },
     { seconds?: number; decay?: number; reverse?: boolean; impulse?: BufferSource }
   >;
   overdrive: NodeShape<{ drive: number; color: number; postCut: number }, None, number>;
-  waveshaper: NodeShape<{ drive: number }, None, number>;
+  waveshaper: NodeShape<
+    { drive: number },
+    {
+      /** Default '4x', which makes the sound up to 4 ms late. 'none' adds no lateness. */
+      oversample?: 'none' | '2x' | '4x';
+    },
+    number
+  >;
   ring: NodeShape<{ frequency: number; mix: number }, None, number>;
   bitcrusher: NodeShape<{ bits: number; rate: number }>;
-  compressor: NodeShape<{
-    threshold: number;
-    knee: number;
-    ratio: number;
-    attack: number;
-    release: number;
-  }>;
+  compressor: NodeShape<
+    {
+      threshold: number;
+      knee: number;
+      ratio: number;
+      attack: number;
+      release: number;
+    },
+    {
+      /** false: sound below the threshold keeps its level; the compressor's own make-up gain is taken out. Default true. */
+      makeup?: boolean;
+    }
+  >;
   recorder: NodeShape<
     { latency: number },
     {
@@ -238,6 +296,8 @@ export interface NodeTypeMap {
   >;
   monosynth: NodeShape<SynthParams, { shape?: SynthShape }, never, NoteTrigger>;
   polysynth: NodeShape<SynthParams, { shape?: SynthShape; voices?: number }, never, NoteTrigger>;
+  multiband: NodeShape<MultibandParams>;
+  tapedelay: NodeShape<TapeDelayParams, None, number>;
 }
 
 export type NodeType = keyof NodeTypeMap & string;

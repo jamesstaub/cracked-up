@@ -1,39 +1,55 @@
 /**
  * Live demo: a text box whose code is re-run on every key up.
  *
- * Each run builds into a fresh scope. If the code compiles and runs, the previous scope is disposed;
- * if it fails, the new scope is thrown away and the previous one keeps sounding, so a half-typed line
- * never interrupts the sound.
+ * Each run builds into a fresh scope and schedules its own sequences. If the code compiles and runs,
+ * the previous run's nodes and sequences are removed; if it fails, the new run's are thrown away and
+ * the previous run keeps playing, so a half-typed line never interrupts the sound. Sequences take their
+ * place from the transport's position, so a new run comes in exactly in time with the old one.
  */
 
 import { createEngine } from '../src';
-import type { Engine, Scope } from '../src';
+import type { Engine, Scope, Transport } from '../src';
 import * as util from '../src/util';
 
 const DEFAULT_CODE = `// Edit this code: it re-runs on every key up.
 // While it has an error, the last working version keeps playing.
 
-// A droning bass through a filter.
-__().saw({ id: 'bass', frequency: 55 })
-  .lowpass({ id: 'filter', frequency: 400, q: 8 })
-  .gain(0.3)
+t.bpm = 110;
+
+// Three samplers. 'kick', 'snare' and 'hat' are made by this page.
+__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('main');
+__().sampler({ id: 'hat', buffer: 'hat' }).highpass(6000).gain(0.35).to('main');
+
+// A pattern is a string or an array. Steps are sixteenth notes unless you say otherwise.
+t.sequence('kick', { steps: 'x..x..x...x..x..' }, (ev) => {
+  if (ev.value) __('#kick').trigger();
+});
+
+// Quarter-note steps: the snare lands on beats 2 and 4.
+t.sequence('snare', { steps: [0, 1], step: '1/4' }, (ev) => {
+  if (ev.value) __('#snare').trigger();
+});
+
+// Five hits spread evenly over eight swung eighth notes.
+t.sequence('hat', { steps: euclid(5, 8), step: '1/8', swing: 0.58 }, (ev) => {
+  if (ev.value) __('#hat').trigger({ speed: 1 + ev.index * 0.04 });
+});
+
+// A bass: an oscillator that is silent until triggered, through a filter.
+__().saw({ id: 'bass', gate: 'closed' })
+  .lowpass({ id: 'filter', frequency: 500, q: 6 })
+  .gain(0.25)
   .to('main');
 
 // A slow sine wave moving the filter's cutoff by +/- 300 Hz.
 __().sine(0.2).gain(300).modulate('#filter', 'frequency');
 
-// Two samplers. 'kick', 'snare' and 'hat' are made by this page.
-__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
-__().sampler({ id: 'hat', buffer: 'hat' }).highpass(6000).gain(0.4).to('main');
-
-// The transport is not built yet. \`every\` is a temporary stand-in
-// (a plain timer, so its timing is loose).
-const kick = euclid(3, 8);
-let step = 0;
-every(0.125, () => {
-  if (kick[step % kick.length]) __('#kick').trigger();
-  __('#hat').trigger({ speed: 1 + (step % 3) * 0.25 });
-  step++;
+// Step values can be any number. Here each one is a pitch in Hz, and 0 is a rest.
+t.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step: '1/8' }, (ev) => {
+  if (ev.value) {
+    __('#bass').set({ frequency: ev.value }).trigger({ duration: ev.duration * 0.6 });
+  }
 });
 `;
 
@@ -45,7 +61,7 @@ const reset = document.querySelector<HTMLButtonElement>('#reset')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
 const message = document.querySelector<HTMLDivElement>('#message')!;
 
-/** The names user code can use besides `__`, `engine` and `every`. */
+/** The names user code can use besides `__`, `t` and `engine`. */
 const helpers = {
   euclid: util.euclid,
   pitchToFreq: util.pitchToFreq,
@@ -58,7 +74,7 @@ const helpers = {
 let engine: Engine | null = null;
 let booting: Promise<Engine> | null = null;
 let liveScope: Scope | null = null;
-let liveTimers: number[] = [];
+let removeLiveSequences: () => void = () => {};
 let generation = 0;
 /** The code most recently attempted, so keys that do not change the text (arrows, shift) do nothing. */
 let lastTried: string | null = null;
@@ -120,6 +136,82 @@ function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
+/**
+ * The transport as one run of the user's code sees it (`t`). Everything the run schedules is
+ * remembered so it can be removed as a whole, and names are private to the run, so a new run never
+ * overwrites the sequences of the run that is still playing.
+ */
+function transportForRun(transport: Transport, run: number) {
+  const made: (() => void)[] = [];
+  const key = (name: string) => `run${run}:${name}`;
+  const facade = {
+    get bpm() {
+      return transport.bpm;
+    },
+    set bpm(value: number) {
+      transport.bpm = value;
+    },
+    get swing() {
+      return transport.swing;
+    },
+    set swing(value: number) {
+      transport.swing = value;
+    },
+    get stepLength() {
+      return transport.stepLength;
+    },
+    set stepLength(value: Transport['stepLength']) {
+      transport.stepLength = value;
+    },
+    get position() {
+      return transport.position;
+    },
+    sequence(...args: unknown[]) {
+      const [first, second, third] = args as Parameters<Transport['sequence']> & unknown[];
+      const sequence =
+        typeof first === 'string'
+          ? transport.sequence(key(first), second as never, third as never)
+          : transport.sequence(first as never, second as never);
+      made.push(() => sequence.stop());
+      return sequence;
+    },
+    steps(...args: unknown[]) {
+      const [first, second, third] = args;
+      const sequence =
+        typeof third === 'function'
+          ? transport.steps(key(first as string), second as never, third as never)
+          : transport.steps(first as never, second as never);
+      made.push(() => sequence.stop());
+      return sequence;
+    },
+    at(...args: Parameters<Transport['at']>) {
+      const cancel = transport.at(...args);
+      made.push(cancel);
+      return cancel;
+    },
+    every(...args: Parameters<Transport['every']>) {
+      const cancel = transport.every(...args);
+      made.push(cancel);
+      return cancel;
+    },
+    get(name: string) {
+      return transport.get(key(name));
+    },
+    clear(name?: string) {
+      if (name === undefined) removeAll();
+      else transport.clear(key(name));
+      return facade;
+    },
+    seconds(duration: Parameters<Transport['seconds']>[0]) {
+      return transport.seconds(duration);
+    },
+  };
+  const removeAll = () => {
+    for (const remove of made.splice(0)) remove();
+  };
+  return { facade, removeAll };
+}
+
 function run(target: Engine): void {
   const code = editor.value;
   if (code === lastTried) return;
@@ -135,8 +227,8 @@ function run(target: Engine): void {
   try {
     program = new Function(
       '__',
+      't',
       'engine',
-      'every',
       ...Object.keys(helpers),
       `"use strict";\n${code}`,
     ) as (...args: unknown[]) => void;
@@ -146,38 +238,23 @@ function run(target: Engine): void {
   }
 
   const scope = target.scope(`live-${++generation}`);
-  const timers: number[] = [];
-  const every = (seconds: number, callback: () => void): void => {
-    if (!(seconds > 0)) throw new RangeError('every() needs a number of seconds above 0');
-    timers.push(
-      window.setInterval(
-        () => {
-          try {
-            callback();
-          } catch (error) {
-            showMessage(describeError(error), true);
-          }
-        },
-        Math.max(seconds * 1000, 10),
-      ),
-    );
-  };
+  const { facade, removeAll } = transportForRun(target.transport, generation);
 
   try {
-    program(scope.$, target, every, ...Object.values(helpers));
+    program(scope.$, facade, target, ...Object.values(helpers));
   } catch (error) {
-    // Runtime error: discard what this run built and leave the previous run sounding.
-    timers.forEach((id) => window.clearInterval(id));
+    // Runtime error: discard what this run built and leave the previous run playing.
+    removeAll();
     scope.dispose();
     showMessage(describeError(error), true);
     return;
   }
 
-  // Success: swap. The old scope goes only now, so there is no gap while typing.
-  liveTimers.forEach((id) => window.clearInterval(id));
+  // Success: swap. The old run goes only now, so there is no gap while typing.
+  removeLiveSequences();
   liveScope?.dispose();
   liveScope = scope;
-  liveTimers = timers;
+  removeLiveSequences = removeAll;
   const count = scope.select('*').length;
   showMessage(`Running. ${count} node${count === 1 ? '' : 's'}.`);
 }
@@ -187,12 +264,25 @@ function run(target: Engine): void {
 function updateStatus(): void {
   const running = engine?.context.state === 'running';
   status.textContent = running
-    ? 'Audio is on.'
+    ? positionText()
     : engine
       ? 'Audio is paused.'
       : 'Audio is off. Press Start, or just type.';
   status.classList.toggle('running', running);
   toggle.textContent = running ? 'Stop audio' : 'Start audio';
+}
+
+/** Tempo and where the transport is, as bar and beat counted from 1. */
+function positionText(): string {
+  if (!engine) return '';
+  const { bar, beatInBar } = engine.transport.position;
+  return `${engine.transport.bpm} bpm · bar ${bar + 1} beat ${Math.floor(beatInBar) + 1}`;
+}
+
+/** Keeps the position readout moving while audio runs. */
+function watchPosition(): void {
+  if (engine?.context.state === 'running') status.textContent = positionText();
+  requestAnimationFrame(watchPosition);
 }
 
 /** Creates the engine on the first user gesture (browsers do not allow sound before one). */
@@ -206,6 +296,7 @@ function boot(): Promise<Engine> {
     addSamples(created);
     fillReference(created);
     engine = created;
+    watchPosition();
     return created;
   })();
   return booting;
@@ -214,6 +305,7 @@ function boot(): Promise<Engine> {
 async function start(): Promise<void> {
   const target = await boot();
   await target.resume();
+  target.transport.start();
   updateStatus();
   run(target);
 }
@@ -254,7 +346,9 @@ function fillReference(target: Engine): void {
   fillList('helpers', [
     ['__()', 'start a chain'],
     ["__('selector')", 'select nodes'],
-    ['every(seconds, fn)', 'temporary timer'],
+    ['t.sequence(name, options, fn)', 'a repeating pattern'],
+    ['t.every(interval, fn)', 'a repeating callback'],
+    ['t.bpm', 'tempo'],
     ...Object.keys(helpers).map((name) => [name, ''] as const),
   ]);
 }

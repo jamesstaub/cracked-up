@@ -5,6 +5,7 @@
 
 import { createEngine } from '../src';
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
+import { exampleFor } from './examples';
 
 const CATEGORY_TITLES: Record<string, string> = {
   source: 'Sources',
@@ -83,38 +84,6 @@ function optionRows(options: Readonly<Record<string, OptionInfo>>): (Node | stri
     info.default ?? '',
     info.description,
   ]);
-}
-
-/** A one-line example built from the type's own defaults. */
-function exampleFor(info: NodeTypeInfo): string {
-  const shorthand = info.params.find((param) => param.name === info.shorthand);
-  const argument = shorthand ? String(shorthand.default) : '';
-  if (info.type === 'sampler') {
-    return `__().sampler({ id: 'hit', buffer: 'kick' }).to('main');\nevery(0.5, () => __('#hit').trigger());`;
-  }
-  if (info.category === 'source') {
-    return `__().${info.type}(${argument}).gain(0.2).to('main');`;
-  }
-  if (info.category === 'filter') {
-    const settings = info.params
-      .map((param) => {
-        const value =
-          param.name === 'frequency'
-            ? 800
-            : param.name === 'gain'
-              ? 12
-              : param.name === 'q'
-                ? 4
-                : 0;
-        return `${param.name}: ${value}`;
-      })
-      .join(', ');
-    return `__().saw(110).${info.type}({ ${settings} }).gain(0.2).to('main');`;
-  }
-  if (info.type === 'panner') {
-    return `__().saw(110).gain(0.2).panner(-0.8).to('main');`;
-  }
-  return `__().saw(110).${info.type}(${argument}).gain(0.2).to('main');`;
 }
 
 function referenceFor(info: NodeTypeInfo): HTMLElement[] {

@@ -61,7 +61,7 @@ __.bus('main').gain.set(0.5); // overall level</code></pre>
         <pre><code>__.bus('drums').gain.set(0.8);
 __().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
 __().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
-every(0.25, () => __('sampler').trigger());</code></pre>
+t.every('1/4', () => __('sampler').trigger());</code></pre>
         <p>
           Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
         </p>
@@ -169,9 +169,8 @@ __().sine(0.5).gain(300).modulate('#filter', 'frequency');</code></pre>
         <pre><code>__().sampler({ id: 'kick', buffer: 'kick', class: 'drums' }).to('main');
 __().sampler({ id: 'hat', buffer: 'hat', class: 'drums' }).to('main');
 
-let n = 0;
-every(0.25, () => {
-  __(n++ % 2 ? '#hat' : '#kick').trigger();
+t.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
+  __(ev.value === 1 ? '#kick' : '#hat').trigger();
 });</code></pre>
         <p>
           Classes and tags are set when a node is made:
@@ -238,9 +237,8 @@ __('#filter').ramp('frequency', 3000, { duration: 4 });</code></pre>
           <code>trigger</code> apply to that hit only.
         </p>
         <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
-let n = 0;
-every(0.125, () => {
-  __('#hat').trigger({ speed: 1 + (n++ % 4) * 0.2, velocity: 0.6 });
+t.sequence('hat', { steps: 4, step: '1/8' }, (ev) => {
+  __('#hat').trigger({ speed: 1 + ev.index * 0.2, velocity: 0.6 });
 });</code></pre>
         <p>
           An <strong>oscillator</strong> runs from the moment it is made and is heard straight away,
@@ -248,7 +246,7 @@ every(0.125, () => {
           make one that is silent until triggered, create it with <code>gate: 'closed'</code>.
         </p>
         <pre><code>__().square({ id: 'blip', frequency: 660, gate: 'closed' }).gain(0.15).to('main');
-every(0.5, () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
+t.every('1/4', () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
 
         <h2 id="buffers">Samplers and where their audio comes from</h2>
         <p>
@@ -298,8 +296,9 @@ every(0.5, () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
         <pre><code>const kit = engine.buffers.get('snare');
 kit.slices = [0, 0.03, 0.1, 0.25];
 __().sampler({ id: 's', buffer: 'snare' }).to('main');
-let n = 0;
-every(0.2, () => __('#s').trigger({ slice: n++ }));</code></pre>
+t.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
+  __('#s').trigger({ slice: ev.value });
+});</code></pre>
 
         <h2 id="time">Time</h2>
         <p>
@@ -311,13 +310,152 @@ every(0.2, () => __('#s').trigger({ slice: n++ }));</code></pre>
 __().sine({ id: 'tone', frequency: 220 }).gain(0.2).to('main');
 __('#tone').set({ frequency: 330 }, { at: now + 1 });
 __('#tone').set({ frequency: 440 }, { at: now + 2 });</code></pre>
-        <div class="note">
-          <p>
-            Sequencing (patterns, tempo, polyrhythms) belongs to the transport, which is not built
-            yet. Until then the demo provides <code>every(seconds, fn)</code>, a plain timer whose
-            timing is loose. It is not part of the library.
-          </p>
+        <p>
+          Inside a sequence callback you rarely need <code>at</code>: anything you do there happens
+          at the step's own time. See the next section.
+        </p>
+
+        <h2 id="sequencing">Sequencing: the transport</h2>
+        <p>
+          The transport keeps musical time: a tempo and a position in beats. A <em>sequence</em> is
+          a repeating pattern of steps on it. For each step, your function is called with an event
+          describing that step. In the demo the transport is called <code>t</code>.
+        </p>
+        <pre><code>t.bpm = 120;
+__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+
+t.sequence('kick', { steps: 'x...x...x..x..x.' }, (ev) => {
+  if (ev.value) __('#kick').trigger();
+});</code></pre>
+        <p>
+          <code>steps</code> is the pattern, as an array of numbers or a string. In a string,
+          <code>x</code> means 1 and <code>.</code> means 0, so <code>'x..x'</code> is the same as
+          <code>[1, 0, 0, 1]</code>. A value of 0 is a rest; your function is still called, which is
+          why the example checks <code>ev.value</code>. Values can be any number, so a step can say
+          which sample to play or what pitch to use.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>steps</code></td>
+                <td>
+                  The pattern. A plain number, such as <code>5</code>, means that many steps, all
+                  with value 1
+                </td>
+              </tr>
+              <tr>
+                <td><code>step</code></td>
+                <td>
+                  How long one step lasts: <code>'1/16'</code> (the default), <code>'1/8'</code>,
+                  <code>'1/8t'</code> for a triplet, <code>'1/8d'</code> for dotted, or a number of
+                  beats
+                </td>
+              </tr>
+              <tr>
+                <td><code>span</code></td>
+                <td>
+                  Use instead of <code>step</code> to spread the steps evenly over a length:
+                  <code>{ steps: 5, span: '1 bar' }</code> is five in a bar
+                </td>
+              </tr>
+              <tr>
+                <td><code>swing</code></td>
+                <td>0.5 is straight. Above 0.5 delays every second step</td>
+              </tr>
+              <tr>
+                <td><code>offset</code></td>
+                <td>Shifts the whole pattern later by a length</td>
+              </tr>
+              <tr>
+                <td><code>probability</code></td>
+                <td>Chance, from 0 to 1, that each hit is played</td>
+              </tr>
+              <tr>
+                <td><code>rests</code></td>
+                <td><code>false</code> stops your function being called for rests</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+        <p>The event your function receives:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ev.value</code></td>
+                <td>The step's value from the pattern</td>
+              </tr>
+              <tr>
+                <td><code>ev.index</code></td>
+                <td>Which step of the pattern this is, counting from 0</td>
+              </tr>
+              <tr>
+                <td><code>ev.cycle</code></td>
+                <td>How many times the pattern has repeated</td>
+              </tr>
+              <tr>
+                <td><code>ev.time</code></td>
+                <td>The exact moment the step sounds, on the audio clock</td>
+              </tr>
+              <tr>
+                <td><code>ev.duration</code></td>
+                <td>How long the step lasts, in seconds</td>
+              </tr>
+              <tr>
+                <td><code>ev.at(0.5)</code></td>
+                <td>
+                  A moment part-way through the step: 0.5 is halfway. For extra hits between steps
+                </td>
+              </tr>
+              <tr>
+                <td><code>ev.beat</code>, <code>ev.bar</code></td>
+                <td>Where the step is in the music</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Your function runs a fraction of a second <em>before</em> its step is heard, and whatever
+          it does is timed to land exactly on the step. That is why timing stays tight even when the
+          page is busy. It also means a slow function does not make the music late.
+        </p>
+        <p>
+          Every sequence follows the same transport, so sequences with different step lengths stay
+          locked together. That makes polyrhythms a matter of choosing lengths:
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.5).to('main');
+
+// Four against five in the same bar.
+t.sequence('four', { steps: 4, span: '1 bar' }, () => __('#kick').trigger());
+t.sequence('five', { steps: 5, span: '1 bar' }, () => __('#hat').trigger());</code></pre>
+        <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
+
+// A swung pattern with a quick double hit on the last step.
+t.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) => {
+  if (!ev.value) return;
+  __('#hat').trigger();
+  if (ev.index === 3) __('#hat').trigger({ at: ev.at(0.5), velocity: 0.5 });
+});</code></pre>
+        <p>
+          Giving a sequence a name lets you change it: calling <code>t.sequence</code> again with
+          the same name replaces the old one without losing its place.
+          <code>t.every('1/4', fn)</code> calls a function at a regular interval with no pattern,
+          and <code>t.at('2 bars', fn)</code> calls one once.
+        </p>
 
         <h2 id="demo-names">Names available in the live demo</h2>
         <div class="table-wrap">
@@ -342,8 +480,11 @@ __('#tone').set({ frequency: 440 }, { at: now + 2 });</code></pre>
                 <td>The engine itself: <code>engine.buffers</code>, <code>engine.context</code></td>
               </tr>
               <tr>
-                <td><code>every(seconds, fn)</code></td>
-                <td>Temporary timer, provided by the demo page only</td>
+                <td><code>t</code></td>
+                <td>
+                  The transport: <code>t.bpm</code>, <code>t.sequence(...)</code>,
+                  <code>t.every(...)</code>, <code>t.at(...)</code>
+                </td>
               </tr>
               <tr>
                 <td><code>euclid(hits, steps, rotate)</code></td>
@@ -365,8 +506,9 @@ __('#tone').set({ frequency: 440 }, { at: now + 2 });</code></pre>
           </table>
         </div>
         <p>
-          Each time the demo re-runs your code it starts from nothing: the nodes and timers from the
-          previous run are removed once the new code has run without an error.
+          Each time the demo re-runs your code it starts from nothing: the nodes and sequences from
+          the previous run are removed once the new code has run without an error. The new sequences
+          come in at the transport's current position, so the music does not skip.
         </p>
 
         <h2 id="common-options">Options every node accepts</h2>

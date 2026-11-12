@@ -8,7 +8,6 @@ import type {
   Random,
   RenderOptions,
   ScopeApi,
-  Transport,
   Unsubscribe,
 } from '../api';
 import { builtinNodes } from '../nodes/builtin';
@@ -22,6 +21,7 @@ import { RegistryImpl } from './registry';
 import type { RegistryEntry } from './registry';
 import { ScopeImpl } from './scope';
 import { SelectionImpl } from './selection';
+import { TransportImpl } from './transport';
 
 /** Fixed seed for offline engines, so a render repeats exactly unless the caller asks otherwise. */
 const OFFLINE_SEED = 0x5eed;
@@ -37,6 +37,7 @@ export class EngineImpl {
   readonly buffersImpl: BufferStoreImpl;
   readonly registryImpl: RegistryImpl;
   readonly root: ScopeImpl;
+  readonly transportImpl: TransportImpl;
 
   /** The engine's `main` bus. Null only while the root scope is creating it. */
   mainBus: BusImpl | null = null;
@@ -70,6 +71,7 @@ export class EngineImpl {
     for (const definition of builtinNodes) this.registryImpl.register(definition);
     for (const definition of options.nodes ?? []) this.registryImpl.register(definition);
 
+    this.transportImpl = new TransportImpl(this);
     this.root = new ScopeImpl(this, 'root', null);
     this.mainBus = this.root.bus('main');
 
@@ -155,8 +157,8 @@ export class EngineImpl {
     return this.registryImpl;
   }
 
-  get transport(): Transport {
-    throw new CrackedUpError('unsupported', 'The transport arrives in Phase 2.');
+  get transport(): TransportImpl {
+    return this.transportImpl;
   }
 
   get $(): ScopeApi {
@@ -184,14 +186,17 @@ export class EngineImpl {
   }
 
   async render(options?: RenderOptions): Promise<AudioBuffer> {
-    // `options.length` is honoured once the transport exists; until then the whole context renders.
-    void options;
     if (!isOffline(this.context)) {
       throw new CrackedUpError(
         'unsupported',
         'render() needs an engine built on an OfflineAudioContext.',
       );
     }
+    // The context's length is fixed when it is made, so the whole of it renders; `options.length` is
+    // reserved for limiting how much of that the transport fills.
+    void options;
+    // No real time passes offline: run every scheduled callback across the whole render first.
+    this.transportImpl.runOffline(this.context.length / this.context.sampleRate);
     return this.context.startRendering();
   }
 
@@ -202,6 +207,7 @@ export class EngineImpl {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.transportImpl.dispose();
     this.root.dispose();
     this.events.clear();
   }

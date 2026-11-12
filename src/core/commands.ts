@@ -128,12 +128,29 @@ export function execute(scope: ScopeImpl, command: Command): void {
       scope.engine.buffers.load(command.url, { key: command.key });
       return;
     }
+    case 'setStep': {
+      const sequence = scope.engine.transport.get(command.name);
+      if (!sequence) {
+        throw new CrackedUpError(
+          'missing-target',
+          `There is no sequence called "${command.name}".`,
+        );
+      }
+      sequence.setStep(command.index, command.value);
+      return;
+    }
+    case 'clearSequence': {
+      scope.engine.transport.clear(command.name);
+      return;
+    }
+    case 'transport': {
+      if (command.set.bpm !== undefined) scope.engine.transport.bpm = command.set.bpm;
+      if (command.set.swing !== undefined) scope.engine.transport.swing = command.set.swing;
+      return;
+    }
     case 'bypass':
     case 'apply':
     case 'sequence':
-    case 'setStep':
-    case 'clearSequence':
-    case 'transport':
       throw new CrackedUpError(
         'unsupported',
         `The "${command.op}" command is not implemented yet.`,

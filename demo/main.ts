@@ -9,7 +9,7 @@
 
 import { createEngine } from '../src';
 import type { Engine } from '../src';
-import * as util from '../src/util';
+import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
 import { attachHighlighter } from './highlight';
 import { addSamples } from './samples';
 
@@ -95,15 +95,7 @@ const reset = document.querySelector<HTMLButtonElement>('#reset')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
 const message = document.querySelector<HTMLDivElement>('#message')!;
 
-/** The names user code can use besides `__` and `engine`. */
-const helpers = {
-  euclid: util.euclid,
-  pitchToFreq: util.pitchToFreq,
-  freqToPitch: util.freqToPitch,
-  scales: util.scales,
-  chords: util.chords,
-  dbToGain: util.dbToGain,
-};
+// The names user code can use besides `__` and `engine` are `helpers`, shared with the sandboxed demo.
 
 let engine: Engine | null = null;
 let booting: Promise<Engine> | null = null;
@@ -136,7 +128,7 @@ function run(target: Engine): void {
   // Compile first. A syntax error touches nothing.
   let program: (...args: unknown[]) => void;
   try {
-    program = new Function('__', 'engine', ...Object.keys(helpers), `"use strict";\n${code}`) as (
+    program = new Function('__', 'engine', ...Object.keys(helpers), wrapUserCode(code)) as (
       ...args: unknown[]
     ) => void;
   } catch (error) {
@@ -243,14 +235,39 @@ function fillReference(target: Engine): void {
       .list()
       .map((info) => [info.type, info.params.map((param) => param.name).join(', ')]),
   );
+}
+
+/**
+ * The helper list needs no engine, so it is there before audio starts. Each helper is shown as its
+ * call, in a group; what it does is in the tooltip and in the docs.
+ */
+function fillHelpers(): void {
   fillList('helpers', [
     ['__()', 'start a chain'],
     ["__('selector')", 'select nodes'],
     ['__.transport.sequence(name, options, fn)', 'a repeating pattern'],
     ['__.transport.every(interval, fn)', 'a repeating callback'],
     ['__.transport.bpm', 'tempo'],
-    ...Object.keys(helpers).map((name) => [name, ''] as const),
   ]);
+  const groups = document.querySelector<HTMLDivElement>('#helper-groups')!;
+  groups.replaceChildren(
+    ...HELPER_GROUPS.flatMap((group) => {
+      const heading = document.createElement('h3');
+      heading.textContent = group.title;
+      const list = document.createElement('ul');
+      list.append(
+        ...group.helpers.map((doc) => {
+          const item = document.createElement('li');
+          item.textContent = doc.signature;
+          item.title = doc.alias
+            ? `${doc.description} Also as ${doc.alias}, its name in Cracked.`
+            : doc.description;
+          return item;
+        }),
+      );
+      return [heading, list];
+    }),
+  );
 }
 
 // --- Wiring -----------------------------------------------------------------------------------------
@@ -277,6 +294,7 @@ function initialCode(): string {
   }
 }
 
+fillHelpers();
 editor.value = initialCode();
 /** Redraws the coloured code behind the editor. Call it after setting the editor's text from code. */
 const refreshHighlight = attachHighlighter(

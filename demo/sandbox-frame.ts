@@ -5,17 +5,8 @@
 
 import { createRemote } from '../src/remote';
 import type { Remote } from '../src/remote';
-import * as util from '../src/util';
+import { helpers, wrapUserCode } from './helpers';
 import type { FromFrame, ToFrame } from './sandbox-protocol';
-
-const helpers = {
-  euclid: util.euclid,
-  pitchToFreq: util.pitchToFreq,
-  freqToPitch: util.freqToPitch,
-  scales: util.scales,
-  chords: util.chords,
-  dbToGain: util.dbToGain,
-};
 
 // The frame's origin is opaque, so the parent cannot be named as a target origin: '*' is the only
 // choice. Nothing secret is sent this way, only commands.
@@ -31,9 +22,7 @@ function run(code: string): void {
   if (!remote) return;
   try {
     const names = ['__', 'define', ...Object.keys(helpers)];
-    const program = new Function(...names, `"use strict";\n${code}`) as (
-      ...args: unknown[]
-    ) => void;
+    const program = new Function(...names, wrapUserCode(code)) as (...args: unknown[]) => void;
     const active = remote;
     const define = (definition: Parameters<Remote['define']>[0]): void => active.define(definition);
     active.build((__) => program(__, define, ...Object.values(helpers)));

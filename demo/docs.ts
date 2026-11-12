@@ -6,6 +6,7 @@
 import { createEngine } from '../src';
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
 import { exampleFor } from './examples';
+import { HELPER_GROUPS } from './helpers';
 import { highlightBlocks } from './highlight';
 
 const CATEGORY_TITLES: Record<string, string> = {
@@ -145,6 +146,33 @@ function buildReference(types: readonly NodeTypeInfo[]): void {
   }
 }
 
+/** The helper reference: one table per group, from the same list the demos use. */
+function buildHelpers(): void {
+  const body = document.querySelector<HTMLDivElement>('#helpers-body')!;
+  for (const group of HELPER_GROUPS) {
+    body.append(
+      element('h4', group.title),
+      table(
+        ['Helper', 'What it does', 'Example'],
+        group.helpers.map((doc) => [
+          element(
+            'div',
+            doc.alias
+              ? [code(doc.signature), element('div', ['or ', code(doc.alias)], 'alias')]
+              : [code(doc.signature)],
+          ),
+          doc.description,
+          element('div', [
+            ...(doc.setup ? [code(doc.setup), element('br')] : []),
+            code(doc.example),
+            element('div', ['gives ', code(doc.result)], 'gives'),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
 function buildContents(types: readonly NodeTypeInfo[]): void {
   const toc = document.querySelector<HTMLElement>('#toc')!;
   toc.append(element('div', 'Guide', 'group'));
@@ -183,6 +211,7 @@ async function main(): Promise<void> {
   const engine = await createEngine({ context: new OfflineAudioContext(1, 1, 44100) });
   const types = engine.registry.list();
   buildReference(types);
+  buildHelpers();
   buildContents(types);
   // Before the links go in: highlighting rewrites each <code>, and a link reads its text.
   highlightBlocks(document.querySelector('article')!);

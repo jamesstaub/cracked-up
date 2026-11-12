@@ -15,6 +15,193 @@
     <div class="docs-layout">
       <nav id="toc" aria-label="Contents"></nav>
       <article>
+        <h2 id="introduction">Introduction</h2>
+        <p>
+          cracked-up is a JavaScript library for making sound and music in the browser by writing
+          code. You describe a sound as a chain of simple parts, such as an oscillator into a filter
+          into a volume control, and a musical clock plays your patterns in time. It is meant for
+          live coding, and for apps that let people write small music scripts.
+        </p>
+        <pre><code>__().saw({ id: 'bass', gate: 'closed' }).lowpass(700).gain(0.3).to('main');
+
+__.transport.sequence('bass', { steps: [55, 0, 55, 82.4], step: '1/8' }, (ev) => {
+  if (ev.value) __('#bass').set({ frequency: ev.value }).trigger({ duration: 0.15 });
+});</code></pre>
+        <p>
+          Every example on this page has a <em>Try it</em> link that opens it in the
+          <a href="./index.html" target="cracked-up-demo">live demo</a>, where you can change it
+          while it plays.
+        </p>
+
+        <h3>Where it comes from</h3>
+        <p>
+          cracked-up is based on
+          <a href="https://github.com/billorcutt/i_dropped_my_phone_the_screen_cracked"
+            >I Dropped My Phone The Screen Cracked</a
+          >
+          by Bill Orcutt, called Cracked for short on this page. Cracked had the idea this library
+          keeps: one object, <code>__</code>, with which you chain audio nodes together and later
+          find them again with selectors like the ones in CSS, such as <code>__('#bass')</code> or
+          <code>__('lowpass')</code>.
+        </p>
+        <p>
+          cracked-up is a rewrite, not a new version of Cracked. It was written from scratch in
+          TypeScript, and many names and rules changed, so code written for Cracked will not run
+          here without changes. A few of the differences:
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>In Cracked</th>
+                <th>Here</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>__().sine().dac()</code></td>
+                <td>
+                  <code>__().sine().to('main')</code>. Chains end at a named
+                  <a href="#output">bus</a>
+                </td>
+              </tr>
+              <tr>
+                <td>A later line such as <code>__.lowpass()</code> carries on the last chain</td>
+                <td>A chain is a value. You carry on from that value, or select nodes by name</td>
+              </tr>
+              <tr>
+                <td><code>.attr({ frequency: 200 })</code></td>
+                <td>
+                  <code>.set({ frequency: 200 })</code> or <code>.frequency(200)</code>. See
+                  <a href="#parameters">Changing parameters</a>
+                </td>
+              </tr>
+              <tr>
+                <td><code>.start()</code>, <code>.stop()</code></td>
+                <td>
+                  <code>.trigger()</code>, <code>.release()</code>. See
+                  <a href="#triggering">Starting and stopping sounds</a>
+                </td>
+              </tr>
+              <tr>
+                <td><code>__.loop(...)</code> and <code>.bind('step', ...)</code></td>
+                <td>
+                  <code>__.transport.sequence(...)</code>. See
+                  <a href="#sequencing">Sequencing</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Cracked is released under the MIT licence, copyright 2014 Bill Orcutt. cracked-up is
+          released under the MIT licence too. Its licence file keeps Bill Orcutt's copyright line
+          and adds one for the new code (2026, James Staub).
+        </p>
+
+        <h3>Why a rewrite, and what is new</h3>
+        <p>
+          Cracked keeps everything in one shared place: one set of nodes for the whole page, and a
+          memory of "the last node made". That is quick to type, but two pieces of code on the same
+          page can disturb each other, and timing depends on how busy the page is. The rewrite set
+          out to remove those limits and keep the feel. What that gave:
+        </p>
+        <ul>
+          <li>
+            <strong>Nothing shared behind your back.</strong> Sound lives in an <em>engine</em> that
+            you create, and a page can have more than one. An engine can be divided into
+            <em>scopes</em>, for example one for each track. Code given one track's scope cannot
+            find or change the nodes of another track.
+          </li>
+          <li>
+            <strong>Selections that do not get in each other's way.</strong>
+            <code>__('lowpass')</code> gives back a selection you can keep in a variable and use
+            again. Using one selection never changes what another one points at. See
+            <a href="#selecting">Selecting nodes</a>.
+          </li>
+          <li>
+            <strong>Tight timing.</strong> A <em>transport</em> keeps the tempo and schedules each
+            step slightly ahead of time on the audio clock, so notes land on the exact sample even
+            when the page is briefly busy. It runs any number of sequences at once, with different
+            lengths and step sizes (polyrhythm), swing, and tempo changes. See
+            <a href="#sequencing">Sequencing</a>.
+          </li>
+          <li>
+            <strong>Parameters that describe themselves.</strong> Every parameter knows its range,
+            unit, default value and what it does. The <a href="#reference">node reference</a> on
+            this page is made from that information, and an app can use it to draw the right knob
+            for each parameter.
+          </li>
+          <li>
+            <strong>Macros.</strong> Several nodes can be wrapped up as one new node type with its
+            own parameters. The built-in <a href="#node-polysynth"><code>polysynth</code></a> is
+            made this way.
+          </li>
+          <li>
+            <strong>Changing code while it plays.</strong> Run changed code again and only what
+            changed is rebuilt. Everything else keeps sounding, and sequences stay in time. See
+            <a href="#rebuilding">Re-running code</a>.
+          </li>
+          <li>
+            <strong>Offline rendering.</strong> The same code can be rendered to audio without
+            playing it, faster than real time, and it comes out the same on every run. See
+            <a href="#recording">Stems and files</a>. The library's own tests work this way: they
+            render sound in real browsers and check the result.
+          </li>
+          <li>
+            <strong>Modern audio processing.</strong> Where Cracked ran custom sound code with
+            <code>ScriptProcessor</code>, an older browser feature that shares a thread with the
+            page and can glitch, cracked-up uses <code>AudioWorklet</code>, which runs with the rest
+            of the audio. The bitcrusher, recorder and looper are built on it.
+          </li>
+          <li>
+            <strong>Recording and looping.</strong> A recorder and a looper that start and stop on
+            the exact sample, live input, and separate files for each part of a mix (stems). See
+            <a href="#recording">Recording, looping and live input</a>.
+          </li>
+          <li>
+            <strong>MIDI.</strong> Play a synth from a keyboard, map a controller to a parameter,
+            send notes out, and keep time with other gear in either direction. See
+            <a href="#midi">MIDI</a>.
+          </li>
+          <li>
+            <strong>Running other people's scripts safely.</strong> A script can run in a sandbox, a
+            closed-off part of the browser where it cannot read your page, and still play in time.
+            This is what makes sharing scripts between collaborators possible. See
+            <a href="#sandbox">Running scripts in a sandbox</a> and the guide
+            <a href="./collaboration.html">Running other people's scripts</a>.
+          </li>
+          <li>
+            <strong>Types.</strong> The library is written in TypeScript. An editor can complete
+            node names and options as you type, and point out a misspelled one before you run it.
+          </li>
+          <li>
+            <strong>The composing helpers are still here.</strong> Cracked's small functions for
+            scales, random choices and number conversions are listed under
+            <a href="#helpers">Helpers</a>.
+          </li>
+        </ul>
+
+        <h3>Where it stands</h3>
+        <p>
+          cracked-up is pre-alpha. It is not published to npm, and names and behaviour may still
+          change. What this page describes is implemented, and the tests run in Chromium, Firefox
+          and WebKit. Known limits:
+        </p>
+        <ul>
+          <li>
+            MIDI is tested with pretend devices only. Its timing has not been measured against real
+            hardware.
+          </li>
+          <li>Safari has no Web MIDI, so MIDI does not work there.</li>
+          <li>Recording from a live microphone is tested in Chromium only.</li>
+          <li>
+            Recordings are kept in memory without compression. There is no mode for very long takes
+            yet.
+          </li>
+          <li>MIDI is not available to scripts running in a sandbox.</li>
+        </ul>
+
         <h2 id="basics">The basics</h2>
         <p>
           You build sound by chaining <em>nodes</em>. A node makes sound (an oscillator, a sampler)
@@ -842,6 +1029,77 @@ remote.build((__) =&gt; {
           this, how to set it up safely, and what to share between collaborators.
         </p>
 
+        <h2 id="helpers">Helpers</h2>
+        <p>
+          Helpers are small functions for composing: rhythms, scales, random choices and number
+          conversions. They make no sound themselves. They give you numbers and lists to use in your
+          patterns and parameters. In the live demo and the sandboxed demo you call them by name. In
+          your own project, import them from <code>cracked-up/util</code> (or from
+          <code>cracked-up/global</code>, next to <code>__</code>).
+        </p>
+        <pre><code>__.transport.bpm = 100;
+__().triangle({ id: 'lead', gate: 'closed' }).lowpass(2400).gain(0.25).to('main');
+__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.3).to('main');
+
+// A seed fixes the random choices: the same tune every time. Try another number.
+const random = createRandom(4);
+
+// A minor as MIDI notes: 57 is the A below middle C.
+const notes = scales('minor').map((step) =&gt; 57 + step);
+// Decide the tune once: eight notes picked from the scale.
+const tune = fillArray(8, () =&gt; pick(notes, random));
+
+// Five notes spread evenly over eight steps.
+__.transport.sequence('lead', { steps: euclid(5, 8), step: '1/8' }, (ev) =&gt; {
+  if (!ev.value) return;
+  // One time in five, play the note an octave higher.
+  const note = tune[ev.index] + (chance(0.2, random) ? 12 : 0);
+  __('#lead').set({ frequency: pitchToFreq(note) }).trigger({ duration: ev.duration * 0.8 });
+});
+
+// A hat on every third sixteenth note, drifting against the tune.
+const third = everyNth(3);
+__.transport.sequence('hat', { steps: 'x', step: '1/16' }, () =&gt; {
+  if (third()) __('#hat').trigger();
+});</code></pre>
+
+        <h3>Random choices that repeat</h3>
+        <p>
+          Every helper that makes a random choice takes an optional last argument: where to get its
+          random numbers. Leave it out and the choice is different on every run. Pass a
+          <em>seeded</em> source and the choices come out the same every time, which is what you
+          want when a piece should sound the same tomorrow, or when you render it to a file.
+          <code>createRandom(seed)</code> makes one, and every engine has one of its own as
+          <code>engine.random</code>.
+        </p>
+        <pre><code>__().sine({ id: 'bell', gate: 'closed' }).gain(0.2).to('main');
+
+// A random note of C minor on every eighth note, from the engine's own source.
+__.transport.every('1/8', () =&gt; {
+  const frequency = randomScale('minor', 5, 6, engine.random);
+  __('#bell').set({ frequency }).trigger({ duration: 0.1 });
+});</code></pre>
+
+        <h3>Every helper</h3>
+        <p>
+          The results shown are what the example gives. Where a helper has a second name, that is
+          the name Cracked used for it, and it works here too.
+        </p>
+        <!-- Filled in by docs.ts from demo/helpers.ts, the same list the demos use. -->
+        <div id="helpers-body"></div>
+        <p>
+          Three things differ from Cracked on purpose. <code>chance</code> takes a probability from
+          0 to 1, not a percentage. <code>shuffle</code> returns a new list and leaves yours alone.
+          <code>pitchToFreq</code> and <code>freqToPitch</code> do not round, so notes between the
+          keys work.
+        </p>
+        <p>
+          <code>euclid</code>'s third argument, <code>rotate</code>, starts the pattern that many
+          steps later, which moves the hits earlier: <code>euclid(3, 8)</code> is
+          <code>[1, 0, 0, 1, 0, 0, 1, 0]</code> and <code>euclid(3, 8, 1)</code> is
+          <code>[0, 0, 1, 0, 0, 1, 0, 1]</code>. A negative number moves them later.
+        </p>
+
         <h2 id="demo-names">Names available in the live demo</h2>
         <div class="table-wrap">
           <table>
@@ -874,20 +1132,15 @@ remote.build((__) =&gt; {
                 </td>
               </tr>
               <tr>
-                <td><code>euclid(hits, steps, rotate)</code></td>
-                <td>An evenly spread rhythm as an array of 0s and 1s</td>
+                <td>The <a href="#helpers">helpers</a></td>
+                <td>
+                  Every function listed under Helpers, by its bare name:
+                  <code>euclid(3, 8)</code>, <code>pick(list)</code>
+                </td>
               </tr>
               <tr>
-                <td><code>pitchToFreq</code>, <code>freqToPitch</code></td>
-                <td>Convert between MIDI note numbers and Hz</td>
-              </tr>
-              <tr>
-                <td><code>scales(name)</code>, <code>chords(name)</code></td>
-                <td>Lists of semitone steps, such as <code>scales('minor')</code></td>
-              </tr>
-              <tr>
-                <td><code>dbToGain</code></td>
-                <td>Converts decibels to a gain factor</td>
+                <td><code>'kick'</code>, <code>'snare'</code>, <code>'hat'</code></td>
+                <td>Three short sounds made by the demo page, for samplers to play</td>
               </tr>
             </tbody>
           </table>

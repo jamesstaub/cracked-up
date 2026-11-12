@@ -204,6 +204,22 @@ aside ul {
 aside li span {
   color: var(--muted);
 }
+aside h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 10px 0 2px;
+}
+/* A helper is shown as its call. A long one wraps, with the rest of it indented. */
+#helper-groups li {
+  padding-left: 1em;
+  text-indent: -1em;
+  cursor: help;
+}
+aside .more {
+  font-size: 12px;
+  margin: 12px 0 0;
+}
 #message {
   min-height: 34px;
   padding: 8px 16px;
@@ -375,6 +391,18 @@ article th {
 article td.num {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+article h4 {
+  font-size: 13px;
+  margin: 18px 0 0;
+}
+#helpers-body td:first-child {
+  min-width: 190px;
+}
+#helpers-body .alias,
+#helpers-body .gives {
+  color: var(--muted);
+  font-size: 12px;
 }
 .badge {
   display: inline-block;

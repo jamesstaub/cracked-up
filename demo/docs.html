@@ -457,6 +457,78 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
 
+        <h2 id="bypass">Bypassing a node</h2>
+        <p>
+          A bypassed effect passes its input straight to its output. A bypassed source, or a
+          modulator, is silent. The node keeps running while bypassed, so a delay keeps its contents
+          and an oscillator keeps its phase. The switch is a 5 millisecond crossfade, so it does not
+          click.
+        </p>
+        <pre><code>__().saw(110).lowpass({ id: 'filter', frequency: 300, q: 8 }).gain(0.2).to('main');
+
+// Take the filter out on every second beat.
+__.transport.sequence('toggle', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
+  __('#filter').bypass(ev.value === 1);
+});</code></pre>
+        <p>
+          <code>.bypass()</code> turns the bypass on, <code>.bypass(false)</code> turns it off, and
+          <code>{ bypass: true }</code> among a node's options makes it bypassed from the start.
+        </p>
+
+        <h2 id="rebuilding">Re-running code: <code>build</code></h2>
+        <p>
+          A scope's <code>build</code> runs a function that makes nodes, connections and sequences,
+          and then makes the scope match what the function asked for. Run it again with changed code
+          and only the difference is applied:
+        </p>
+        <ul>
+          <li>
+            A node that is asked for again is kept and keeps sounding. Changed parameter values are
+            set on it in place.
+          </li>
+          <li>
+            A node is recognised by its <code>id</code>. A node without one is recognised by its
+            position among the nodes of its type: the second <code>lowpass</code> your code makes is
+            the second <code>lowpass</code> it made last time. Give a node an id if you want it to
+            survive being moved around.
+          </li>
+          <li>
+            A node is replaced only if its type or one of its creation options (a sampler's buffer,
+            an oscillator's gate) changed.
+          </li>
+          <li>Nodes, connections and sequences the function no longer asks for are removed.</li>
+          <li>
+            A sequence with a name is replaced in place and stays in time. Give sequences names.
+          </li>
+          <li>
+            If the function throws, everything it did is undone and the scope plays on as it was.
+          </li>
+        </ul>
+        <pre data-static><code>const scope = engine.scope('track-1');
+
+await scope.build((__) =&gt; {
+  __().saw({ id: 'bass' }).lowpass(500).gain(0.25).to('main');
+});
+
+// Later: the saw and the gain are untouched, the filter moves to 900 Hz, a delay is added.
+const result = await scope.build((__) =&gt; {
+  __().saw({ id: 'bass' }).lowpass(900).delay(0.25).gain(0.25).to('main');
+});
+result.added;     // [delay]
+result.updated;   // [lowpass, gain]  (the gain's input changed)
+result.unchanged; // [saw]</code></pre>
+        <p>
+          The live demo runs your code through <code>build</code> on every key up. A rebuild sets
+          every parameter back to what the code says, so a value changed from a sequence callback
+          lasts until the next rebuild.
+        </p>
+        <p>
+          <code>scope.apply(graph)</code> does the same from data instead of code:
+          <code>scope.describe()</code> returns a scope's nodes and connections as plain JSON, and
+          <code>apply</code> makes a scope match such a description. That is how a host saves and
+          restores a graph, or edits one from a user interface.
+        </p>
+
         <h2 id="demo-names">Names available in the live demo</h2>
         <div class="table-wrap">
           <table>
@@ -508,9 +580,9 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           </table>
         </div>
         <p>
-          Each time the demo re-runs your code it starts from nothing: the nodes and sequences from
-          the previous run are removed once the new code has run without an error. The new sequences
-          come in at the transport's current position, so the music does not skip.
+          Each time the demo re-runs your code it rebuilds in place, as described under
+          <a href="#rebuilding">Re-running code</a>: what you did not change keeps sounding, and if
+          the code has an error the previous version keeps playing.
         </p>
 
         <h2 id="common-options">Options every node accepts</h2>
@@ -539,6 +611,13 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
                 <td>
                   An object of extra labels, such as <code>{ role: 'send' }</code>. Select with
                   <code>[role=send]</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>bypass</code></td>
+                <td>
+                  <code>true</code> makes the node bypassed from the start. See
+                  <a href="#bypass">Bypassing a node</a>
                 </td>
               </tr>
             </tbody>

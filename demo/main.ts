@@ -1,15 +1,14 @@
 /**
  * Live demo: a text box whose code is re-run on every key up.
  *
- * Each run gets its own scope: `__` builds nodes in it, and `__.transport` schedules sequences that
- * belong to it. If the code compiles and runs, the previous run's scope is disposed, which removes its
- * nodes and sequences; if it fails, the new scope is disposed instead and the previous run keeps
- * playing, so a half-typed line never interrupts the sound. Sequences take their place from the
- * transport's position, so a new run comes in exactly in time with the old one.
+ * Every run goes through `build()` on one scope, which rebuilds in place: nodes the code still asks
+ * for are kept and keep sounding, changed values are set on them, and what the code no longer asks for
+ * is removed. If the code throws, `build()` undoes what it did and the previous run keeps playing, so a
+ * half-typed line never interrupts the sound. Named sequences are replaced in place and stay in time.
  */
 
 import { createEngine } from '../src';
-import type { Engine, Scope } from '../src';
+import type { Engine } from '../src';
 import * as util from '../src/util';
 
 const DEFAULT_CODE = `// Edit this code: it re-runs on every key up.
@@ -77,8 +76,6 @@ const helpers = {
 
 let engine: Engine | null = null;
 let booting: Promise<Engine> | null = null;
-let liveScope: Scope | null = null;
-let generation = 0;
 /** The code most recently attempted, so keys that do not change the text (arrows, shift) do nothing. */
 let lastTried: string | null = null;
 
@@ -136,7 +133,9 @@ function showMessage(text: string, isError = false): void {
 }
 
 function describeError(error: unknown): string {
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  // A failed build wraps what the code threw; the original says more (ReferenceError, TypeError).
+  const original = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+  return original instanceof Error ? `${original.name}: ${original.message}` : String(original);
 }
 
 function run(target: Engine): void {
@@ -160,23 +159,19 @@ function run(target: Engine): void {
     return;
   }
 
-  const scope = target.scope(`live-${++generation}`);
-
-  try {
-    program(scope.$, target, ...Object.values(helpers));
-  } catch (error) {
-    // Runtime error: discard what this run built and leave the previous run playing. Disposing the
-    // scope removes its nodes and whatever it scheduled through `__.transport`.
-    scope.dispose();
-    showMessage(describeError(error), true);
-    return;
-  }
-
-  // Success: swap. The old run goes only now, so there is no gap while typing.
-  liveScope?.dispose();
-  liveScope = scope;
-  const count = scope.select('*').length;
-  showMessage(`Running. ${count} node${count === 1 ? '' : 's'}.`);
+  const scope = target.scope('live');
+  scope
+    .build((api) => program(api, target, ...Object.values(helpers)))
+    .then((result) => {
+      if (result.errors[0]) return showMessage(describeError(result.errors[0]), true);
+      const count = scope.select('*').length;
+      const kept = result.unchanged.length + result.updated.length;
+      showMessage(
+        `Running. ${count} node${count === 1 ? '' : 's'}: ${kept} kept, ` +
+          `${result.added.length} new, ${result.removed.length} removed.`,
+      );
+    })
+    .catch((error: unknown) => showMessage(describeError(error), true));
 }
 
 // --- Starting and stopping audio --------------------------------------------------------------------

@@ -1,8 +1,22 @@
+import { createRandom } from './random';
 import { describe, expect, it } from 'vitest';
 import {
   CHORD_NAMES,
   SCALE_NAMES,
   chords,
+  clamp,
+  freq2pitch,
+  min2ms,
+  minToMs,
+  ms2min,
+  ms2sec,
+  msToMin,
+  pitch2freq,
+  randomArpeggio,
+  randomScale,
+  random_arpeggio,
+  random_scale,
+  sec2ms,
   dbToGain,
   freqToPitch,
   gainToDb,
@@ -81,5 +95,74 @@ describe('scales and chords', () => {
     expect(() => scales('nope' as never)).toThrow(RangeError);
     expect(() => scales('toString' as never)).toThrow(RangeError);
     expect(() => chords('nope' as never)).toThrow(RangeError);
+  });
+});
+
+describe('clamp', () => {
+  it('keeps a value inside the range', () => {
+    expect(clamp(5, 0, 10)).toBe(5);
+    expect(clamp(-1, 0, 10)).toBe(0);
+    expect(clamp(11, 0, 10)).toBe(10);
+    expect(clamp(11, 10, 0)).toBe(10);
+  });
+});
+
+describe('minutes, and the Cracked names', () => {
+  it('converts milliseconds and minutes', () => {
+    expect(msToMin(90000)).toBe(1.5);
+    expect(minToMs(1.5)).toBe(90000);
+    expect(minToMs(msToMin(1234))).toBeCloseTo(1234, 9);
+  });
+  it('keeps the Cracked names', () => {
+    expect(pitch2freq).toBe(pitchToFreq);
+    expect(freq2pitch).toBe(freqToPitch);
+    expect(ms2sec).toBe(msToSec);
+    expect(sec2ms).toBe(secToMs);
+    expect(ms2min).toBe(msToMin);
+    expect(min2ms).toBe(minToMs);
+    expect(random_scale).toBe(randomScale);
+    expect(random_arpeggio).toBe(randomArpeggio);
+  });
+  it("scale accepts Cracked's 'logarithmic' spelling", () => {
+    expect(scale(0.5, 0, 1, 100, 1600, 'logarithmic')).toBe(scale(0.5, 0, 1, 100, 1600, 'log'));
+  });
+});
+
+describe('randomScale and randomArpeggio', () => {
+  const pitchClass = (hz: number): number => Math.round(freqToPitch(hz)) % 12;
+  it('give notes of the scale or chord, inside the octaves asked for', () => {
+    const r = createRandom(3);
+    const seenScale = new Set<number>();
+    const seenChord = new Set<number>();
+    for (let i = 0; i < 400; i++) {
+      const a = freqToPitch(randomScale('minor', 4, 5, r));
+      expect(a).toBeCloseTo(Math.round(a), 9);
+      expect(Math.round(a)).toBeGreaterThanOrEqual(48);
+      expect(Math.round(a)).toBeLessThan(72);
+      seenScale.add(Math.round(a) % 12);
+      seenChord.add(pitchClass(randomArpeggio('major', 3, 7, r)));
+    }
+    expect([...seenScale].sort((x, y) => x - y)).toEqual(scales('minor'));
+    expect([...seenChord].sort((x, y) => x - y)).toEqual(chords('major'));
+  });
+  it('default to octaves 3 to 7', () => {
+    const r = createRandom(5);
+    for (let i = 0; i < 300; i++) {
+      const pitch = Math.round(freqToPitch(randomScale('major', undefined, undefined, r)));
+      expect(pitch).toBeGreaterThanOrEqual(36);
+      expect(pitch).toBeLessThan(96);
+    }
+  });
+  it('repeat for the same seed', () => {
+    const run = (seed: number) => {
+      const r = createRandom(seed);
+      return Array.from({ length: 16 }, () => randomScale('lydian', 4, 6, r));
+    };
+    expect(run(2)).toEqual(run(2));
+    expect(run(2)).not.toEqual(run(3));
+  });
+  it('throw on unknown names', () => {
+    expect(() => randomScale('nope' as never)).toThrow(RangeError);
+    expect(() => randomArpeggio('nope' as never)).toThrow(RangeError);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HELPER_DOCS, HELPER_GROUPS, helpers, wrapUserCode } from '../../demo/helpers';
 import * as global from '../../src/global';
 import * as util from '../../src/util';
+import * as transforms from '../../src/util/transforms';
 import { offlineEngine } from '../core/setup';
 
 /** Runs an expression with every helper in scope, as demo code would. */
@@ -65,6 +66,23 @@ describe('demo helpers', () => {
     expect(run('box.value = scale(5, 0, 10, 0, 1);')).toBe(0.5);
     // A comment on the last line must not swallow the closing of the block.
     expect(run('box.value = 1; // done')).toBe(1);
+  });
+
+  it('lists every pattern helper that cracked-up/util has', () => {
+    for (const [name, value] of Object.entries(transforms)) {
+      if (typeof value === 'function') expect(helpers[name], name).toBe(value);
+    }
+  });
+
+  it('runs the pattern helpers together as demo code would', () => {
+    expect(
+      evaluate(
+        "patternToString(or(concat(sieve(8, [3, 0]), repeat('.', 8)), rotate(concat(spread('xx', 2), repeat('.', 12)), -10)))",
+      ),
+    ).toBe('x..x..x...x.x...');
+    expect(
+      evaluate('indexes(invert(binaryPattern(binaryToNumber(onOffPattern(2, 1, 2)))))'),
+    ).toEqual([2, 5]);
   });
 
   it('uses the names cracked-up/util and cracked-up/global export', () => {

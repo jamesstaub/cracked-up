@@ -21,6 +21,27 @@ export {
   sequence_factory,
 } from '../util/pattern';
 export {
+  rotate,
+  reverse,
+  invert,
+  stretch,
+  spread,
+  palindrome,
+  repeat,
+  and,
+  or,
+  xor,
+  interleave,
+  concat,
+  indexes,
+  countHits,
+  patternToString,
+  binaryPattern,
+  binaryToNumber,
+  onOffPattern,
+  sieve,
+} from '../util/transforms';
+export {
   pitchToFreq,
   pitch2freq,
   freqToPitch,

@@ -46,6 +46,68 @@ export const HELPER_GROUPS: readonly HelperGroup[] = [
         fn: util.euclid,
       },
       {
+        name: 'onOffPattern',
+        signature: 'onOffPattern(on, off, times?)',
+        description:
+          'That many hits, then that many rests, and the whole group times over (once unless you say).',
+        example: 'onOffPattern(3, 2, 2)',
+        result: '[1, 1, 1, 0, 0, 1, 1, 1, 0, 0]',
+        fn: util.onOffPattern,
+      },
+      {
+        name: 'binaryPattern',
+        signature: 'binaryPattern(number, length?)',
+        description:
+          'A whole number written in binary as steps, biggest digit first: 1 is a hit, 0 a rest. With a length it is exactly that many steps, with rests added at the front.',
+        example: 'binaryPattern(13)',
+        result: '[1, 1, 0, 1]',
+        fn: util.binaryPattern,
+      },
+      {
+        name: 'binaryToNumber',
+        signature: 'binaryToNumber(pattern)',
+        description:
+          'The opposite of binaryPattern: a pattern read as a binary number, biggest digit first.',
+        example: "binaryToNumber('xx.x')",
+        result: '13',
+        fn: util.binaryToNumber,
+      },
+      {
+        name: 'sieve',
+        signature: 'sieve(length?, [modulus, offset], ...)',
+        description:
+          'A hit on every step that is in one of the classes. [3, 0] is every 3rd step starting at step 0, [4, 1] every 4th starting at step 1. Without a length it is as long as it takes for the classes to come round together.',
+        example: 'sieve(12, [3, 0], [4, 1])',
+        result: '[1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0]',
+        fn: util.sieve,
+      },
+      {
+        name: 'indexes',
+        signature: 'indexes(pattern)',
+        description:
+          'The positions of the hits, counting from 0. It turns a rhythm into a scale: add the numbers to a note and give them to pitchToFreq.',
+        example: 'indexes(sieve(12, [2, 0], [5, 1]))',
+        result: '[0, 1, 2, 4, 6, 8, 10, 11]',
+        fn: util.indexes,
+      },
+      {
+        name: 'countHits',
+        signature: 'countHits(pattern)',
+        description: 'How many hits a pattern has.',
+        example: "countHits('x..x..x.')",
+        result: '3',
+        fn: util.countHits,
+      },
+      {
+        name: 'patternToString',
+        signature: 'patternToString(pattern)',
+        description:
+          'A pattern as text, x for a hit and . for a rest, to print it or compare two by eye.',
+        example: 'patternToString(euclid(3, 8))',
+        result: "'x..x..x.'",
+        fn: util.patternToString,
+      },
+      {
         name: 'fillArray',
         signature: 'fillArray(size, fn?)',
         description:
@@ -85,6 +147,121 @@ export const HELPER_GROUPS: readonly HelperGroup[] = [
         result: '[0, 0, 0, 1, 0]',
         alias: 'sequence_factory',
         fn: util.holdSteps,
+      },
+    ],
+  },
+  {
+    title: 'Changing patterns',
+    helpers: [
+      {
+        name: 'rotate',
+        signature: 'rotate(pattern, steps)',
+        description:
+          'Shifts a pattern round. It starts that many steps later, so the hits come earlier, the same way as the rotate of euclid. A negative number goes the other way.',
+        example: "rotate('x..x....', 1)",
+        result: '[0, 0, 1, 0, 0, 0, 0, 1]',
+        fn: util.rotate,
+      },
+      {
+        name: 'reverse',
+        signature: 'reverse(pattern)',
+        description:
+          'The pattern backwards. (To play a sample backwards, use the reverse setting of the sampler.)',
+        example: "reverse('x.xx....')",
+        result: '[0, 0, 0, 0, 1, 1, 0, 1]',
+        fn: util.reverse,
+      },
+      {
+        name: 'invert',
+        signature: 'invert(pattern, value?)',
+        description: 'Hits become rests, and rests become hits with that value (1 unless you say).',
+        example: "invert('x..x')",
+        result: '[0, 1, 1, 0]',
+        fn: util.invert,
+      },
+      {
+        name: 'stretch',
+        signature: 'stretch(pattern, factor)',
+        description:
+          'Slower, with held steps: every step is repeated factor times, so one hit becomes several in a row.',
+        example: "stretch('x.', 2)",
+        result: '[1, 1, 0, 0]',
+        fn: util.stretch,
+      },
+      {
+        name: 'spread',
+        signature: 'spread(pattern, factor)',
+        description:
+          'Slower, with the same hits: every step is followed by rests so that it takes factor steps.',
+        example: "spread('xx.', 2)",
+        result: '[1, 0, 1, 0, 0, 0]',
+        fn: util.spread,
+      },
+      {
+        name: 'palindrome',
+        signature: 'palindrome(pattern, repeatEnds?)',
+        description:
+          'Forwards, then backwards. The turning points are played once, or twice if repeatEnds is true.',
+        example: 'palindrome([1, 2, 3])',
+        result: '[1, 2, 3, 2]',
+        fn: util.palindrome,
+      },
+      {
+        name: 'repeat',
+        signature: 'repeat(pattern, times)',
+        description: 'The pattern that many times in a row.',
+        example: "repeat('x.', 3)",
+        result: '[1, 0, 1, 0, 1, 0]',
+        fn: util.repeat,
+      },
+    ],
+  },
+  {
+    title: 'Combining patterns',
+    helpers: [
+      {
+        name: 'and',
+        signature: 'and(a, b)',
+        description:
+          'A hit only where both patterns have one, with the value from the first, so the second works as a mask. Patterns of different lengths repeat until they line up.',
+        example: "and([3, 2, 0, 5], 'x.xx')",
+        result: '[3, 0, 0, 5]',
+        fn: util.and,
+      },
+      {
+        name: 'or',
+        signature: 'or(a, b)',
+        description:
+          'A hit where either pattern has one: two rhythms on top of each other. Patterns of different lengths repeat until they line up.',
+        example: "or('x..', 'x.')",
+        result: '[1, 0, 1, 1, 1, 0]',
+        fn: util.or,
+      },
+      {
+        name: 'xor',
+        signature: 'xor(a, b)',
+        description:
+          'A hit where one pattern has a hit and the other a rest. Where both hit, they cancel.',
+        example: "xor('xx..', 'x.x.')",
+        result: '[0, 1, 1, 0]',
+        fn: util.xor,
+      },
+      {
+        name: 'interleave',
+        signature: 'interleave(...patterns)',
+        description:
+          'A step from each pattern in turn. Shorter patterns start over until the longest has finished.',
+        example: "interleave('xx', '..')",
+        result: '[1, 0, 1, 0]',
+        fn: util.interleave,
+      },
+      {
+        name: 'concat',
+        signature: 'concat(...patterns)',
+        description: 'The patterns one after another.',
+        example: "concat('x..', [0, 2])",
+        result: '[1, 0, 0, 0, 2]',
+        fn: util.concat,
       },
     ],
   },

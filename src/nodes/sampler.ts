@@ -23,6 +23,18 @@ function reversed(buffer: AudioBuffer): AudioBuffer {
 interface Voice {
   readonly source: AudioBufferSourceNode;
   readonly startTime: number;
+  /** When the voice has been told to stop, or Infinity if it plays to its end. */
+  stopTime: number;
+}
+
+/**
+ * Stops a voice at `time` unless it already stops sooner. A later `stop()` replaces an earlier one, so
+ * calling it blindly would let a voice cut short by its own `duration` ring on until the next trigger.
+ */
+function stopVoice(voice: Voice, time: number): void {
+  if (time >= voice.stopTime) return;
+  voice.stopTime = time;
+  voice.source.stop(time);
 }
 
 /**
@@ -104,7 +116,7 @@ export const sampler = defineNode({
       init['buffer'] === undefined ? null : context.buffer(init['buffer'] as BufferSource);
 
     const stopVoicesBefore = (time: number) => {
-      for (const voice of voices) if (voice.startTime <= time) voice.source.stop(time);
+      for (const voice of voices) if (voice.startTime <= time) stopVoice(voice, time);
     };
 
     return {
@@ -154,7 +166,7 @@ export const sampler = defineNode({
           stopVoicesBefore(at);
         } else if (voices.size >= maxVoices) {
           const oldest = [...voices].sort((a, b) => a.startTime - b.startTime)[0];
-          oldest?.source.stop(at);
+          if (oldest) stopVoice(oldest, at);
         }
 
         const source = new AudioBufferSourceNode(context.audio, {
@@ -178,9 +190,8 @@ export const sampler = defineNode({
         } else {
           source.start(at, from, length);
         }
-        if (typeof options['duration'] === 'number') source.stop(at + options['duration']);
-
-        const voice: Voice = { source, startTime: at };
+        const voice: Voice = { source, startTime: at, stopTime: Infinity };
+        if (typeof options['duration'] === 'number') stopVoice(voice, at + options['duration']);
         voices.add(voice);
         source.onended = () => {
           voices.delete(voice);

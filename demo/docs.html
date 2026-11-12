@@ -573,8 +573,7 @@ __.transport.sequence('break', { steps: order }, (ev) =&gt; {
           octave higher and lasts half as long.
         </p>
         <pre><code>__.transport.bpm = 150;
-// choke: false lets every hit end by itself: after its slice, or after its duration.
-__().sampler({ id: 'break', buffer: 'break', choke: false }).to('main');
+__().sampler({ id: 'break', buffer: 'break' }).to('main');
 const speed = __.transport.bpm / 128;
 
 __.transport.sequence('break', { steps: 16 }, (ev) =&gt; {
@@ -626,8 +625,7 @@ __.bus('drums').to(null).chain()
   .bitcrusher({ bits: 10, rate: 0.6 })
   .lowpass({ id: 'tone', frequency: 14000 })
   .to('main');
-// choke: false lets every hit end by itself: after its slice, or after its duration.
-__().sampler({ id: 'break', buffer: 'break', choke: false }).to('drums');
+__().sampler({ id: 'break', buffer: 'break' }).to('drums');
 
 // A second player of the same break, heard only as echoes: a "delay throw".
 __().sampler({ id: 'throw', buffer: 'break' })

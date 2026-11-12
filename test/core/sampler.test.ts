@@ -145,3 +145,34 @@ describe('sampler', () => {
     expect(valueAt(audio, 0.3)).toBe(0);
   });
 });
+
+describe('sampler voices that stop themselves', () => {
+  it('a hit cut short by its duration stays cut short when the next hit comes', async () => {
+    const engine = await offlineEngine(0.3);
+    engine
+      .chain()
+      .sampler({ id: 's', buffer: ones(0.3) })
+      .to('main');
+    // The first hit should sound for 0.02 s only, although the next one is not until 0.1 s.
+    engine.select('#s').trigger({ at: 0, duration: 0.02 });
+    engine.select('#s').trigger({ at: 0.1, duration: 0.02 });
+    const audio = await engine.render();
+    expect(valueAt(audio, 0.01)).toBe(1);
+    expect(valueAt(audio, 0.05)).toBe(0);
+    expect(valueAt(audio, 0.11)).toBe(1);
+    expect(valueAt(audio, 0.2)).toBe(0);
+  });
+
+  it('a new hit still cuts off one that is ringing', async () => {
+    const engine = await offlineEngine(0.3);
+    engine
+      .chain()
+      .sampler({ id: 's', buffer: ones(0.3) })
+      .to('main');
+    engine.select('#s').trigger({ at: 0, duration: 0.25 });
+    engine.select('#s').trigger({ at: 0.1, velocity: 0.5 });
+    const audio = await engine.render();
+    expect(valueAt(audio, 0.05)).toBe(1);
+    expect(valueAt(audio, 0.15)).toBeCloseTo(0.5, 6);
+  });
+});

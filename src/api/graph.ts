@@ -39,6 +39,10 @@ export interface Node<K extends NodeType = NodeType> {
   /** Untyped lookup, for hosts that work from metadata. Throws if the node has no such parameter. */
   param(name: string): Param;
 
+  /**
+   * A bypassed effect passes its input straight through; a bypassed source or modulator is silent. The
+   * node keeps running, so its state (a delay's contents, an oscillator's phase) carries on.
+   */
   bypass: boolean;
 
   /** Every recorded connection, both directions. */
@@ -119,6 +123,12 @@ export interface SelectionBase<K extends NodeType = NodeType> extends Iterable<N
   trigger(options?: TriggerOptions<K>): this;
   release(options?: ReleaseOptions): this;
   call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
+
+  /**
+   * Bypasses every selected node, or with `false` brings them back. A bypassed effect passes its input
+   * straight through; a bypassed source or modulator is silent. The node keeps running either way.
+   */
+  bypass(on?: boolean, options?: At): this;
 
   /** Connects every selected node to the target. */
   connect(target: string | Selection | Node | Bus | Param<number>): this;
@@ -413,7 +423,12 @@ export interface Scope {
 
   /**
    * Makes the scope match the description. Nodes are matched by id: matching nodes are kept and
-   * updated in place, missing ones are created, extra ones are disposed.
+   * updated in place, missing ones are created, extra ones are disposed. A node is kept only if its
+   * type and creation options are unchanged; otherwise it is replaced, and appears in both `removed`
+   * and `added`. Connections the description does not list are removed, except those that leave the
+   * scope, which a description cannot name. Sequences and buses are not touched.
+   *
+   * The work is done before this returns; the promise is already settled.
    */
   apply(graph: GraphData): Promise<ApplyResult>;
 
@@ -425,6 +440,13 @@ export interface Scope {
    * new lists of un-id'd nodes are aligned by type in creation order, so inserting or removing one node
    * leaves the nodes after it matched to their previous selves. They can be selected by position too
    * (`lowpass:nth(1)`).
+   *
+   * The same goes for what `fn` schedules through `__.transport` and for buses it makes: a named
+   * sequence is replaced in place and keeps its position, and anything an earlier build made that this
+   * one does not ask for is removed. On the root scope that includes everything scheduled through
+   * `engine.transport`.
+   *
+   * If `fn` throws, the promise rejects and the scope keeps playing as it was.
    */
   build(fn: (__: ScopeApi) => void): Promise<ApplyResult>;
 

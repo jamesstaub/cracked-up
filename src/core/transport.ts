@@ -130,6 +130,11 @@ class SequenceImpl implements Source {
     }
   }
 
+  /** The options and callback as they are now, so a replacement can be undone. */
+  definition(): { options: SequenceOptions; callback: SequenceCallback } {
+    return { options: this.raw, callback: this.callback };
+  }
+
   /** Replaces the options and callback, as a named sequence does when its code is evaluated again. */
   replace(options: SequenceOptions, callback: SequenceCallback): void {
     const previous = this.raw;
@@ -365,7 +370,15 @@ interface Segment {
   secondsPerBeat: number;
 }
 
+interface Collecting {
+  owner: Owner;
+  touched: Set<Source>;
+  added: Source[];
+  replaced: Map<SequenceImpl, { options: SequenceOptions; callback: SequenceCallback }>;
+}
+
 export class TransportImpl {
+  private collecting: Collecting | null = null;
   readonly engine: EngineImpl;
 
   lookahead = 0.1;
@@ -755,7 +768,14 @@ export class TransportImpl {
     if (typeof callback !== 'function')
       throw new TypeError('A sequence needs a callback function.');
     const existing = name === null ? undefined : this.named.get(owner)?.get(name);
+    const collecting = this.collecting?.owner === owner ? this.collecting : null;
     if (existing) {
+      if (collecting) {
+        collecting.touched.add(existing);
+        if (!collecting.replaced.has(existing)) {
+          collecting.replaced.set(existing, existing.definition());
+        }
+      }
       existing.replace(options, callback);
       existing.rearm(this.armPosition());
       return existing as unknown as Sequence;
@@ -764,6 +784,7 @@ export class TransportImpl {
     created.owner = owner;
     created.reset(this.armPosition());
     this.sources.push(created);
+    collecting?.added.push(created);
     if (name !== null) {
       let names = this.named.get(owner);
       if (!names) {
@@ -784,6 +805,7 @@ export class TransportImpl {
     source.owner = owner;
     source.reset(this.armPosition());
     this.sources.push(source);
+    if (this.collecting?.owner === owner) this.collecting.added.push(source);
     return () => this.remove(source);
   }
 
@@ -800,7 +822,36 @@ export class TransportImpl {
     source.owner = owner;
     source.reset(this.armPosition());
     this.sources.push(source);
+    if (this.collecting?.owner === owner) this.collecting.added.push(source);
     return () => this.remove(source);
+  }
+
+  /**
+   * Starts noting what an owner schedules, for a rebuild. `commit` then removes whatever the owner
+   * had before that was not scheduled again (a named sequence scheduled again is replaced in place,
+   * and so kept). `rollback` removes what was added and puts replaced sequences back as they were.
+   */
+  collect(owner: Owner): { commit(): void; rollback(): void } {
+    const before = this.sources.filter((source) => source.owner === owner);
+    const state: Collecting = { owner, touched: new Set(), added: [], replaced: new Map() };
+    this.collecting = state;
+    const finish = (): void => {
+      if (this.collecting === state) this.collecting = null;
+    };
+    return {
+      commit: () => {
+        finish();
+        for (const source of before) if (!state.touched.has(source)) this.remove(source);
+      },
+      rollback: () => {
+        finish();
+        for (const source of state.added) this.remove(source);
+        for (const [sequence, was] of state.replaced) {
+          sequence.replace(was.options, was.callback);
+          sequence.rearm(this.armPosition());
+        }
+      },
+    };
   }
 
   getSequence(owner: Owner, name: string): Sequence | undefined {

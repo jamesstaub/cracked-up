@@ -12,7 +12,8 @@ export class BusImpl {
   /** Edges from nodes feeding this bus. */
   readonly sources = new Set<EdgeImpl>();
 
-  private node: NodeImpl;
+  /** The gain node that does the mixing. It is not listed among the scope's nodes. */
+  readonly node: NodeImpl;
   /** Where the bus's mix goes: another bus, or null for the context's output. */
   private destination: BusImpl | null = null;
   private connected = false;
@@ -61,6 +62,7 @@ export class BusImpl {
 
   /** Sends the bus's mix to another bus, or to the context's output when given null. */
   route(destination: BusImpl | null): void {
+    if (this.connected && destination === this.destination) return;
     if (this.connected) this.output.disconnect();
     this.destination = destination;
     this.output.connect(destination ? destination.input : this.scope.engine.context.destination);

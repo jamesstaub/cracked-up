@@ -43,11 +43,12 @@ Then the declarations:
 | Buffer store, slices | Done |
 | Macros: `defineMacro`, private inner scope with `in` and `out` buses, exposed parameters, methods, nesting | Done |
 | `cracked-up/global` | Done |
-| Commands | Node, connection, bus, `setStep`, `clearSequence` and `transport` commands done. `apply`, `sequence` and `bypass` report `unsupported` |
+| Commands | Node, connection, bus, `bypass`, `apply`, `setStep`, `clearSequence` and `transport` commands done. `sequence` reports `unsupported` until `cracked-up/remote` |
 | `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
-| `build()` | Runs the builder; does not reconcile against existing nodes yet (Phase 4) |
+| `build()`, `apply()` | Done. Both reconcile: unchanged nodes are kept and keep sounding, changed values are set in place, a node is replaced only if its type or creation options changed. `build()` also reconciles sequences and the buses earlier builds made, and leaves the scope as it was if the builder throws |
+| `bypass` | Done. A short crossfade between the node and a path around it; a bypassed source is silent |
 | Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. Tests fail if a built-in type, parameter or option lacks a description, or if a type's generated example does not run |
-| `apply()`, `bypass`, `cracked-up/remote`, external clock sources | Not yet. They throw or report `unsupported` |
+| `cracked-up/remote`, external clock sources, recording | Not yet. They throw or report `unsupported` |
 
 Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. Every type in the type map is implemented.
 

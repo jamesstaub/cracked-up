@@ -143,6 +143,13 @@ export class SelectionImpl implements Iterable<NodeImpl> {
     return this;
   }
 
+  /** Bypasses every selected node, or with `false` brings them back. */
+  bypass(on = true, options?: At): this {
+    const time = this.engine.resolveAt(options?.at);
+    for (const node of this.nodes) node.applyBypass(on, time);
+    return this;
+  }
+
   // --- Connections --------------------------------------------------------------------------------
 
   connect(target: ConnectTarget): this {

@@ -45,8 +45,9 @@ export class NodeImpl {
   readonly id: string;
   readonly autoId: boolean;
   readonly type: string;
-  readonly classes: ReadonlySet<string>;
-  readonly tags: Tags;
+  /** Replaced, never mutated, when a rebuild keeps the node but changes its classes or tags. */
+  classes: ReadonlySet<string>;
+  tags: Tags;
   readonly scope: ScopeImpl;
   readonly engine: EngineImpl;
   readonly entry: RegistryEntry;
@@ -59,10 +60,15 @@ export class NodeImpl {
   readonly params: Readonly<Record<string, ParamImpl>>;
 
   disposed = false;
+  /** Whether the scope has emitted `node:added` for this node. */
+  announced = false;
   inputs: EdgeImpl[] = [];
   outputs: EdgeImpl[] = [];
 
   private built: BuiltNode;
+  private bypassed = false;
+  /** Made the first time the node is bypassed; from then on connections go through it. */
+  private wrap: BypassWrap | null = null;
 
   constructor(scope: ScopeImpl, entry: RegistryEntry, options: NodeOptions) {
     this.scope = scope;
@@ -205,22 +211,66 @@ export class NodeImpl {
   }
 
   get bypass(): boolean {
-    return false;
+    return this.bypassed;
   }
 
-  set bypass(_value: boolean) {
-    throw new CrackedUpError('unsupported', 'Bypass is not implemented yet.', { nodeId: this.id });
+  set bypass(value: boolean) {
+    this.applyBypass(value, this.engine.resolveAt(undefined));
+  }
+
+  /**
+   * Bypassing a node that has an input passes that input straight to its output. Bypassing one that
+   * has none (a source or a modulator) silences it. Either way the node keeps running, so turning the
+   * bypass off brings it back mid-flight. The switch is a short crossfade starting at `at`.
+   */
+  applyBypass(value: boolean, at: number, fade = BYPASS_FADE): void {
+    const next = Boolean(value);
+    if (this.disposed || next === this.bypassed) return;
+    this.bypassed = next;
+    if (!this.built.output) return;
+    const wrap = this.wrap ?? this.makeWrap();
+    fadeTo(wrap.wet.gain, next ? 0 : 1, at, fade);
+    if (wrap.dry) fadeTo(wrap.dry.gain, next ? 1 : 0, at, fade);
+  }
+
+  /**
+   * Puts the node between an entry and an exit point so its signal can be switched:
+   *
+   *   entry -> node -> wet -> exit
+   *   entry ---------> dry -> exit
+   *
+   * Existing connections are moved onto the entry and exit.
+   */
+  private makeWrap(): BypassWrap {
+    const context = this.engine.context;
+    const edges = new Set([...this.inputs, ...this.outputs]);
+    for (const edge of edges) unwire(edge);
+
+    const exit = new GainNode(context);
+    const wet = new GainNode(context);
+    this.built.output!.connect(wet).connect(exit);
+    let entry: GainNode | null = null;
+    let dry: GainNode | null = null;
+    if (this.built.input) {
+      entry = new GainNode(context);
+      dry = new GainNode(context, { gain: 0 });
+      entry.connect(this.built.input);
+      entry.connect(dry).connect(exit);
+    }
+    this.wrap = { entry, exit, wet, dry };
+    for (const edge of edges) wire(edge);
+    return this.wrap;
   }
 
   // --- Connections --------------------------------------------------------------------------------
 
   /** The native node incoming connections attach to, if this node takes input. */
   get inputNode(): AudioNode | null {
-    return this.built.input ?? null;
+    return this.wrap?.entry ?? this.built.input ?? null;
   }
 
   get output(): AudioNode | null {
-    return this.built.output ?? null;
+    return this.wrap?.exit ?? this.built.output ?? null;
   }
 
   connect(target: Node | Bus | Param<number>): this {
@@ -286,6 +336,9 @@ export class NodeImpl {
       console.error(`cracked-up: dispose failed for ${this.type} "${this.id}"`, error);
     }
     this.built.output?.disconnect();
+    if (this.wrap) {
+      for (const node of Object.values(this.wrap)) node?.disconnect();
+    }
     for (const param of Object.values(this.params)) param.dispose();
     this.scope.forget(this);
   }
@@ -297,12 +350,67 @@ function describeEnd(end: EdgeEnd): string {
   return `bus "${end.name}"`;
 }
 
+/** How long a bypass switch takes, in seconds. Long enough not to click, short enough to feel instant. */
+const BYPASS_FADE = 0.005;
+
+interface BypassWrap {
+  entry: GainNode | null;
+  exit: GainNode;
+  wet: GainNode;
+  dry: GainNode | null;
+}
+
+/** Moves a gain that is only ever 0 or 1 to the other value, starting at `at`. */
+function fadeTo(gain: AudioParam, target: number, at: number, seconds: number): void {
+  gain.cancelScheduledValues(at);
+  if (seconds <= 0) {
+    gain.setValueAtTime(target, at);
+    return;
+  }
+  gain.setValueAtTime(1 - target, at);
+  gain.linearRampToValueAtTime(target, at + seconds);
+}
+
+/** The native things an edge's far end is made of. */
+function nativeTargets(to: EdgeEnd): readonly (AudioNode | AudioParam)[] {
+  if (to instanceof NodeImpl) return to.inputNode ? [to.inputNode] : [];
+  if (to instanceof ParamImpl) return to.audioParams();
+  return [to.input];
+}
+
+/** Makes the native connections of a recorded edge. */
+function wire(edge: EdgeImpl): void {
+  const output = edge.from.output;
+  if (!output) return;
+  for (const target of nativeTargets(edge.to)) {
+    if (target instanceof AudioNode) output.connect(target);
+    else output.connect(target);
+  }
+}
+
+/** Removes the native connections of a recorded edge, leaving the record. */
+function unwire(edge: EdgeImpl): void {
+  const output = edge.from.output;
+  if (!output) return;
+  for (const target of nativeTargets(edge.to)) {
+    try {
+      if (target instanceof AudioNode) output.disconnect(target);
+      else output.disconnect(target);
+    } catch {
+      // The native connection was already gone (for example the node was rebuilt). The record is what matters.
+    }
+  }
+}
+
 /** Connects a node's output to another node's input, a bus, or a parameter, and records the edge. */
 export function connect(from: NodeImpl, to: EdgeEnd): void {
   if (from.disposed) return;
-  if (from.outputs.some((edge) => edge.to === to)) return;
-  const output = from.output;
-  if (!output) {
+  const existing = from.outputs.find((edge) => edge.to === to);
+  if (existing) {
+    from.scope.noteEdge(existing, false);
+    return;
+  }
+  if (!from.output) {
     throw new CrackedUpError(
       'missing-target',
       `${from.type} "${from.id}" has no output to connect from.`,
@@ -311,8 +419,7 @@ export function connect(from: NodeImpl, to: EdgeEnd): void {
   }
   const edge: EdgeImpl = { from, to };
   if (to instanceof NodeImpl) {
-    const input = to.inputNode;
-    if (!input) {
+    if (!to.inputNode) {
       throw new CrackedUpError(
         'missing-target',
         `${to.type} "${to.id}" has no input, so ${from.type} "${from.id}" cannot connect to it. ` +
@@ -320,24 +427,24 @@ export function connect(from: NodeImpl, to: EdgeEnd): void {
         { nodeId: to.id },
       );
     }
-    output.connect(input);
+    wire(edge);
     to.inputs.push(edge);
   } else if (to instanceof ParamImpl) {
-    const targets = to.audioParams();
-    if (targets.length === 0) {
+    if (to.audioParams().length === 0) {
       throw new CrackedUpError(
         'invalid-param',
         `${describeEnd(to)} cannot be modulated: it is not an audio-rate parameter.`,
         { nodeId: to.node.id },
       );
     }
-    for (const audio of targets) output.connect(audio);
+    wire(edge);
     to.addModulation(from, () => disconnectEdge(edge));
   } else {
-    output.connect(to.input);
+    wire(edge);
     to.sources.add(edge);
   }
   from.outputs.push(edge);
+  from.scope.noteEdge(edge, true);
 }
 
 export function disconnectEdge(edge: EdgeImpl): void {
@@ -345,21 +452,10 @@ export function disconnectEdge(edge: EdgeImpl): void {
   const index = from.outputs.indexOf(edge);
   if (index === -1) return;
   from.outputs.splice(index, 1);
-  const output = from.output;
-  try {
-    if (to instanceof NodeImpl) {
-      to.inputs = to.inputs.filter((other) => other !== edge);
-      if (output && to.inputNode) output.disconnect(to.inputNode);
-    } else if (to instanceof ParamImpl) {
-      to.removeModulation(from);
-      if (output) for (const audio of to.audioParams()) output.disconnect(audio);
-    } else {
-      to.sources.delete(edge);
-      if (output) output.disconnect(to.input);
-    }
-  } catch {
-    // The native connection was already gone (for example the node was rebuilt). The record is what matters.
-  }
+  unwire(edge);
+  if (to instanceof NodeImpl) to.inputs = to.inputs.filter((other) => other !== edge);
+  else if (to instanceof ParamImpl) to.removeModulation(from);
+  else to.sources.delete(edge);
 }
 
 /** The public Edge view of an internal edge. */

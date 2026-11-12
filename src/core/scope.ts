@@ -19,12 +19,64 @@ import type { ChainImpl } from './chain';
 import { execute } from './commands';
 import type { EngineImpl } from './engine';
 import { CrackedUpError, Emitter, toGraphError } from './errors';
-import { NodeImpl } from './node';
+import { NodeImpl, connect, disconnectEdge } from './node';
+import type { EdgeEnd, EdgeImpl } from './node';
 import { ParamImpl } from './param';
 import type { SelectionImpl } from './selection';
 import type { TransportView } from './transport';
 
 const COMMON_KEYS = new Set(['id', 'class', 'tags', 'bypass', 'modulates']);
+
+/** What a rebuild asked a kept node to be. Applied when the rebuild succeeds. */
+interface PendingUpdate {
+  values: Readonly<Record<string, ParamValue>>;
+  classes: readonly string[];
+  tags: Tags;
+  bypass: boolean;
+}
+
+/**
+ * Bookkeeping while `build()` or `apply()` runs. During that time creating a node first looks for the
+ * node it was last time (same id, or same position among nodes of its type) and reuses it.
+ */
+interface BuildState {
+  /** Nodes this run has asked for, kept or new, in the order it asked. */
+  order: NodeImpl[];
+  claimed: Set<NodeImpl>;
+  created: Set<NodeImpl>;
+  /** Old nodes whose id was taken by a new node of a different type or with different options. */
+  superseded: NodeImpl[];
+  pending: Map<NodeImpl, PendingUpdate>;
+  autoIds: Map<string, number>;
+  /** Connections that existed before the run. Those not asked for again are removed at the end. */
+  preEdges: Set<EdgeImpl>;
+  claimedEdges: Set<EdgeImpl>;
+  newEdges: EdgeImpl[];
+  buses: Set<BusImpl>;
+  newBuses: BusImpl[];
+}
+
+interface ReconcileOptions {
+  /** Also reconcile what is scheduled through the scope's transport and the buses earlier builds made. */
+  full: boolean;
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const proto = Object.getPrototypeOf(a) as unknown;
+  if (proto !== Object.getPrototypeOf(b)) return false;
+  // Only plain data is compared by content. Anything else (a buffer, a function) must be the same object.
+  if (!Array.isArray(a) && proto !== Object.prototype && proto !== null) return false;
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  return keysA.every(
+    (key) =>
+      Object.hasOwn(b, key) &&
+      sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+  );
+}
 
 /** Runs a selector operation, turning a parse failure into the library's own error type. */
 export function wrapSelectorErrors<T>(fn: () => T): T {
@@ -54,6 +106,9 @@ export class ScopeImpl {
   private autoIds = new Map<string, number>();
   private events = new Emitter<ScopeEvents>();
   private disposed = false;
+  private building: BuildState | null = null;
+  /** Buses made inside a `build()`, which a later build removes if it no longer asks for them. */
+  private builtBuses = new Set<BusImpl>();
 
   private tree: SelectableTree<NodeImpl> = {
     children: (parent) => (parent === null ? this.topLevelNodes() : parent.inner),
@@ -85,8 +140,11 @@ export class ScopeImpl {
    * through it is removed when the scope is disposed. The root scope shares the engine's view.
    */
   get transport(): TransportView {
-    const isRoot = this.parent === null && this.owner === null;
-    return this.engine.transportImpl.view(isRoot ? null : this);
+    return this.engine.transportImpl.view(this.transportOwner);
+  }
+
+  private get transportOwner(): ScopeImpl | null {
+    return this.parent === null && this.owner === null ? null : this;
   }
 
   get children(): readonly ScopeImpl[] {
@@ -120,8 +178,10 @@ export class ScopeImpl {
 
   /** This scope's top-level nodes followed by those of its child scopes, depth first. */
   private topLevelNodes(): readonly NodeImpl[] {
-    if (this.childScopes.length === 0) return this.nodeList;
-    return [...this.nodeList, ...this.childScopes.flatMap((child) => child.topLevelNodes())];
+    // During a rebuild only what it has asked for so far can be selected, as in a first build.
+    const own = this.building ? this.building.order : this.nodeList;
+    if (this.childScopes.length === 0) return own;
+    return [...own, ...this.childScopes.flatMap((child) => child.topLevelNodes())];
   }
 
   node(id: string): NodeImpl | undefined {
@@ -161,13 +221,23 @@ export class ScopeImpl {
     if (givenId !== undefined && (typeof givenId !== 'string' || givenId === '')) {
       throw new CrackedUpError('duplicate-id', `A node id must be a non-empty string.`);
     }
-    const id = givenId ?? this.nextAutoId(type);
-    if (this.byId.has(id)) {
-      throw new CrackedUpError(
-        'duplicate-id',
-        `Scope "${this.name}" already has a node with the id "${id}".`,
-        { nodeId: id },
-      );
+    const build = this.building;
+    let id: string;
+    let previous: NodeImpl | undefined;
+    if (givenId !== undefined) {
+      id = givenId;
+      previous = this.byId.get(id);
+      if (previous && (!build || build.claimed.has(previous))) {
+        throw new CrackedUpError(
+          'duplicate-id',
+          `Scope "${this.name}" already has a node with the id "${id}".`,
+          { nodeId: id },
+        );
+      }
+    } else if (build) {
+      [id, previous] = this.nextBuildId(type, build);
+    } else {
+      id = this.nextAutoId(type);
     }
 
     const classInput = source['class'];
@@ -177,24 +247,94 @@ export class ScopeImpl {
         : Array.isArray(classInput)
           ? (classInput as string[])
           : [];
-    const modulates = source['modulates'];
+    const givenModulates = source['modulates'];
+    const modulates =
+      typeof givenModulates === 'string'
+        ? givenModulates
+        : ((entry.definition as { modulates?: string }).modulates ?? null);
+    const tags = (source['tags'] as Tags | undefined) ?? {};
+    const bypass = source['bypass'] === true;
+
+    // A rebuild keeps the node it finds if nothing fixed at creation differs. Parameter values, classes,
+    // tags and bypass can all change on a living node, and do so when the rebuild succeeds.
+    if (
+      build &&
+      previous &&
+      previous.type === type &&
+      previous.modulates === modulates &&
+      sameJson(this.comparableInit(previous.init), this.comparableInit(init))
+    ) {
+      build.claimed.add(previous);
+      build.order.push(previous);
+      build.pending.set(previous, { values, classes, tags, bypass });
+      return previous;
+    }
 
     const node = new NodeImpl(this, entry, {
       id,
       autoId: givenId === undefined,
       classes,
-      tags: (source['tags'] as Tags | undefined) ?? {},
+      tags,
       values,
       init,
-      modulates:
-        typeof modulates === 'string'
-          ? modulates
-          : ((entry.definition as { modulates?: string }).modulates ?? null),
+      modulates,
     });
+    if (bypass) node.applyBypass(true, this.engine.now(), 0);
     this.nodeList.push(node);
     this.byId.set(id, node);
-    this.events.emit('node:added', node as never);
+    if (build) {
+      if (previous) build.superseded.push(previous);
+      build.claimed.add(node);
+      build.created.add(node);
+      build.order.push(node);
+    } else {
+      this.announce(node);
+    }
     return node;
+  }
+
+  private announce(node: NodeImpl): void {
+    node.announced = true;
+    this.events.emit('node:added', node as never);
+  }
+
+  /** Creation options with stored buffers replaced by their keys, so a buffer and its key compare equal. */
+  private comparableInit(init: Readonly<Record<string, unknown>>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(init)) {
+      out[key] = this.engine.buffersImpl.keyOf(value) ?? value;
+    }
+    return out;
+  }
+
+  /**
+   * The id for a node created without one during a rebuild, and the node that had it before, if that
+   * node can be reused. Ids count up per type, so the second `lowpass` built is always `lowpass-1`:
+   * that is what matches un-id'd nodes to their previous selves by position.
+   */
+  private nextBuildId(type: string, build: BuildState): [string, NodeImpl | undefined] {
+    let n = build.autoIds.get(type) ?? 0;
+    for (;;) {
+      const id = `${type}-${n++}`;
+      const found = this.byId.get(id);
+      if (found && (build.claimed.has(found) || found.type !== type)) continue;
+      build.autoIds.set(type, n);
+      return [id, found];
+    }
+  }
+
+  /** Undoes a node whose creation could not be completed, unless a rebuild is reusing an older node. */
+  discard(node: NodeImpl): void {
+    const build = this.building;
+    if (build && !build.created.has(node)) return;
+    node.dispose();
+  }
+
+  /** Called for every connection asked for from one of this scope's nodes, new or already there. */
+  noteEdge(edge: EdgeImpl, isNew: boolean): void {
+    if (!this.building) return;
+    if (isNew) this.building.newEdges.push(edge);
+    else this.building.claimedEdges.add(edge);
   }
 
   /**
@@ -223,8 +363,8 @@ export class ScopeImpl {
     const index = this.nodeList.indexOf(node);
     if (index === -1) return;
     this.nodeList.splice(index, 1);
-    this.byId.delete(node.id);
-    this.events.emit('node:removed', node.id);
+    if (this.byId.get(node.id) === node) this.byId.delete(node.id);
+    if (node.announced) this.events.emit('node:removed', node.id);
   }
 
   private nextAutoId(type: string): string {
@@ -247,7 +387,9 @@ export class ScopeImpl {
       // The engine's own `main` feeds the output. Every other bus feeds that one until rerouted,
       // except inside a macro, whose buses are its ports and are wired up by whoever uses the macro.
       if (!this.owner) bus.route(this.engine.mainBus ?? null);
+      this.building?.newBuses.push(bus);
     }
+    if (bus.scope === this) this.building?.buses.add(bus);
     return bus;
   }
 
@@ -256,7 +398,10 @@ export class ScopeImpl {
     const known = new Set<string>();
     for (const scope of this.lineage()) {
       const bus = scope.buses.get(name);
-      if (bus) return bus;
+      if (bus) {
+        if (scope === this) this.building?.buses.add(bus);
+        return bus;
+      }
       for (const busName of scope.buses.keys()) known.add(busName);
     }
     throw new CrackedUpError(
@@ -294,6 +439,7 @@ export class ScopeImpl {
         ...(Object.keys(node.tags).length > 0 ? { tags: node.tags } : {}),
         params,
         ...(Object.keys(init).length > 0 ? { init } : {}),
+        ...(node.bypass ? { bypass: true } : {}),
       });
       for (const edge of node.outputs) {
         const to = edge.to;
@@ -340,36 +486,236 @@ export class ScopeImpl {
     };
   }
 
+  // --- Reconciliation ------------------------------------------------------------------------------
+
   apply(graph: GraphData): Promise<ApplyResult> {
-    void graph;
-    return Promise.reject(
-      new CrackedUpError('unsupported', 'apply() arrives with graph reconciliation (Phase 4).'),
+    try {
+      return Promise.resolve(this.applyNow(graph));
+    } catch (thrown) {
+      return Promise.reject(toGraphError(thrown, 'build-failed'));
+    }
+  }
+
+  /** `apply()` without the promise: the work is synchronous, and commands need it to be. */
+  applyNow(graph: GraphData): ApplyResult {
+    if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
+      throw new CrackedUpError(
+        'invalid-command',
+        'A graph needs a "nodes" list and an "edges" list.',
+      );
+    }
+    const errors: CrackedUpError[] = [];
+    const failed = new Set<string>();
+    const result = this.reconcile(
+      (build) => {
+        for (const data of graph.nodes) {
+          try {
+            this.createNode(data.type, {
+              ...data.init,
+              ...data.params,
+              id: data.id,
+              class: data.classes,
+              tags: data.tags,
+              bypass: data.bypass,
+            });
+          } catch (thrown) {
+            errors.push(toGraphError(thrown, 'build-failed'));
+            failed.add(data.id);
+            // A node that cannot be made as described stays as it was, rather than going silent.
+            const old = typeof data.id === 'string' ? this.byId.get(data.id) : undefined;
+            if (old && !build.claimed.has(old)) {
+              build.claimed.add(old);
+              build.order.push(old);
+            }
+          }
+        }
+        const wanted = (id: string): NodeImpl | null => {
+          const node = this.byId.get(id);
+          if (node && build.claimed.has(node)) return node;
+          if (failed.has(id)) return null;
+          throw new CrackedUpError(
+            'missing-target',
+            `A connection names the node "${id}", which the graph does not contain.`,
+            { nodeId: id },
+          );
+        };
+        for (const edge of graph.edges) {
+          try {
+            const from = wanted(edge.from);
+            let to: EdgeEnd | null;
+            if ('bus' in edge.to) to = this.resolveBus(edge.to.bus);
+            else {
+              const node = wanted(edge.to.node);
+              to =
+                node && 'param' in edge.to
+                  ? (node.param(edge.to.param) as unknown as ParamImpl)
+                  : node;
+            }
+            if (from && to) connect(from, to);
+          } catch (thrown) {
+            errors.push(toGraphError(thrown, 'missing-target'));
+          }
+        }
+      },
+      { full: false },
     );
+    return { ...result, errors: [...errors, ...result.errors] };
+  }
+
+  build(fn: (api: ScopeApi) => void): Promise<ApplyResult> {
+    try {
+      return Promise.resolve(this.reconcile(() => fn(this.$), { full: true }));
+    } catch (thrown) {
+      return Promise.reject(toGraphError(thrown, 'build-failed'));
+    }
+  }
+
+  /** Whether a connection is one `describe()` reports: it stays inside this scope or ends at a bus. */
+  private describable(edge: EdgeImpl): boolean {
+    const to = edge.to;
+    if (to instanceof NodeImpl) return to.scope === this && this.byId.get(to.id) === to;
+    if (to instanceof ParamImpl)
+      return to.node.scope === this && this.byId.get(to.node.id) === to.node;
+    return true;
   }
 
   /**
-   * Runs the builder now. Reconciliation against what already exists arrives in Phase 4; until then
-   * every call adds to the scope, so dispose the scope's nodes first when re-running a builder.
+   * Runs `run`, which asks for nodes and connections, then makes the scope match what it asked for:
+   * nodes it did not ask for are disposed, connections it did not ask for are removed, and kept nodes
+   * take the values it gave. If `run` throws, what it made is removed and the scope is left as it was.
    */
-  build(fn: (api: ScopeApi) => void): Promise<ApplyResult> {
-    const added: NodeImpl[] = [];
-    const stop = this.events.on('node:added', (node) => {
-      added.push(node as unknown as NodeImpl);
-    });
-    try {
-      fn(this.$);
-    } catch (error) {
-      return Promise.reject(toGraphError(error, 'build-failed'));
-    } finally {
-      stop();
+  private reconcile(run: (build: BuildState) => void, options: ReconcileOptions): ApplyResult {
+    this.assertLive();
+    if (this.building) {
+      throw new CrackedUpError(
+        'build-failed',
+        `Scope "${this.name}" is already being rebuilt; build() and apply() cannot be nested.`,
+      );
     }
-    return Promise.resolve({
+    const before = [...this.nodeList];
+    const build: BuildState = {
+      order: [],
+      claimed: new Set(),
+      created: new Set(),
+      superseded: [],
+      pending: new Map(),
+      autoIds: new Map(),
+      preEdges: new Set(),
+      claimedEdges: new Set(),
+      newEdges: [],
+      buses: new Set(),
+      newBuses: [],
+    };
+    const sources = [...before, ...[...this.buses.values()].map((bus) => bus.node)];
+    for (const node of sources) {
+      for (const edge of node.outputs) {
+        // A description cannot name a connection that leaves the scope, so applying one leaves those alone.
+        if (options.full || this.describable(edge)) build.preEdges.add(edge);
+      }
+    }
+    const schedule = options.full ? this.engine.transportImpl.collect(this.transportOwner) : null;
+
+    this.building = build;
+    try {
+      run(build);
+    } catch (thrown) {
+      this.building = null;
+      schedule?.rollback();
+      for (const node of build.created) node.dispose();
+      for (const old of build.superseded) this.byId.set(old.id, old);
+      for (const edge of build.newEdges) disconnectEdge(edge);
+      for (const bus of build.newBuses) {
+        bus.dispose();
+        this.buses.delete(bus.name);
+      }
+      throw thrown;
+    }
+    this.building = null;
+    schedule?.commit();
+
+    const changed = new Set<NodeImpl>();
+    const touch = (edge: EdgeImpl): void => {
+      changed.add(edge.from);
+      if (edge.to instanceof NodeImpl) changed.add(edge.to);
+      else if (edge.to instanceof ParamImpl) changed.add(edge.to.node);
+    };
+
+    const removed: string[] = [];
+    for (const node of before) {
+      if (build.claimed.has(node)) continue;
+      for (const edge of [...node.inputs, ...node.outputs]) touch(edge);
+      removed.push(node.id);
+      node.dispose();
+    }
+    for (const edge of build.preEdges) {
+      if (build.claimedEdges.has(edge) || !edge.from.outputs.includes(edge)) continue;
+      touch(edge);
+      disconnectEdge(edge);
+    }
+    for (const edge of build.newEdges) touch(edge);
+
+    const errors: CrackedUpError[] = [];
+    const now = this.engine.now();
+    for (const [node, update] of build.pending) {
+      try {
+        if (this.updateKept(node, update, now)) changed.add(node);
+      } catch (thrown) {
+        errors.push(toGraphError(thrown, 'invalid-param'));
+      }
+    }
+
+    this.nodeList = build.order.filter((node) => !node.disposed);
+    for (const [type, n] of build.autoIds) {
+      this.autoIds.set(type, Math.max(n, this.autoIds.get(type) ?? 0));
+    }
+    if (options.full) {
+      for (const bus of [...this.builtBuses]) {
+        if (build.buses.has(bus)) continue;
+        bus.dispose();
+        this.builtBuses.delete(bus);
+        if (this.buses.get(bus.name) === bus) this.buses.delete(bus.name);
+      }
+      for (const bus of build.newBuses) this.builtBuses.add(bus);
+    }
+
+    const added = this.nodeList.filter((node) => build.created.has(node));
+    for (const node of added) this.announce(node);
+    const kept = this.nodeList.filter((node) => !build.created.has(node));
+    return {
       added,
-      removed: [],
-      updated: [],
-      unchanged: [],
-      errors: [],
-    } as unknown as ApplyResult);
+      removed,
+      updated: kept.filter((node) => changed.has(node)),
+      unchanged: kept.filter((node) => !changed.has(node)),
+      errors,
+    } as unknown as ApplyResult;
+  }
+
+  /** Brings a kept node to what the rebuild asked for. Returns whether anything changed. */
+  private updateKept(node: NodeImpl, update: PendingUpdate, at: number): boolean {
+    let changed = false;
+    for (const param of Object.values(node.params)) {
+      const previous = param.value;
+      const target = update.values[param.name] ?? param.meta.default;
+      if (Object.is(target, previous)) continue;
+      param.applySet(target, at);
+      if (!Object.is(param.value, previous)) changed = true;
+    }
+    const sameClasses =
+      update.classes.length === node.classes.size &&
+      update.classes.every((name) => node.classes.has(name));
+    if (!sameClasses) {
+      node.classes = new Set(update.classes);
+      changed = true;
+    }
+    if (!sameJson(node.tags, update.tags)) {
+      node.tags = Object.freeze({ ...update.tags });
+      changed = true;
+    }
+    if (node.bypass !== update.bypass) {
+      node.applyBypass(update.bypass, at);
+      changed = true;
+    }
+    return changed;
   }
 
   // --- Commands and events ------------------------------------------------------------------------

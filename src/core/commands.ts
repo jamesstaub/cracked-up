@@ -148,8 +148,18 @@ export function execute(scope: ScopeImpl, command: Command): void {
       if (command.set.swing !== undefined) scope.engine.transport.swing = command.set.swing;
       return;
     }
-    case 'bypass':
-    case 'apply':
+    case 'bypass': {
+      const at = requireTime(command);
+      for (const node of resolve(scope, command.target)) node.applyBypass(command.bypass, at);
+      return;
+    }
+    case 'apply': {
+      // Per-node failures do not stop the rest; with no caller to return them to, they are reported.
+      for (const error of scope.applyNow(command.graph).errors) {
+        scope.report(error as CrackedUpError);
+      }
+      return;
+    }
     case 'sequence':
       throw new CrackedUpError(
         'unsupported',

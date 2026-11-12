@@ -42,7 +42,7 @@ export class ChainImpl {
         }
       }
     } catch (error) {
-      node.dispose();
+      this.scope.discard(node);
       throw error;
     }
     return this.engine.createChain(this.scope, [node], [...this.allNodes, node]);

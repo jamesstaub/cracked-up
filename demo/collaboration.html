@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cracked-up: running other people's scripts</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="docs">
+    <header>
+      <h1>Running other people's scripts</h1>
+      <a class="nav" href="./docs.html">Docs</a>
+      <a class="nav" href="./sandbox.html">Sandboxed demo</a>
+      <a class="nav" href="./index.html">Live demo</a>
+      <span id="status"
+        >A guide for apps where users share scripts, such as realtime collaboration.</span
+      >
+    </header>
+    <div class="docs-layout">
+      <nav id="toc" aria-label="Contents">
+        <div class="group">Guide</div>
+        <a href="#when">When you need a sandbox</a>
+        <a href="#pieces">The pieces</a>
+        <a href="#one-script">One script, two ways to run it</a>
+        <a href="#setup">Setting up the sandbox</a>
+        <a href="#policy">Limiting what a script may do</a>
+        <a href="#sync">What to share between collaborators</a>
+        <a href="#failure">When a script misbehaves</a>
+        <div class="group">Reference</div>
+        <a href="#differences">Differences inside a sandbox</a>
+        <a href="#messages">Messages</a>
+        <a href="#commands">Commands</a>
+        <a href="#checklist">Checklist</a>
+      </nav>
+      <article>
+        <h2 id="when">When you need a sandbox</h2>
+        <p>
+          A cracked-up script is JavaScript. Run in your page, it can do anything your page can:
+          read what is on screen, read storage, and call your server as the signed-in user. That is
+          fine when the person who wrote the script is the person running it. It is not fine when
+          the script came from someone else, which is what happens the moment two people edit one
+          project: each person's browser runs the other person's code.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Situation</th>
+                <th>Who wrote the script</th>
+                <th>How to run it</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Working alone on your own project</td>
+                <td>You</td>
+                <td>Directly, with <code>scope.build</code>. No sandbox needed</td>
+              </tr>
+              <tr>
+                <td>Opening a project someone shared with you</td>
+                <td>Someone else</td>
+                <td>In a sandbox</td>
+              </tr>
+              <tr>
+                <td>Editing a project together in real time</td>
+                <td>Everyone in the session</td>
+                <td>In a sandbox, for every participant</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The rule is about where the code came from, not about who is looking at it. A project you
+          wrote alone and later reopen is still yours. A project you forked from a stranger is not,
+          until you have read it. An app should decide per project, and should treat "I am not sure"
+          as "someone else".
+        </p>
+        <p>
+          The two ways of running a script are built to be interchangeable, so an app can use the
+          direct way by default and switch to the sandbox when a project becomes shared, without its
+          users rewriting anything.
+        </p>
+
+        <h2 id="pieces">The pieces</h2>
+        <p>
+          The audio engine always lives in your page. In sandboxed mode the script lives somewhere
+          it can do no harm, and the two exchange plain data.
+        </p>
+        <pre
+          data-static
+        ><code>your page                                   sandboxed frame (no origin)
+---------                                   ---------------------------
+Engine, audio graph, transport              the script
+linkRemote(scope, ...)   &lt;-- commands ---   createRemote(...)  gives the script __
+                         --- events ----&gt;   runs sequence callbacks
+                         --- changes ---&gt;   keeps a copy of the scope's state</code></pre>
+        <ul>
+          <li>
+            <strong>Writes are commands.</strong> Everything the script does (make a node, set a
+            value, trigger a sampler) becomes a small object such as
+            <code>{ op: 'trigger', target: '#kick', at: 12.5 }</code>. The page applies it to one
+            scope and nothing else.
+          </li>
+          <li>
+            <strong>Reads come from a copy.</strong> The sandbox holds a copy of the scope's nodes
+            and values, so <code>__('#filter').param('frequency').value</code> answers at once, with
+            no waiting.
+          </li>
+          <li>
+            <strong>Sequence callbacks run in the sandbox.</strong> The page's transport sends each
+            step about 100 milliseconds before it sounds. The callback runs, and the commands it
+            makes carry the step's exact time, so the result is as tight as it is without a sandbox.
+            The round trip takes about a millisecond.
+          </li>
+        </ul>
+        <p>
+          Both halves are in <code>cracked-up/remote</code>. The sandbox half
+          (<code>createRemote</code>) contains no audio code and does not need a page: it also runs
+          in a Worker.
+        </p>
+
+        <h2 id="one-script">One script, two ways to run it</h2>
+        <p>
+          Write scripts as a function of <code>__</code>, and give them a <code>define</code>
+          function for their own node types. Then the same text runs either way:
+        </p>
+        <pre data-static><code>// A script, as your users write it.
+define({
+  type: 'blip',
+  params: { pitch: { default: 660, min: 50, max: 4000,
+                     drives: [{ select: '#tone', param: 'frequency' }] } },
+  build(__) { __().sine({ id: 'tone', gate: 'closed' }).gain(0.2).to('out'); },
+  trigger(__) { __('#tone').trigger({ duration: 0.05 }); },
+});
+
+__().blip({ id: 'blip' }).to('main');
+__.transport.sequence('blips', { steps: 'x..x..x.' }, (ev) =&gt; {
+  if (ev.value) __('#blip').trigger();
+});</code></pre>
+        <p>Running it directly, for code the user wrote:</p>
+        <pre data-static><code>import { defineMacro } from 'cracked-up';
+
+function runDirect(scope, code) {
+  const program = new Function('__', 'define', code);
+  const define = (definition) =&gt; scope.engine.registry.register(defineMacro(definition));
+  return scope.build((__) =&gt; program(__, define));
+}</code></pre>
+        <p>Running it sandboxed, for code from someone else (inside the frame):</p>
+        <pre data-static><code>function runSandboxed(remote, code) {
+  const program = new Function('__', 'define', code);
+  remote.build((__) =&gt; program(__, (definition) =&gt; remote.define(definition)));
+}</code></pre>
+        <p>
+          Both rebuild in place: nodes the script still asks for keep sounding, and a script that
+          throws leaves the previous version playing. A test in the library runs one script both
+          ways and checks that the rendered audio is identical, sample for sample.
+        </p>
+        <p>
+          To keep scripts portable, do not hand direct-mode scripts anything a sandbox cannot offer.
+          In particular do not pass them the <code>engine</code>. The
+          <a href="#differences">differences table</a> lists the few things that behave differently.
+        </p>
+
+        <h2 id="setup">Setting up the sandbox</h2>
+        <h3>1. The frame</h3>
+        <p>
+          Use an <code>iframe</code> with <code>sandbox="allow-scripts"</code> and nothing else.
+          Leaving out <code>allow-same-origin</code> is the point: the frame then has no origin, so
+          it cannot read your page, your cookies, <code>localStorage</code> or IndexedDB, and
+          requests it makes do not carry your users' session.
+        </p>
+        <pre
+          data-static
+        ><code>&lt;iframe id="guest" sandbox="allow-scripts" hidden&gt;&lt;/iframe&gt;</code></pre>
+        <p>
+          A Worker on its own is <em>not</em> a sandbox. A Worker created by your page has your
+          page's origin, so it can call your server as the user and read IndexedDB. Use a Worker
+          only inside the sandboxed frame, if you want scripts off the frame's main thread.
+        </p>
+        <h3>2. The frame's page</h3>
+        <p>
+          Serve the frame's document with a content security policy that stops it from talking to
+          the network. Without one, a script cannot steal anything from your page, but it can still
+          make requests of its own.
+        </p>
+        <pre
+          data-static
+        ><code>Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'</code></pre>
+        <p>
+          <code>'unsafe-eval'</code> is there because the frame turns script text into a function.
+          That is safe here because the frame has nothing worth stealing. Do not add it to your main
+          page's policy.
+        </p>
+        <pre data-static><code>// guest.js, loaded by the frame's document
+import { createRemote } from 'cracked-up/remote';
+
+let remote = null;
+const post = (message) =&gt; parent.postMessage(message, '*');
+
+addEventListener('message', (event) =&gt; {
+  if (event.source !== parent) return;
+  const data = event.data;
+  if (data.kind === 'init') {
+    remote = createRemote({ ...data.state, send: (message) =&gt; post({ kind: 'remote', message }) });
+    remote.on('error', (error) =&gt; post({ kind: 'error', message: error.message }));
+  } else if (data.kind === 'host') {
+    remote.receive(data.message);
+  } else if (data.kind === 'run') {
+    try {
+      runSandboxed(remote, data.code);
+      post({ kind: 'ok' });
+    } catch (error) {
+      post({ kind: 'error', message: String(error) });
+    }
+  }
+});
+
+post({ kind: 'ready' });</code></pre>
+        <h3>3. Your page</h3>
+        <pre data-static><code>import { linkRemote } from 'cracked-up/remote';
+
+const frame = document.querySelector('#guest');
+const toFrame = (data) =&gt; frame.contentWindow.postMessage(data, '*');
+let link = null;
+
+addEventListener('message', (event) =&gt; {
+  // The frame has no origin to check, so check the window the message came from.
+  if (event.source !== frame.contentWindow) return;
+  const data = event.data;
+  if (data.kind === 'ready') {
+    link = linkRemote(engine.scope('track-1'), {
+      send: (message) =&gt; toFrame({ kind: 'host', message }),
+      allow: (command) =&gt; command.op !== 'loadBuffer',
+    });
+    toFrame({ kind: 'init', state: link.state() });
+    toFrame({ kind: 'run', code: scriptText });
+  } else if (data.kind === 'remote') {
+    link.receive(data.message);
+  } else if (data.kind === 'error') {
+    showError(data.message);
+  }
+});
+
+// Set the address only after the listener exists, or "ready" can be missed.
+frame.src = '/guest.html';</code></pre>
+        <p>
+          The target origin is <code>'*'</code> in both directions because a frame without an origin
+          cannot be named. That is acceptable only because nothing secret is ever sent: the messages
+          are commands and musical events. Never post a token, a user record or anything private to
+          the frame.
+        </p>
+        <p>
+          Use one link and one scope per script. Call <code>link.dispose()</code> when the script
+          goes away; it removes the script's sequences and node types. Disposing the scope removes
+          its nodes.
+        </p>
+
+        <h2 id="policy">Limiting what a script may do</h2>
+        <p>The link enforces some limits by itself:</p>
+        <ul>
+          <li>A script can only select, change and remove nodes in its own scope.</li>
+          <li>
+            It can send audio to a bus of an outer scope, such as <code>main</code>, but cannot
+            change that bus or take audio from it.
+          </li>
+          <li>It cannot replace a node type it did not define.</li>
+          <li>A malformed message is reported and ignored. It never throws into your page.</li>
+        </ul>
+        <p>
+          Everything else is yours to decide in <code>allow</code>, which sees every command before
+          it is applied and returns <code>false</code> to drop it:
+        </p>
+        <pre data-static><code>const MAX_NODES = 200;
+
+const link = linkRemote(scope, {
+  send,
+  allow(command) {
+    // The tempo belongs to the whole session, not to one track's script.
+    if (command.op === 'transport') return false;
+    // Scripts may only use audio the project already has.
+    if (command.op === 'loadBuffer') return false;
+    // A cap on how much one script can build.
+    if (command.op === 'apply' &amp;&amp; command.graph.nodes.length &gt; MAX_NODES) return false;
+    return true;
+  },
+});</code></pre>
+        <p>
+          A macro instance carries its inner graph in <code>init.remote.graph</code>, so a strict
+          node cap should count those too. Commands for the inside of a macro arrive wrapped as
+          <code>{ op: 'inside', node, commands }</code>.
+        </p>
+
+        <h2 id="sync">What to share between collaborators</h2>
+        <p>
+          cracked-up does not send anything over a network. Each participant runs their own engine
+          and hears their own audio. What your app shares is the <em>project</em>: the text of the
+          scripts and whatever settings your interface edits.
+        </p>
+        <ul>
+          <li>
+            <strong>Share script text and project data, not commands.</strong> Commands are timed
+            against one machine's audio clock and mean nothing on another. When a participant edits
+            a script, send the new text; every browser runs it in its own sandbox.
+          </li>
+          <li>
+            <strong>Share graphs as data.</strong> <code>scope.describe()</code> returns a scope's
+            nodes and connections as JSON, and <code>scope.apply(graph)</code> makes a scope match
+            one, keeping what is unchanged. Use them for the parts of a project that an interface
+            edits, such as adding an effect to a chain.
+          </li>
+          <li>
+            <strong>Share one tempo and one start.</strong> Tempo is a single value on the engine.
+            To line participants up, share a start moment and have each browser start its transport
+            for that moment. How closely they agree depends on your clock sharing; the library does
+            not do it for you.
+          </li>
+          <li>
+            <strong>Expect randomness to differ.</strong> A script that calls
+            <code>Math.random()</code> plays differently for each participant. Share a seed in the
+            project if they should hear the same thing.
+          </li>
+        </ul>
+        <p>
+          The link tells a script when something else changes its scope: a value set from a control
+          arrives as a change, and nodes added or removed by the page arrive as a fresh copy of the
+          scope. If the page and the script both change the structure in the same instant, the
+          script's version wins, so let one side own the structure of a scope.
+        </p>
+
+        <h2 id="failure">When a script misbehaves</h2>
+        <ul>
+          <li>
+            <strong>It throws while building.</strong> <code>remote.build</code> rethrows, nothing
+            is sent, and the previous version keeps playing. Show the error.
+          </li>
+          <li>
+            <strong>A sequence callback throws.</strong> The error goes to
+            <code>remote.on('error')</code> with the code <code>callback</code>. The sequence
+            carries on.
+          </li>
+          <li>
+            <strong>The page rejects something.</strong> A command that cannot be applied (an
+            unknown bus, a method that does not exist) comes back to
+            <code>remote.on('error')</code>.
+          </li>
+          <li>
+            <strong>It loops forever.</strong> The frame stops answering and its sequences fall
+            silent. Sound already scheduled keeps playing, because audio runs on its own thread.
+            Whether your page stays responsive depends on the browser: some run a sandboxed frame in
+            its own process, others share the page's thread with it. To be safe everywhere, have the
+            frame run scripts in a Worker of its own (<code>createRemote</code> works there) and
+            keep the frame itself idle, so it can end a stuck Worker. Detect a stuck script by
+            sending a ping on a timer; if no answer comes back, end it, call
+            <code>link.dispose()</code>, and start a new one.
+          </li>
+          <li>
+            <strong>It is slow.</strong> A callback that takes longer than the look-ahead (100
+            milliseconds by default) lands late. Its commands are applied on arrival. The sandboxed
+            demo shows how to measure this.
+          </li>
+        </ul>
+
+        <h2 id="differences">Differences inside a sandbox</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Thing</th>
+                <th>Directly</th>
+                <th>In a sandbox</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Chains, selectors, setters, <code>trigger</code>, <code>bypass</code>, buses
+                </td>
+                <td>Yes</td>
+                <td>The same</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>sequence</code>, <code>steps</code>, <code>every</code>, <code>at</code>
+                </td>
+                <td>Yes</td>
+                <td>The same. Callbacks run in the sandbox</td>
+              </tr>
+              <tr>
+                <td>An operation with no time, outside a callback</td>
+                <td>Happens now</td>
+                <td>Happens when it reaches the page, about a millisecond later</td>
+              </tr>
+              <tr>
+                <td>Defining a node type</td>
+                <td><code>defineMacro</code>, registered with the engine</td>
+                <td>
+                  <code>remote.define</code>, same definition. A drive's <code>scale</code> must be
+                  data such as <code>{ multiply: 2 }</code>, which also works directly
+                </td>
+              </tr>
+              <tr>
+                <td>Reading values inside a macro from the page's own types</td>
+                <td>Yes</td>
+                <td>No. They can be set, not read</td>
+              </tr>
+              <tr>
+                <td>Transport position, start, stop</td>
+                <td>Yes</td>
+                <td>No. Events carry <code>beat</code> and <code>bar</code></td>
+              </tr>
+              <tr>
+                <td>Tempo</td>
+                <td>Read and set</td>
+                <td>Read and set, unless <code>allow</code> refuses</td>
+              </tr>
+              <tr>
+                <td>Buffers</td>
+                <td><code>engine.buffers</code></td>
+                <td>
+                  <code>remote.buffers.get(key)</code> for duration and slices;
+                  <code>load(url)</code> if <code>allow</code> permits
+                </td>
+              </tr>
+              <tr>
+                <td>Native audio nodes, <code>defineNode</code>, worklets</td>
+                <td>Yes</td>
+                <td>No. Register those in the page</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="messages">Messages</h2>
+        <p>
+          Your app carries these between the two halves without needing to look inside. They are
+          plain data and survive <code>postMessage</code>. The types are
+          <code>RemoteMessage</code> and <code>HostMessage</code>.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Direction</th>
+                <th>Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Sandbox to page</td>
+                <td><code>commands</code></td>
+                <td>
+                  A batch of commands. At most one per turn of the event loop, plus one per sequence
+                  step
+                </td>
+              </tr>
+              <tr>
+                <td>Sandbox to page</td>
+                <td><code>define</code></td>
+                <td>A node type the script defined, as data</td>
+              </tr>
+              <tr>
+                <td>Page to sandbox</td>
+                <td><code>event</code></td>
+                <td>A sequence step is coming up; run its callback</td>
+              </tr>
+              <tr>
+                <td>Page to sandbox</td>
+                <td><code>call</code></td>
+                <td>Someone called a method of a node type the script defined</td>
+              </tr>
+              <tr>
+                <td>Page to sandbox</td>
+                <td><code>params</code>, <code>snapshot</code></td>
+                <td>
+                  Values, or the scope's nodes, were changed by something other than the script
+                </td>
+              </tr>
+              <tr>
+                <td>Page to sandbox</td>
+                <td><code>transport</code>, <code>buffer</code></td>
+                <td>Tempo or transport state changed; a buffer finished loading</td>
+              </tr>
+              <tr>
+                <td>Page to sandbox</td>
+                <td><code>error</code></td>
+                <td>Something the script sent could not be applied</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="commands">Commands</h2>
+        <p>
+          The <code>op</code> values an <code>allow</code> function will see. The full shapes are
+          the <code>Command</code> type.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>apply</code></td>
+                <td>Makes the scope's nodes and connections match a description</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>set</code>, <code>ramp</code>, <code>offset</code>, <code>cancel</code>
+                </td>
+                <td>Change parameter values at a time</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>trigger</code>, <code>release</code>, <code>call</code>, <code>bypass</code>
+                </td>
+                <td>Act on nodes at a time</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>connect</code>, <code>disconnect</code>, <code>dispose</code>,
+                  <code>bus</code>
+                </td>
+                <td>Change connections, remove nodes, make or route a bus of the scope</td>
+              </tr>
+              <tr>
+                <td><code>inside</code></td>
+                <td>Commands for the inside of one macro instance</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>sequence</code>, <code>once</code>, <code>setStep</code>,
+                  <code>restartSequence</code>, <code>clearSequence</code>
+                </td>
+                <td>Schedule and edit the script's sequences and one-off callbacks</td>
+              </tr>
+              <tr>
+                <td><code>transport</code></td>
+                <td>Sets tempo or swing for the whole engine. Consider refusing it</td>
+              </tr>
+              <tr>
+                <td><code>loadBuffer</code></td>
+                <td>Makes the page fetch a URL. Consider refusing it, or checking the URL</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="checklist">Checklist</h2>
+        <ul>
+          <li>
+            The frame has <code>sandbox="allow-scripts"</code> and not
+            <code>allow-same-origin</code>.
+          </li>
+          <li>
+            The frame's document has a content security policy with <code>connect-src 'none'</code>.
+          </li>
+          <li>The page checks <code>event.source</code> on every message from the frame.</li>
+          <li>Nothing private is ever posted to the frame.</li>
+          <li>
+            The session token is not readable by scripts in the page (a cookie marked HttpOnly, not
+            <code>localStorage</code>).
+          </li>
+          <li>
+            <code>allow</code> refuses <code>loadBuffer</code> and <code>transport</code> unless you
+            mean to permit them.
+          </li>
+          <li>There is a cap on nodes per script, and a ping to catch a frame that has stopped.</li>
+          <li>Any project whose scripts the current user did not write runs sandboxed.</li>
+        </ul>
+      </article>
+    </div>
+  </body>
+</html>

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Command, HostMessage, RemoteError, RemoteMessage, ScopeApi } from '../../src';
+import { defineMacro } from '../../src';
+import type { MacroDefinition } from '../../src';
 import { createRemote, linkRemote } from '../../src/remote';
 import type { LinkOptions, Remote } from '../../src/remote';
 import { click, offlineEngine, ones, valueAt } from '../core/setup';
@@ -683,5 +685,63 @@ describe('macros defined in the sandbox', () => {
     expect(engine.registry.has('boost')).toBe(true);
     link.dispose();
     expect(engine.registry.has('boost')).toBe(false);
+  });
+});
+
+describe('one script, run directly and sandboxed', () => {
+  /** A script as a user would write it: only `__` and `define`, nothing that needs the engine. */
+  const script = (__: ScopeApi, define: (definition: MacroDefinition) => void): void => {
+    define({
+      type: 'blip',
+      params: {
+        pitch: {
+          default: 660,
+          min: 50,
+          max: 4000,
+          drives: [{ select: '#tone', param: 'frequency', scale: { multiply: 0.5 } }],
+        },
+      },
+      build(inner) {
+        inner().sine({ id: 'tone', gate: 'closed' }).gain(0.2).to('out');
+      },
+      trigger(inner, options) {
+        inner('#tone').trigger({ duration: (options['duration'] as number | undefined) ?? 0.05 });
+      },
+    });
+    const chain = __() as unknown as {
+      blip(init: unknown): { lowpass(v: number): { to(b: string): void } };
+    };
+    chain.blip({ id: 'blip', pitch: 880 }).lowpass(2000).to('main');
+    __().sampler({ id: 'hit', buffer: 'click' }).gain(0.5).to('main');
+    __.transport.sequence('blips', { steps: [1, 0, 2, 0], step: '1/8' }, (ev) => {
+      if (ev.value)
+        __('#blip')
+          .set({ pitch: 440 * ev.value })
+          .trigger({ duration: 0.1 });
+    });
+    __.transport.every('1/4', () => __('#hit').trigger());
+  };
+
+  it('renders the same audio both ways', async () => {
+    const direct = await offlineEngine(1);
+    direct.buffers.add('click', click());
+    await direct
+      .scope('script')
+      .build((__) => script(__, (definition) => direct.registry.register(defineMacro(definition))));
+    direct.transport.start();
+    const expected = (await direct.render()).getChannelData(0);
+
+    const { engine, remote, errors } = await linked(1);
+    remote.build((__) => script(__, (definition) => remote.define(definition)));
+    engine.transport.start();
+    const actual = (await engine.render()).getChannelData(0);
+
+    expect(errors).toEqual([]);
+    expect(Math.max(...expected.map(Math.abs))).toBeGreaterThan(0.1);
+    let worst = 0;
+    for (let i = 0; i < expected.length; i++) {
+      worst = Math.max(worst, Math.abs(expected[i]! - actual[i]!));
+    }
+    expect(worst).toBe(0);
   });
 });

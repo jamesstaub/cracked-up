@@ -40,6 +40,26 @@ __.transport.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step:
   }
 });
 
+// A node type of your own, defined right here in the sandbox. Its inner graph is sent to the
+// page as data; its trigger() runs here each time the page asks.
+define({
+  type: 'blip',
+  params: {
+    pitch: { default: 660, min: 50, max: 4000, drives: [{ select: '#tone', param: 'frequency' }] },
+  },
+  build(__) {
+    __().sine({ id: 'tone', gate: 'closed' }).gain(0.15).to('out');
+  },
+  trigger(__, options) {
+    __('#tone').trigger({ duration: options.duration ?? 0.05 });
+  },
+});
+__().blip({ id: 'blip' }).to('main');
+
+__.transport.every('1/4', (ev) => {
+  __('#blip').set({ pitch: ev.beat % 4 === 0 ? 1320 : 660 }).trigger();
+}, { offset: '1/8' });
+
 // Things a script might try. Each fails or finds nothing:
 // document.cookie; localStorage.getItem('x'); parent.document.title;
 `;
@@ -109,6 +129,9 @@ const frameReady = new Promise<void>((resolve) => {
     }
   });
 });
+
+// Load the frame only now that the listener above exists, so its "ready" cannot be missed.
+frame.src = './sandbox-frame.html';
 
 // '*' because a sandboxed frame's origin is opaque and cannot be named.
 const toFrame = (data: ToFrame): void => frame.contentWindow?.postMessage(data, '*');

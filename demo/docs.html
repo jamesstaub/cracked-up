@@ -570,7 +570,6 @@ remote.build((__) =&gt; {
 });</code></pre>
         <p>What differs from running next to the engine:</p>
         <ul>
-          <li>A sequence needs a name, and there is no <code>every</code> or <code>at</code>.</li>
           <li>
             Outside a sequence callback there is no clock, so an operation without a time happens
             when it reaches the page.
@@ -584,10 +583,45 @@ remote.build((__) =&gt; {
             but not read: the sandbox's copy does not include them.
           </li>
           <li>
-            Macros have to be registered in the page. Defining one inside the sandbox is not built
-            yet.
+            There is no transport position to read, and a script cannot start or stop the transport.
+            Sequence events carry the beat and bar.
           </li>
         </ul>
+        <p>
+          A script can define its own node types with <code>remote.define</code>, which takes the
+          same definition as <code>defineMacro</code>. The inner graph is built in the sandbox and
+          sent to the page as data. The macro's <code>trigger</code>, <code>release</code> and
+          methods stay in the sandbox and run there whenever anyone calls them, including a control
+          in the page. One difference: a drive's <code>scale</code> has to be data, because a
+          function cannot be sent to the page.
+        </p>
+        <pre data-static><code>remote.define({
+  type: 'supersaw',
+  params: {
+    frequency: {
+      default: 110, min: 20, max: 5000,
+      drives: [
+        { select: '#a', param: 'frequency' },
+        { select: '#b', param: 'frequency', scale: { multiply: 1.01 } },
+      ],
+    },
+  },
+  build(__) {
+    __().lowpass({ id: 'filter' }).to('out');
+    __().saw({ id: 'a' }).connect('#filter');
+    __().saw({ id: 'b' }).connect('#filter');
+  },
+  methods: {
+    sweep(__, args, at) {
+      __('#filter').ramp('frequency', args.to, { at, duration: 0.5, curve: 'exp' });
+    },
+  },
+});</code></pre>
+        <p>
+          <code>remote.buffers.get(key)</code> gives a loaded buffer's duration and slice
+          boundaries, and <code>remote.buffers.load(url)</code> asks the page to load one, which the
+          page may refuse.
+        </p>
         <p>
           The frame keeps a script away from your page, not from the network or the processor. Give
           the frame a content security policy to stop it making requests, and expect that a script

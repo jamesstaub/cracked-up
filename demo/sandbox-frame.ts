@@ -30,10 +30,13 @@ function describe(error: unknown): string {
 function run(code: string): void {
   if (!remote) return;
   try {
-    const program = new Function('__', ...Object.keys(helpers), `"use strict";\n${code}`) as (
+    const names = ['__', 'define', ...Object.keys(helpers)];
+    const program = new Function(...names, `"use strict";\n${code}`) as (
       ...args: unknown[]
     ) => void;
-    remote.build((__) => program(__, ...Object.values(helpers)));
+    const active = remote;
+    const define = (definition: Parameters<Remote['define']>[0]): void => active.define(definition);
+    active.build((__) => program(__, define, ...Object.values(helpers)));
     post({ kind: 'result', error: null, nodes: remote.describe().nodes.length });
   } catch (error) {
     post({ kind: 'result', error: describe(error), nodes: remote.describe().nodes.length });

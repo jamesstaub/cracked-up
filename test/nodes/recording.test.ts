@@ -395,6 +395,8 @@ describe('capturing any part of a graph', () => {
 
     expect(drums[4800]).toBeCloseTo(0.25, 6);
     expect(Math.max(...synth.map(Math.abs))).toBeGreaterThan(0.01);
+    // Checked first, so a short take reads as a length problem and not as a mystery NaN.
+    expect(all.length).toBe(mix.length);
     let worst = 0;
     for (let i = 0; i < mix.length; i++) worst = Math.max(worst, Math.abs(mix[i]! - all[i]!));
     expect(worst).toBeLessThan(1e-6);

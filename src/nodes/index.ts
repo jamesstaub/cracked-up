@@ -13,3 +13,9 @@ export {
 } from './filters';
 export { saw, sine, square, triangle } from './oscillators';
 export { sampler } from './sampler';
+export { comb, delay } from './delays';
+export { overdrive, ring, waveshaper } from './distortion';
+export { adsr } from './envelopes';
+export { lfo, stepper } from './modulators';
+export { noise } from './noise';
+export { reverb } from './reverb';

@@ -68,6 +68,17 @@ export interface EnvelopeParams {
   release: number;
 }
 
+export interface EchoParams {
+  /** Seconds between repeats. */
+  time: number;
+  /** 0..1: how much of each repeat is fed back to make the next. */
+  feedback: number;
+  /** Hz: lowpass on the fed-back sound. */
+  cutoff: number;
+  /** 0 is only the original sound, 1 only the effect. */
+  mix: number;
+}
+
 export interface OscillatorInit {
   /**
    * Oscillators run from creation. With the gate open (the default) they are heard at once, as a drone;
@@ -111,7 +122,12 @@ export interface NodeTypeMap {
   saw: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   square: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   triangle: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
-  noise: NodeShape<{ gain: number }, { color?: 'white' | 'pink' | 'brown' }>;
+  noise: NodeShape<
+    { gain: number },
+    OscillatorInit & { color?: 'white' | 'pink' | 'brown' },
+    never,
+    GateTrigger
+  >;
   sampler: NodeShape<
     SamplerParams,
     {
@@ -128,21 +144,31 @@ export interface NodeTypeMap {
   lfo: NodeShape<
     { frequency: number; depth: number },
     {
-      shape?: 'sine' | 'saw' | 'square' | 'triangle' | 'random';
+      shape?: 'sine' | 'saw' | 'square' | 'triangle';
       /** Shorthand: when chained into another node, connect to this parameter of it instead of its input. */
       modulates?: string;
     }
   >;
-  delay: NodeShape<
-    { time: number; feedback: number; damping: number; cutoff: number; mix: number },
-    None,
-    number
+  stepper: NodeShape<
+    { depth: number },
+    {
+      /** Random values per loop. Default 8. */
+      steps?: number;
+      /** Seconds per loop. Default 1. */
+      length?: number;
+      /** Connect to this parameter of the next node instead of its input. Default `frequency`. */
+      modulates?: string;
+    }
   >;
+  delay: NodeShape<EchoParams, None, number>;
+  comb: NodeShape<EchoParams, None, number>;
   reverb: NodeShape<
     { mix: number },
     { seconds?: number; decay?: number; reverse?: boolean; impulse?: BufferSource }
   >;
   overdrive: NodeShape<{ drive: number; color: number; postCut: number }, None, number>;
+  waveshaper: NodeShape<{ drive: number }, None, number>;
+  ring: NodeShape<{ frequency: number; mix: number }, None, number>;
   bitcrusher: NodeShape<{ bits: number; rate: number }>;
   compressor: NodeShape<{
     threshold: number;

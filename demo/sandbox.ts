@@ -9,6 +9,7 @@ import { createEngine } from '../src';
 import type { Engine } from '../src';
 import { linkRemote } from '../src/remote';
 import type { Link } from '../src/remote';
+import { BREAK, BREAK_CREDIT, loadBreak } from './break';
 import { attachHighlighter } from './highlight';
 import { addSamples } from './samples';
 import type { FromFrame, ToFrame } from './sandbox-protocol';
@@ -77,6 +78,16 @@ let link: Link | null = null;
 let booting: Promise<void> | null = null;
 let lastSent: string | null = null;
 
+/** The latest result from the frame, and a note that stays whatever the code does. */
+let said: { text: string; isError: boolean } = { text: '', isError: false };
+let notice = '';
+
+function showMessage(text: string, isError: boolean): void {
+  said = { text, isError };
+  message.textContent = [said.text, notice].filter(Boolean).join('\n');
+  message.classList.toggle('error', isError);
+}
+
 // --- Round-trip timing --------------------------------------------------------------------------------
 
 /** When each sequence event was posted to the frame, by event time, until its commands come back. */
@@ -124,9 +135,10 @@ const frameReady = new Promise<void>((resolve) => {
       }
       link?.receive(data.message);
     } else if (data.kind === 'result') {
-      message.textContent =
-        data.error ?? `Running in the sandbox. ${data.nodes} node${data.nodes === 1 ? '' : 's'}.`;
-      message.classList.toggle('error', data.error !== null);
+      showMessage(
+        data.error ?? `Running in the sandbox. ${data.nodes} node${data.nodes === 1 ? '' : 's'}.`,
+        data.error !== null,
+      );
     }
   });
 });
@@ -156,13 +168,16 @@ function boot(): Promise<void> {
   booting ??= (async () => {
     const created = await createEngine({ context: new AudioContext() });
     created.bus('main').gain.set(0.6);
-    created.on('error', (error) => {
-      message.textContent = error.message;
-      message.classList.add('error');
-    });
+    created.on('error', (error) => showMessage(error.message, true));
     created.on('state', updateStatus);
     created.transport.on('tempo', updateStatus);
     addSamples(created);
+    // The page loads the break; the script may not fetch anything. It is cut into slices here, before
+    // the link exists, so the frame is told about the slices along with the audio's length.
+    loadBreak(created, (problem) => {
+      notice = problem;
+      showMessage(said.text, said.isError);
+    });
     await frameReady;
     link = linkRemote(created.scope('sandboxed'), {
       send: (hostMessage) => {
@@ -174,6 +189,8 @@ function boot(): Promise<void> {
     });
     toFrame({ kind: 'init', state: link.state() });
     engine = created;
+    // For looking at the page's engine from the browser's console. The frame cannot reach it.
+    Object.assign(window, { engine: created });
     setInterval(showTiming, 500);
   })();
   return booting;
@@ -189,6 +206,10 @@ async function start(): Promise<void> {
 
 editor.value = DEFAULT_CODE;
 attachHighlighter(editor, document.querySelector<HTMLPreElement>('#highlight')!);
+
+const credit = document.querySelector<HTMLAnchorElement>('#break-credit')!;
+credit.href = BREAK.page;
+credit.textContent = BREAK_CREDIT;
 editor.addEventListener('keyup', () => {
   if (engine) sendCode();
   else void start();

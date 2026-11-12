@@ -90,6 +90,14 @@ button {
 button:hover {
   border-color: var(--accent);
 }
+/* A sample that names its author: the credit wraps under the name. */
+aside li a {
+  color: inherit;
+  text-decoration: underline;
+}
+aside li.missing {
+  text-decoration: line-through;
+}
 main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;

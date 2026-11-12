@@ -10,6 +10,7 @@
 import { createEngine } from '../src';
 import type { Engine } from '../src';
 import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
+import { BREAK, BREAK_CREDIT, loadBreak } from './break';
 import { attachHighlighter } from './highlight';
 import { addSamples } from './samples';
 
@@ -104,9 +105,24 @@ let lastTried: string | null = null;
 
 // --- Running the editor's code ----------------------------------------------------------------------
 
+/** The latest message about the code, and a note that stays whatever the code does. */
+let said = { text: '', isError: false };
+let notice = '';
+
+function renderMessage(): void {
+  message.textContent = [said.text, notice].filter(Boolean).join('\n');
+  message.classList.toggle('error', said.isError);
+}
+
 function showMessage(text: string, isError = false): void {
-  message.textContent = text;
-  message.classList.toggle('error', isError);
+  said = { text, isError };
+  renderMessage();
+}
+
+/** Shows a lasting note under the message, such as a sample that could not be loaded. */
+function showNotice(text: string): void {
+  notice = text;
+  renderMessage();
 }
 
 function describeError(error: unknown): string {
@@ -186,8 +202,15 @@ function boot(): Promise<Engine> {
     created.on('error', (error) => showMessage(describeError(error), true));
     created.on('state', updateStatus);
     addSamples(created);
+    // Not awaited: the break arrives when it arrives, and a sampler without audio is silent.
+    loadBreak(created, (problem) => {
+      showNotice(problem);
+      document.querySelector('#break-sample')?.classList.add('missing');
+    });
     fillReference(created);
     engine = created;
+    // For poking at the engine from the browser's console: `engine.buffers.get('break').duration`.
+    Object.assign(window, { engine: created });
     watchPosition();
     return created;
   })();
@@ -222,12 +245,27 @@ function fillList(id: string, rows: readonly (readonly [string, string])[]): voi
   );
 }
 
-function fillReference(target: Engine): void {
+/** The sample names need no engine, so they and the break's credit are there before audio starts. */
+function fillSamples(): void {
   fillList('samples', [
     ["'kick'", ''],
     ["'snare'", ''],
     ["'hat'", ''],
   ]);
+  const item = document.createElement('li');
+  item.id = 'break-sample';
+  const credit = document.createElement('a');
+  credit.href = BREAK.page;
+  credit.target = '_blank';
+  credit.rel = 'noopener';
+  credit.textContent = BREAK_CREDIT;
+  const detail = document.createElement('span');
+  detail.append(' a drum break in 128 slices. ', credit);
+  item.append(`'${BREAK.key}'`, detail);
+  document.querySelector<HTMLUListElement>('#samples')!.append(item);
+}
+
+function fillReference(target: Engine): void {
   // Straight from the library's own metadata, so it cannot go out of date.
   fillList(
     'types',
@@ -294,6 +332,7 @@ function initialCode(): string {
   }
 }
 
+fillSamples();
 fillHelpers();
 editor.value = initialCode();
 /** Redraws the coloured code behind the editor. Call it after setting the editor's text from code. */

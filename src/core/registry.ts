@@ -118,6 +118,11 @@ export class RegistryImpl implements Registry {
     this.onRegister(entry);
   }
 
+  /** Forgets a type. Nodes already made from it keep working. */
+  remove(type: string): void {
+    this.entries.delete(type);
+  }
+
   has(type: string): boolean {
     return this.entries.has(type);
   }

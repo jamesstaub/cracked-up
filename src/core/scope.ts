@@ -761,8 +761,14 @@ export class ScopeImpl {
   }
 
   report(error: CrackedUpError): void {
-    this.events.emit('error', error);
+    this.notify(error);
     this.engine.report(error);
+  }
+
+  /** Tells this scope's `error` listeners, and for a macro's inner scope those of the scope it is in. */
+  private notify(error: CrackedUpError): void {
+    this.events.emit('error', error);
+    this.owner?.scope.notify(error);
   }
 
   on<E extends keyof ScopeEvents>(event: E, listener: ScopeEvents[E]): Unsubscribe {

@@ -92,6 +92,10 @@ export class BufferStoreImpl implements BufferStore {
     return this.refs.get(key);
   }
 
+  list(): readonly BufferRef[] {
+    return [...this.refs.values()];
+  }
+
   delete(key: string): boolean {
     return this.refs.delete(key);
   }

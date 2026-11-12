@@ -1,6 +1,15 @@
 import type {
+  BufferInfo,
+  BufferRef,
   Command,
+  GraphData,
   GraphError,
+  Json,
+  MacroDefinition,
+  MacroParam,
+  Node,
+  RemoteMacroData,
+  ScopeApi,
   HostMessage,
   Link,
   LinkOptions,
@@ -11,6 +20,16 @@ import type {
   SequenceOptions,
   TransportSnapshot,
 } from '../api';
+import { defineMacro } from '../define';
+
+const bufferInfo = (ref: BufferRef): BufferInfo => ({
+  key: ref.key,
+  duration: ref.duration ?? 0,
+  slices: [...ref.slices],
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * The host's end of a remote: applies the commands a sandboxed script sends to one scope, and tells
@@ -22,6 +41,10 @@ import type {
 export function linkRemote(scope: Scope, options: LinkOptions): Link {
   const engine = scope.engine;
   const sequences = new Set<string>();
+  /** One-shot callbacks (`transport.at`) still waiting, by name. */
+  const onces = new Map<string, () => void>();
+  /** Macro types this remote defined, which it may redefine and which go when the link does. */
+  const defined = new Set<string>();
   let disposed = false;
   /** True while the remote's own commands are being applied, so their effects are not echoed back. */
   let applying = false;
@@ -93,7 +116,136 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
     engine.transport.on('tempo', sendTransport),
     engine.transport.on('start', sendTransport),
     engine.transport.on('stop', sendTransport),
+    engine.buffers.on('ready', (ref) => send({ type: 'buffer', ...bufferInfo(ref) })),
   ];
+
+  /** The ids leading to a macro instance from the linked scope, or null if it is not inside it. */
+  const pathOf = (api: ScopeApi): string[] | null => {
+    const path: string[] = [];
+    let node: Node | null = api.scope.owner;
+    let top: Node | null = null;
+    while (node) {
+      path.unshift(node.id);
+      top = node;
+      node = node.parent;
+    }
+    return top !== null && top.scope === scope ? path : null;
+  };
+
+  /**
+   * Registers a macro whose code lives in the sandbox. Here it is only data: the inner graph is
+   * applied as a description, and calls to its methods are sent to the sandbox to run.
+   */
+  const define = (data: RemoteMacroData): void => {
+    if (!isRecord(data) || typeof data.type !== 'string' || !isRecord(data.params)) {
+      throw new TypeError('A macro definition needs a type and params.');
+    }
+    const type = data.type;
+    if (engine.registry.has(type) && !defined.has(type)) {
+      throw new TypeError(`"${type}" is already a node type and cannot be redefined by a script.`);
+    }
+    const params: Record<string, MacroParam> = {};
+    for (const [name, spec] of Object.entries(data.params)) {
+      if (!isRecord(spec)) throw new TypeError(`Parameter "${name}" is not an object.`);
+      const drives = Array.isArray(spec['drives']) ? (spec['drives'] as unknown[]) : [];
+      params[name] = {
+        ...(spec as unknown as MacroParam),
+        drives: drives.filter(isRecord).map((drive) => {
+          const scale = isRecord(drive['scale']) ? drive['scale'] : null;
+          return {
+            select: String(drive['select']),
+            param: String(drive['param']),
+            ...(scale
+              ? {
+                  scale: {
+                    multiply: Number(scale['multiply'] ?? 1),
+                    add: Number(scale['add'] ?? 0),
+                  },
+                }
+              : {}),
+          };
+        }),
+      };
+    }
+    const names = Array.isArray(data.methods)
+      ? data.methods.filter((name) => typeof name === 'string')
+      : [];
+    const forward = (api: ScopeApi, method: string, args: unknown, at: number): void => {
+      const path = pathOf(api);
+      if (!path) return;
+      send({
+        type: 'call',
+        path,
+        method,
+        args: (isRecord(args) ? args : {}) as Record<string, Json>,
+        at,
+      });
+    };
+    const methods: NonNullable<MacroDefinition['methods']> = {};
+    for (const name of names) {
+      if (name === 'trigger' || name === 'release') continue;
+      methods[name] = (api, args, at) => forward(api, name, args, at);
+    }
+    const definition = defineMacro({
+      type,
+      ...(typeof data.category === 'string' ? { category: data.category } : {}),
+      ...(typeof data.description === 'string' ? { description: data.description } : {}),
+      ...(typeof data.shorthand === 'string' ? { shorthand: data.shorthand } : {}),
+      ...(isRecord(data.options) ? { options: data.options } : {}),
+      ...(isRecord(data.triggerOptions) ? { triggerOptions: data.triggerOptions } : {}),
+      params,
+      build(api, init) {
+        const own = isRecord(init['remote']) ? init['remote']['graph'] : undefined;
+        const graph = (isRecord(own) ? own : data.graph) as GraphData;
+        api.scope.dispatch([{ op: 'apply', graph }]);
+      },
+      ...(names.includes('trigger')
+        ? {
+            trigger(api: ScopeApi, { at, ...rest }: { at?: number }, macro: { time: number }) {
+              forward(api, 'trigger', rest, at ?? macro.time);
+            },
+          }
+        : {}),
+      ...(names.includes('release')
+        ? {
+            release(api: ScopeApi, { at, ...rest }: { at?: number }, macro: { time: number }) {
+              forward(api, 'release', rest, at ?? macro.time);
+            },
+          }
+        : {}),
+      methods,
+    });
+    engine.registry.register(definition);
+    defined.add(type);
+  };
+
+  const describeThrown = (thrown: unknown): string =>
+    thrown instanceof Error ? thrown.message : String(thrown);
+
+  /** A remote has no audio clock: it sends 0 for "now". */
+  const withTimes = (command: Command): Command => {
+    if (command.op === 'inside' && Array.isArray(command.commands)) {
+      return {
+        ...command,
+        commands: command.commands.filter(isRecord).map((c) => withTimes(c as Command)),
+      };
+    }
+    if ('at' in command && typeof command.at === 'number' && command.at <= 0) {
+      return { ...command, at: engine.context.currentTime };
+    }
+    return command;
+  };
+
+  const eventData = (name: string, event: { time: number; beat: number; bar: number }) => ({
+    name,
+    time: event.time,
+    duration: 0,
+    beat: event.beat,
+    bar: event.bar,
+    index: 0,
+    value: 1,
+    cycle: 0,
+  });
 
   /** The callback of a remote sequence lives in the sandbox: each event is sent there ahead of time. */
   const addSequence = (name: unknown, sequenceOptions: SequenceOptions): void => {
@@ -125,23 +277,37 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
       return;
     }
     if (options.allow && !options.allow(raw)) return;
-    let command = raw;
-    // A remote has no audio clock: it sends 0 for "now".
-    if ('at' in command && typeof command.at === 'number' && command.at <= 0) {
-      command = { ...command, at: engine.context.currentTime };
-    }
-    if (command.op === 'sequence') {
+    const command = withTimes(raw);
+    if (command.op === 'sequence' || command.op === 'once') {
       try {
-        addSequence(command.name, command.options);
+        if (command.op === 'sequence') addSequence(command.name, command.options);
+        else {
+          const name = command.name;
+          if (typeof name !== 'string' || name === '')
+            throw new TypeError('A callback needs a name.');
+          onces.get(name)?.();
+          onces.set(
+            name,
+            scope.transport.at(command.position, (event) => {
+              onces.delete(name);
+              send({ type: 'event', event: eventData(name, event), steps: [1] });
+            }),
+          );
+        }
       } catch (thrown) {
-        sendError({
-          code: 'invalid-command',
-          message: thrown instanceof Error ? thrown.message : String(thrown),
-        });
+        sendError({ code: 'invalid-command', message: describeThrown(thrown) });
       }
       return;
     }
-    if (command.op === 'clearSequence') sequences.delete(command.name);
+    if (command.op === 'clearSequence') {
+      sequences.delete(command.name);
+      const once = onces.get(command.name);
+      if (once) {
+        once();
+        onces.delete(command.name);
+        return;
+      }
+    }
     scope.dispatch([command]);
   };
 
@@ -150,11 +316,11 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
       if (disposed) return;
       if (message === null || typeof message !== 'object') return;
       if (message.type === 'define') {
-        sendError({
-          code: 'unsupported',
-          message:
-            'Defining a macro from inside a sandbox is not implemented yet. Register it on the host.',
-        });
+        try {
+          define(message.macro);
+        } catch (thrown) {
+          sendError({ code: 'unknown-type', message: describeThrown(thrown) });
+        }
         return;
       }
       if (message.type !== 'commands' || !Array.isArray(message.commands)) {
@@ -174,6 +340,10 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
         snapshot: scope.snapshot(),
         transport: transportSnapshot(),
         types: engine.registry.list(),
+        buffers: engine.buffers
+          .list()
+          .filter((ref) => ref.state === 'ready')
+          .map(bufferInfo),
       };
     },
 
@@ -183,6 +353,11 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
       for (const off of unsubscribe) off();
       for (const name of sequences) scope.transport.clear(name);
       sequences.clear();
+      for (const off of onces.values()) off();
+      onces.clear();
+      const registry = engine.registry as unknown as { remove?(type: string): void };
+      for (const type of defined) registry.remove?.(type);
+      defined.clear();
     },
   };
 }

@@ -7,6 +7,7 @@
 
 import type {
   At,
+  BufferInfo,
   Command,
   CommandTarget,
   EdgeData,
@@ -14,6 +15,8 @@ import type {
   GraphData,
   HostMessage,
   Json,
+  MacroContext,
+  MacroDefinition,
   NodeData,
   NodeTypeInfo,
   OffsetOptions,
@@ -24,7 +27,12 @@ import type {
   RampOptions,
   ReleaseOptions,
   Remote,
+  RemoteBuffers,
   RemoteError,
+  RemoteMacroData,
+  RemoteMessage,
+  ScheduledEvent,
+  Position,
   RemoteOptions,
   RemoteTransport,
   ScopeApi,
@@ -39,6 +47,7 @@ import type {
   Duration,
 } from '../api';
 import { CrackedUpError } from '../core/errors';
+import { normalizeParamMeta } from '../core/registry';
 import { SelectorError, matchesCompound, select } from '../selector';
 import type { Selectable, SelectableTree } from '../selector';
 import { fromNormalized, toNormalized } from '../util/curves';
@@ -662,7 +671,8 @@ class RemoteSequence {
   }
 
   restart(): this {
-    throw new CrackedUpError('unsupported', 'A remote sequence cannot be restarted yet.');
+    this.remote.emit({ op: 'restartSequence', name: this.name });
+    return this;
   }
 
   stop(): void {
@@ -674,8 +684,28 @@ class RemoteSequence {
 // The remote
 // ---------------------------------------------------------------------------------------------------
 
+/** A macro instance as the sandbox holds it: a remote of its own for the instance's inner scope. */
+interface Instance {
+  remote: RemoteImpl;
+  /** Type, options and definition it was built from. A rebuild that matches reuses the instance. */
+  key: string;
+  /** The inner graph as first built, which is what the host is given to create the instance from. */
+  graph: GraphData;
+}
+
 class RemoteImpl {
-  private readonly types = new Map<string, NodeTypeInfo>();
+  /** Shared with the remotes of macro instances, so every level knows every type. */
+  private readonly types: Map<string, NodeTypeInfo>;
+  /** Macros defined in this sandbox, by type, with the signature sent to the host. */
+  private readonly macros: Map<string, { definition: MacroDefinition; signature: string }>;
+  private instances = new Map<string, Instance>();
+  /** During a build: the instances from before it, for reuse. */
+  private previousInstances: Map<string, Instance> | null = null;
+  private onces = new Map<string, (event: ScheduledEvent) => void>();
+  private autoNames = new Map<string, number>();
+  private definitions: RemoteMacroData[] = [];
+  private bufferInfo = new Map<string, BufferInfo>();
+  private transportListeners = new Set<{ event: string; listener: (bpm: number) => void }>();
   private nodes = new Map<string, RemoteNode>();
   private edges = new Map<string, EdgeData>();
   private buses = new Map<string, RemoteBus>();
@@ -699,6 +729,7 @@ class RemoteImpl {
 
   private readonly Selection: typeof RemoteSelection;
   private readonly Chain: typeof RemoteChain;
+  readonly buffers: RemoteBuffers;
   private readonly tree: SelectableTree<RemoteNode> = {
     children: (parent) => (parent === null ? [...this.nodes.values()] : []),
   };
@@ -707,15 +738,36 @@ class RemoteImpl {
   readonly transport: RemoteTransport;
   readonly scopeView: unknown;
 
-  constructor(private readonly options: RemoteOptions) {
-    this.Selection = class extends RemoteSelection {};
-    this.Chain = class extends RemoteChain {};
-    for (const info of options.types) this.addType(info);
+  constructor(
+    private readonly options: RemoteOptions,
+    /** For the remote of a macro instance: the remote the instance lives in. */
+    private readonly outer: RemoteImpl | null = null,
+  ) {
+    if (outer) {
+      this.types = outer.types;
+      this.macros = outer.macros;
+      this.Selection = outer.Selection;
+      this.Chain = outer.Chain;
+      this.bufferInfo = outer.bufferInfo;
+    } else {
+      this.types = new Map();
+      this.macros = new Map();
+      this.Selection = class extends RemoteSelection {};
+      this.Chain = class extends RemoteChain {};
+      for (const info of options.types) this.addType(info);
+      for (const info of options.buffers ?? []) this.bufferInfo.set(info.key, info);
+    }
+    this.buffers = {
+      get: (key) => this.bufferInfo.get(key),
+      load: (url, loadOptions) =>
+        this.emit({ op: 'loadBuffer', key: loadOptions?.key ?? url, url }),
+    };
     this.transportState = options.transport;
     this.scopeName = options.snapshot.name;
     this.load(options.snapshot);
 
-    this.transport = this.makeTransport();
+    // A macro's functions schedule through the one transport, as they do on the host.
+    this.transport = outer ? outer.transport : this.makeTransport();
     const api = ((selector?: string) =>
       selector === undefined
         ? this.makeChain([], [])
@@ -797,7 +849,7 @@ class RemoteImpl {
 
   /** The time to stamp on a command: the one given, else the current event's, else 0 for "now". */
   time(options?: At): number {
-    return options?.at ?? this.eventTime ?? 0;
+    return options?.at ?? this.eventTime ?? this.outer?.time() ?? 0;
   }
 
   emit(command: Command, early = false): void {
@@ -822,6 +874,9 @@ class RemoteImpl {
   flush(): void {
     // A build sends everything at once when it ends, or nothing if it fails.
     if (this.declared) return;
+    const definitions = this.definitions;
+    this.definitions = [];
+    for (const macro of definitions) this.options.send({ type: 'define', macro });
     if (!this.dirty && this.early.length === 0 && this.late.length === 0) return;
     const apply: Command[] = this.dirty ? [{ op: 'apply', graph: this.describe() }] : [];
     const commands = [...this.early, ...apply, ...this.late];
@@ -901,8 +956,207 @@ class RemoteImpl {
       source['bypass'] === true,
     );
     this.nodes.set(id, node);
+    const macro = this.macros.get(type);
+    if (macro) {
+      try {
+        const instance = this.instanceOf(node, macro, init);
+        init['remote'] = { graph: instance.graph as unknown as Json, signature: macro.signature };
+      } catch (error) {
+        this.nodes.delete(id);
+        throw error;
+      }
+    }
     this.markDirty();
     return node;
+  }
+
+  // --- Macros defined here ------------------------------------------------------------------------
+
+  define(definition: MacroDefinition): void {
+    if (this.outer) return this.outer.define(definition);
+    const type = definition.type;
+    if (typeof type !== 'string' || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(type)) {
+      throw new CrackedUpError('unknown-type', `"${String(type)}" is not a valid node type name.`);
+    }
+    if (this.types.has(type) && !this.macros.has(type)) {
+      throw new CrackedUpError(
+        'unknown-type',
+        `"${type}" is already a node type on the host and cannot be redefined here.`,
+      );
+    }
+    if (type in RemoteChain.prototype) {
+      throw new CrackedUpError('unknown-type', `"${type}" is the name of a chain method.`);
+    }
+    const params: Record<string, RemoteMacroData['params'][string]> = {};
+    for (const [name, spec] of Object.entries(definition.params)) {
+      params[name] = {
+        ...spec,
+        drives: spec.drives.map((drive) => {
+          if (typeof drive.scale === 'function') {
+            throw new CrackedUpError(
+              'unsupported',
+              `${type}.${name}: a drive's "scale" cannot be a function in a sandboxed macro, because ` +
+                'it runs on the host. Write it as data: scale: { multiply: 1.01 } or { add: 7 }.',
+            );
+          }
+          return {
+            select: drive.select,
+            param: drive.param,
+            ...(drive.scale ? { scale: drive.scale } : {}),
+          };
+        }),
+      };
+    }
+    const methods = [
+      ...Object.keys(definition.methods ?? {}),
+      ...(definition.trigger ? ['trigger'] : []),
+      ...(definition.release ? ['release'] : []),
+    ];
+    const info: NodeTypeInfo = {
+      type,
+      category: definition.category ?? 'utility',
+      description: definition.description ?? '',
+      isMacro: true,
+      triggerable: definition.trigger !== undefined,
+      shorthand: definition.shorthand ?? null,
+      modulates: null,
+      params: Object.entries(definition.params).map(([name, spec]) =>
+        normalizeParamMeta(name, spec),
+      ),
+      options: definition.options ?? {},
+      triggerOptions: definition.triggerOptions ?? {},
+    };
+    this.addType(info);
+    // The signature changes when the host's side of the definition must, which replaces old instances.
+    this.macros.set(type, { definition, signature: JSON.stringify({ params, methods }) });
+    const graph = this.spawn(type, definition, {}, null).describe();
+    this.definitions.push({
+      type,
+      category: info.category,
+      description: info.description,
+      params,
+      ...(definition.shorthand === undefined ? {} : { shorthand: definition.shorthand }),
+      options: info.options,
+      triggerOptions: info.triggerOptions,
+      graph,
+      methods,
+    });
+    this.queueFlush();
+  }
+
+  private contextFor(node: RemoteNode | null, id: string, time: number): MacroContext {
+    return {
+      id,
+      time,
+      value: (name) => {
+        if (node) return node.param(name).value;
+        const meta = this.types.get(id)?.params.find((param) => param.name === name);
+        if (!meta) throw new CrackedUpError('invalid-param', `There is no parameter "${name}".`);
+        return meta.default;
+      },
+      random: () => Math.random(),
+    };
+  }
+
+  /** Makes the remote for one macro instance and runs the definition's `build` in it. */
+  private spawn(
+    type: string,
+    definition: MacroDefinition,
+    init: Readonly<Record<string, unknown>>,
+    node: RemoteNode | null,
+  ): RemoteImpl {
+    const id = node?.id ?? type;
+    const inner: RemoteImpl = new RemoteImpl(
+      {
+        send: (message: RemoteMessage) => {
+          if (message.type === 'commands') {
+            this.emit({ op: 'inside', node: id, commands: message.commands });
+          }
+        },
+        snapshot: {
+          name: `${this.scopeName}/${id}`,
+          graph: { nodes: [], edges: [] },
+          buses: [
+            { name: 'in', to: null, gain: 1 },
+            { name: 'out', to: null, gain: 1 },
+          ],
+        },
+        transport: this.transportState,
+        types: [],
+      },
+      this,
+    );
+    definition.build(inner.$, init, this.contextFor(node, id, this.time()));
+    // What it built travels as the instance's graph, not as commands.
+    inner.early = [];
+    inner.late = [];
+    inner.dirty = false;
+    return inner;
+  }
+
+  private instanceOf(
+    node: RemoteNode,
+    macro: { definition: MacroDefinition; signature: string },
+    init: Readonly<Record<string, unknown>>,
+  ): Instance {
+    const key = JSON.stringify([node.type, init, macro.signature, String(macro.definition.build)]);
+    const previous = this.previousInstances?.get(node.id);
+    let instance: Instance;
+    if (previous && previous.key === key) {
+      instance = previous;
+    } else {
+      const remote = this.spawn(node.type, macro.definition, init, node);
+      instance = { remote, key, graph: remote.describe() };
+    }
+    this.instances.set(node.id, instance);
+    return instance;
+  }
+
+  /** Runs one of a macro's functions for an instance, as the host asked. */
+  private callMacro(
+    path: readonly string[],
+    method: string,
+    args: Readonly<Record<string, Json>>,
+    at: number,
+  ): void {
+    const [id, ...rest] = path;
+    if (id === undefined) return;
+    const node = this.nodes.get(id);
+    const macro = node && this.macros.get(node.type);
+    if (!node || !macro) return;
+    // An instance made on the host has no remote here yet: make one from the definition.
+    const instance =
+      this.instances.get(id) ?? this.instanceOf(node, macro, this.userInit(node.init));
+    if (rest.length > 0) {
+      instance.remote.callMacro(rest, method, args, at);
+      instance.remote.flush();
+      return;
+    }
+
+    const inner = instance.remote;
+    const context = this.contextFor(node, id, at);
+    const { definition } = macro;
+    inner.eventTime = at;
+    try {
+      if (method === 'trigger') definition.trigger?.(inner.$, { ...args, at }, context);
+      else if (method === 'release') definition.release?.(inner.$, { ...args, at }, context);
+      else definition.methods?.[method]?.(inner.$, args, at, context);
+    } catch (thrown) {
+      this.reportError({
+        code: 'callback',
+        message: thrown instanceof Error ? thrown.message : String(thrown),
+        nodeId: id,
+      });
+    } finally {
+      inner.eventTime = null;
+    }
+    inner.flush();
+  }
+
+  private userInit(init: Readonly<Record<string, Json>>): Record<string, Json> {
+    const { remote: _remote, ...rest } = init;
+    void _remote;
+    return rest;
   }
 
   /**
@@ -921,6 +1175,7 @@ class RemoteImpl {
       if (this.nodes.get(node.id) !== node) continue;
       node.disposed = true;
       this.nodes.delete(node.id);
+      this.instances.delete(node.id);
       for (const [key, edge] of this.edges) {
         if (edge.from === node.id || ('node' in edge.to && edge.to.node === node.id)) {
           this.edges.delete(key);
@@ -1033,12 +1288,20 @@ class RemoteImpl {
       edges: this.edges,
       autoIds: this.autoIds,
       sequences: new Map(this.sequences),
+      onces: new Map(this.onces),
+      autoNames: this.autoNames,
       buses: new Map(this.buses),
       transport: this.transportState,
+      instances: this.instances,
+      macros: new Map(this.macros),
+      types: new Map(this.types),
     };
     this.nodes = new Map();
     this.edges = new Map();
     this.autoIds = new Map();
+    this.autoNames = new Map();
+    this.instances = new Map();
+    this.previousInstances = saved.instances;
     this.declared = new Set();
     try {
       fn(this.$);
@@ -1048,20 +1311,32 @@ class RemoteImpl {
         edges: saved.edges,
         autoIds: saved.autoIds,
         sequences: saved.sequences,
+        onces: saved.onces,
+        autoNames: saved.autoNames,
         buses: saved.buses,
         transportState: saved.transport,
+        instances: saved.instances,
+        previousInstances: null,
+        definitions: [],
       });
+      // The type tables are shared with instance remotes, so they are refilled, not replaced.
+      this.macros.clear();
+      for (const [type, macro] of saved.macros) this.macros.set(type, macro);
+      this.types.clear();
+      for (const [type, info] of saved.types) this.types.set(type, info);
       this.early = [];
       this.late = [];
       this.dirty = false;
       this.declared = null;
       throw error;
     }
-    for (const name of saved.sequences.keys()) {
+    for (const name of [...saved.sequences.keys(), ...saved.onces.keys()]) {
       if (this.declared.has(name)) continue;
       this.sequences.delete(name);
+      this.onces.delete(name);
       this.late.push({ op: 'clearSequence', name });
     }
+    this.previousInstances = null;
     this.declared = null;
     this.dirty = true;
     this.flush();
@@ -1070,23 +1345,31 @@ class RemoteImpl {
   // --- Transport ----------------------------------------------------------------------------------
 
   clearSequence(name: string): void {
-    if (!this.sequences.delete(name)) return;
+    const had = this.sequences.delete(name);
+    if (!this.onces.delete(name) && !had) return;
     this.emit({ op: 'clearSequence', name });
+  }
+
+  /** A name for something scheduled without one. Counted per build, so a rebuild reuses the names. */
+  private autoName(kind: string): string {
+    const n = this.autoNames.get(kind) ?? 0;
+    this.autoNames.set(kind, n + 1);
+    return `${kind}:${n}`;
   }
 
   private makeTransport(): RemoteTransport {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const remote = this;
     const sequence = (
-      name: string,
-      options: SequenceOptions,
-      callback: SequenceCallback,
+      first: string | SequenceOptions,
+      second: SequenceOptions | SequenceCallback,
+      third?: SequenceCallback,
     ): Sequence => {
-      if (typeof name !== 'string' || name === '') {
-        throw new TypeError(
-          'A sequence in a sandboxed script needs a name: sequence(name, options, callback).',
-        );
-      }
+      const named = typeof first === 'string';
+      const name = named ? first : remote.autoName('sequence');
+      const options = (named ? second : first) as SequenceOptions;
+      const callback = (named ? third : second) as SequenceCallback;
+      if (name === '') throw new TypeError('A sequence name cannot be empty.');
       if (typeof callback !== 'function') {
         throw new TypeError('A sequence needs a callback function.');
       }
@@ -1095,6 +1378,19 @@ class RemoteImpl {
       remote.declared?.add(name);
       remote.emit({ op: 'sequence', name, options: created.options });
       return created as unknown as Sequence;
+    };
+    const steps = (
+      first: string | Pattern,
+      second: Pattern | StepCallback,
+      third?: StepCallback,
+    ): Sequence => {
+      // With three arguments the first is a name; with two it is the pattern.
+      const callback = (third ?? second) as StepCallback;
+      const run: SequenceCallback = (event) =>
+        callback(event.index, event.value, event.steps, event);
+      return third === undefined
+        ? sequence({ steps: first }, run)
+        : sequence(first as string, { steps: second as Pattern }, run);
     };
     const transport: RemoteTransport = {
       get bpm() {
@@ -1111,6 +1407,9 @@ class RemoteImpl {
         remote.transportState = { ...remote.transportState, swing: value };
         remote.emit({ op: 'transport', set: { swing: value } });
       },
+      get timeSignature() {
+        return remote.transportState.timeSignature;
+      },
       get stepLength() {
         return remote.transportState.stepLength;
       },
@@ -1118,16 +1417,35 @@ class RemoteImpl {
         return remote.transportState.state;
       },
       sequence,
-      steps: (name: string, pattern: Pattern, callback: StepCallback) =>
-        sequence(name, { steps: pattern }, (event) =>
-          callback(event.index, event.value, event.steps, event),
-        ),
+      steps,
+      at(position: Position, callback: (event: ScheduledEvent) => void) {
+        const name = remote.autoName('at');
+        remote.onces.set(name, callback);
+        remote.declared?.add(name);
+        remote.emit({ op: 'once', name, position });
+        return () => remote.clearSequence(name);
+      },
+      every(interval, callback, options) {
+        const name = remote.autoName('every');
+        sequence(name, { steps: 1, step: interval, ...options }, (event) =>
+          callback({ time: event.time, beat: event.beat, bar: event.bar }),
+        );
+        return () => remote.clearSequence(name);
+      },
       get: (name: string) => remote.sequences.get(name) as unknown as Sequence | undefined,
       clear(name?: string) {
-        for (const each of name === undefined ? [...remote.sequences.keys()] : [name]) {
+        const all = [...remote.sequences.keys(), ...remote.onces.keys()];
+        for (const each of name === undefined ? all : [name]) {
           remote.clearSequence(each);
         }
         return transport;
+      },
+      on(event: string, listener: (bpm: number) => void) {
+        const entry = { event, listener };
+        remote.transportListeners.add(entry);
+        return () => {
+          remote.transportListeners.delete(entry);
+        };
       },
       seconds: (duration: Duration) =>
         beatsToSeconds(
@@ -1143,6 +1461,24 @@ class RemoteImpl {
   receive(message: HostMessage): void {
     switch (message.type) {
       case 'event': {
+        const once = this.onces.get(message.event.name);
+        if (once) {
+          this.onces.delete(message.event.name);
+          const { time, beat, bar } = message.event;
+          this.eventTime = time;
+          try {
+            once({ time, beat, bar });
+          } catch (thrown) {
+            this.reportError({
+              code: 'callback',
+              message: thrown instanceof Error ? thrown.message : String(thrown),
+            });
+          } finally {
+            this.eventTime = null;
+          }
+          this.flush();
+          return;
+        }
         const sequence = this.sequences.get(message.event.name);
         if (!sequence) return;
         sequence.steps = [...message.steps];
@@ -1169,9 +1505,20 @@ class RemoteImpl {
         this.flush();
         return;
       }
-      case 'transport':
+      case 'transport': {
+        const before = this.transportState;
         this.transportState = message.transport;
+        const fire = (event: string): void => {
+          for (const entry of [...this.transportListeners]) {
+            if (entry.event === event) entry.listener(message.transport.bpm);
+          }
+        };
+        if (before.bpm !== message.transport.bpm) fire('tempo');
+        if (before.state !== message.transport.state) {
+          fire(message.transport.state === 'started' ? 'start' : 'stop');
+        }
         return;
+      }
       case 'params':
         for (const change of message.changes) {
           this.nodes.get(change.node)?.findParam(change.param)?.assign(change.value, 0);
@@ -1185,7 +1532,15 @@ class RemoteImpl {
         this.reportError(message.error);
         return;
       case 'buffer':
+        this.bufferInfo.set(message.key, {
+          key: message.key,
+          duration: message.duration,
+          slices: message.slices,
+        });
+        return;
       case 'call':
+        this.callMacro(message.path, message.method, message.args, message.at);
+        this.flush();
         return;
     }
   }
@@ -1209,6 +1564,8 @@ export function createRemote(options: RemoteOptions): Remote {
   return {
     __: remote.$,
     transport: remote.transport,
+    buffers: remote.buffers,
+    define: (definition) => remote.define(definition),
     receive: (message) => remote.receive(message),
     build: (fn) => remote.build(fn),
     describe: () => remote.describe(),

@@ -1,6 +1,6 @@
 # API design (Phase 0)
 
-Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. `cracked-up/remote` is implemented in `src/remote/`, except macros defined inside a sandbox.
+Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. `cracked-up/remote` is implemented in `src/remote/`.
 
 This folder is the proposed public API for Phases 1 and 2 of cracked-up (graph core and transport), written as TypeScript declarations, plus example programs that are type-checked against it. The plan it belongs to is in the Euclip repo: `docs/plans/cracked-up-and-euclip-v2.md`.
 
@@ -44,7 +44,7 @@ Then the declarations:
 | Macros: `defineMacro`, private inner scope with `in` and `out` buses, exposed parameters, methods, nesting | Done |
 | `cracked-up/global` | Done |
 | Commands | Done. `sequence` needs a link (its callback lives in the sandbox), so plain `dispatch` reports it as `unsupported`. A `bus` command cannot change a bus of an outer scope |
-| `cracked-up/remote` | `createRemote` (sandbox side, no Web Audio) and `linkRemote` (host side) done: chains, selections, shortcut setters, parameters, buses, `build`, named sequences with callbacks in the sandbox, tempo, errors sent back, host changes mirrored. `demo/sandbox.html` runs it in a frame with an opaque origin. Not done: macros defined in the sandbox (the `define` message), `Sequence.restart`, buffer info in the sandbox |
+| `cracked-up/remote` | `createRemote` (sandbox side, no Web Audio) and `linkRemote` (host side) done: chains, selections, shortcut setters, parameters, buses, `build`, named sequences with callbacks in the sandbox, tempo, errors sent back, host changes mirrored. `demo/sandbox.html` runs it in a frame with an opaque origin. Also `remote.define` (macros written in the sandbox: the inner graph travels as data, and `trigger`, `release` and methods run in the sandbox when the host calls them, nested instances included), `every`, `at`, unnamed sequences, `restart`, and buffer durations and slices. Tested through `structuredClone` on every message, in a real Worker, and against malformed input. Not mirrored: the internals of macros registered on the host (they can be written to, not read) and connections changed on the host |
 | `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
 | `build()`, `apply()` | Done. Both reconcile: unchanged nodes are kept and keep sounding, changed values are set in place, a node is replaced only if its type or creation options changed. `build()` also reconciles sequences and the buses earlier builds made, and leaves the scope as it was if the builder throws |
 | `bypass` | Done. A short crossfade between the node and a path around it; a bypassed source is silent |

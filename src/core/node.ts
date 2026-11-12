@@ -107,6 +107,11 @@ export class NodeImpl {
     }
   }
 
+  /** For a macro instance: its private scope. */
+  get insideScope(): ScopeImpl | null {
+    return this.innerScope;
+  }
+
   /** A macro's inner nodes, in creation order. Empty for ordinary nodes. */
   get inner(): readonly NodeImpl[] {
     return this.innerScope?.nodes ?? [];
@@ -157,7 +162,17 @@ export class NodeImpl {
           inner.select(drive.select).nodes.flatMap((node) => {
             const param = node.findParam(drive.param);
             if (!param) return [];
-            return [drive.scale ? { param, scale: drive.scale } : { param }];
+            if (!drive.scale) return [{ param }];
+            const scale = drive.scale;
+            return [
+              {
+                param,
+                scale:
+                  typeof scale === 'function'
+                    ? scale
+                    : (value: number) => value * (scale.multiply ?? 1) + (scale.add ?? 0),
+              },
+            ];
           }),
         ),
       );

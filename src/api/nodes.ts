@@ -335,8 +335,14 @@ export interface NodeDefinition<K extends string = string> {
  */
 export type MacroParam = ParamMetaInput & {
   /** Inner targets, selected within the macro's own scope. `scale` converts the value on the way. */
-  drives: readonly { select: string; param: string; scale?: (value: number) => number }[];
+  drives: readonly { select: string; param: string; scale?: DriveScale }[];
 };
+
+/**
+ * How an exposed value becomes an inner one: a function, or `value * multiply + add` as data. Use
+ * the data form in a macro defined inside a sandbox, where a function cannot travel to the host.
+ */
+export type DriveScale = ((value: number) => number) | { multiply?: number; add?: number };
 
 export interface MacroDefinition<K extends string = string> {
   readonly type: K;

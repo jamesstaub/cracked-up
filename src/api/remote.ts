@@ -28,21 +28,23 @@
  * Times: a remote has no audio clock. Inside a sequence callback an operation defaults to the event's
  * time, as it does locally. Anywhere else it is sent with time 0, which the host reads as "now".
  *
- * Not built yet: macros defined inside the sandbox (the `define` message). Macros registered on the
- * host work, including their methods through `call`.
  */
 
 import type { Command, GraphData, GraphError, Json, ScopeApi, ScopeSnapshot } from './graph';
-import type { MacroParam, NodeCategory, NodeTypeInfo } from './nodes';
+import type { MacroDefinition, NodeCategory, NodeTypeInfo, OptionInfo } from './nodes';
+import type { ParamMetaInput } from './params';
 import type { ParamValue } from './params';
 import type {
   Pattern,
+  Position,
+  ScheduledEvent,
   Sequence,
   SequenceCallback,
   SequenceOptions,
   StepCallback,
   Duration,
 } from './transport';
+import type { Unsubscribe } from './params';
 
 /** A sequence event as data. The remote rebuilds the event object (including `at()`) from it. */
 export interface SequenceEventData {
@@ -69,9 +71,27 @@ export interface RemoteMacroData {
   readonly type: string;
   readonly category?: NodeCategory;
   readonly description?: string;
-  /** Exposed parameters. A `scale` function, if any, runs in the sandbox. */
-  readonly params: Readonly<Record<string, Omit<MacroParam, 'drives'>>>;
-  /** The inner graph, built once per instance. */
+  /** Exposed parameters. A drive's `scale` must be in its data form; a function cannot travel. */
+  readonly params: Readonly<
+    Record<
+      string,
+      ParamMetaInput & {
+        drives: readonly {
+          select: string;
+          param: string;
+          scale?: { multiply?: number; add?: number };
+        }[];
+      }
+    >
+  >;
+  readonly shorthand?: string;
+  readonly options?: Readonly<Record<string, OptionInfo>>;
+  readonly triggerOptions?: Readonly<Record<string, OptionInfo>>;
+  /**
+   * The inner graph the definition builds when given no options. Instances the sandbox creates carry
+   * their own graph (in `init.remote.graph`), built by the sandbox with that instance's options; this
+   * one is for instances created on the host.
+   */
   readonly graph: GraphData;
   /** Names of the methods the sandbox implements, including `trigger` and `release` when present. */
   readonly methods: readonly string[];
@@ -92,10 +112,13 @@ export type HostMessage =
   /** Something the remote sent could not be applied. */
   | { type: 'error'; error: RemoteError }
   | { type: 'buffer'; key: string; duration: number; slices: readonly number[] }
-  /** A method of a sandbox-defined macro was called, or one of its exposed parameters was set. */
+  /**
+   * A method of a sandbox-defined macro was called (`trigger` and `release` included). `path` is the
+   * instance's id, preceded by the ids of the macro instances it is nested inside, outermost first.
+   */
   | {
       type: 'call';
-      node: string;
+      path: readonly string[];
       method: string;
       args: Readonly<Record<string, Json>>;
       at: number;
@@ -105,19 +128,52 @@ export type HostMessage =
 export type RemoteError = Pick<GraphError, 'code' | 'message' | 'nodeId'>;
 
 /** What a remote needs to start: everything `RemoteOptions` asks for except `send`. */
-export type RemoteState = Pick<RemoteOptions, 'snapshot' | 'transport' | 'types'>;
+export type RemoteState = Required<
+  Pick<RemoteOptions, 'snapshot' | 'transport' | 'types' | 'buffers'>
+>;
+
+/** What a sandbox can know about a buffer in the host's store. */
+export interface BufferInfo {
+  readonly key: string;
+  /** Seconds. */
+  readonly duration: number;
+  readonly slices: readonly number[];
+}
+
+/** The host's buffer store as a sandbox sees it. */
+export interface RemoteBuffers {
+  /** A buffer that has finished loading on the host, or undefined. */
+  get(key: string): BufferInfo | undefined;
+  /** Asks the host to load a URL. The host may refuse. `get` answers once it has loaded. */
+  load(url: string, options?: { key?: string }): void;
+}
 
 /** The part of the transport a remote script can use. Tempo changes are sent as `transport` commands. */
 export interface RemoteTransport {
   bpm: number;
   swing: number;
+  readonly timeSignature: readonly [number, number];
   readonly stepLength: Duration;
   readonly state: 'stopped' | 'started' | 'paused';
+  /**
+   * As on the host. A sequence without a name is told apart by its position among the unnamed
+   * sequences a `build` declares, so give sequences names if their order may change.
+   */
+  sequence(options: SequenceOptions, callback: SequenceCallback): Sequence;
   sequence(name: string, options: SequenceOptions, callback: SequenceCallback): Sequence;
+  steps(pattern: Pattern, callback: StepCallback): Sequence;
   steps(name: string, pattern: Pattern, callback: StepCallback): Sequence;
+  at(position: Position, callback: (event: ScheduledEvent) => void): Unsubscribe;
+  every(
+    interval: Duration,
+    callback: (event: ScheduledEvent) => void,
+    options?: { offset?: Duration; order?: number },
+  ): Unsubscribe;
   get(name: string): Sequence | undefined;
   clear(name?: string): this;
   seconds(duration: Duration): number;
+  on(event: 'tempo', listener: (bpm: number) => void): Unsubscribe;
+  on(event: 'start' | 'stop', listener: () => void): Unsubscribe;
 }
 
 export interface RemoteOptions {
@@ -127,12 +183,23 @@ export interface RemoteOptions {
   transport: TransportSnapshot;
   /** `registry.list()` from the host, so chain methods and setters exist for every node type. */
   types: readonly NodeTypeInfo[];
+  /** The buffers loaded on the host when the remote is created. */
+  buffers?: readonly BufferInfo[];
 }
 
 export interface Remote {
   /** The same `__` a local script gets, backed by the mirror and by commands. */
   readonly __: ScopeApi;
   readonly transport: RemoteTransport;
+  readonly buffers: RemoteBuffers;
+
+  /**
+   * Registers a macro written in the sandbox. Its inner graph is built here and sent as data; its
+   * `trigger`, `release` and `methods` run here whenever the host calls them. A drive's `scale` must
+   * be in the data form (`{ multiply, add }`). Defining the same type again replaces it.
+   */
+  define(definition: MacroDefinition): void;
+
   /** Feed every message from the host here. */
   receive(message: HostMessage): void;
 

@@ -339,13 +339,18 @@ export type Command =
     }
   // Graph
   | { op: 'apply'; graph: GraphData }
+  /** Commands for the private scope inside one macro instance, named by its id. */
+  | { op: 'inside'; node: string; commands: readonly Command[] }
   | { op: 'connect'; target: CommandTarget; to: EdgeTarget }
   | { op: 'disconnect'; target: CommandTarget; to?: EdgeTarget }
   | { op: 'dispose'; target: CommandTarget }
   | { op: 'bus'; name: string; to?: string; gain?: number }
   // Sequences (the callback stays with whoever created the sequence; see remote.ts)
   | { op: 'sequence'; name: string; options: import('./transport').SequenceOptions }
+  /** A single callback at a position, for `transport.at`. Like `sequence`, the callback stays with its creator. */
+  | { op: 'once'; name: string; position: import('./transport').Position }
   | { op: 'setStep'; name: string; index: number; value: number }
+  | { op: 'restartSequence'; name: string }
   | { op: 'clearSequence'; name: string }
   // Transport and buffers. A host may refuse these from a sandbox.
   | { op: 'transport'; set: { bpm?: number; swing?: number } }
@@ -393,6 +398,8 @@ export interface Scope {
   readonly engine: Engine;
   readonly parent: Scope | null;
   readonly children: readonly Scope[];
+  /** For the private scope inside a macro instance: that instance. Otherwise null. */
+  readonly owner: Node | null;
 
   /** Gets or creates a child scope. */
   scope(name: string): Scope;

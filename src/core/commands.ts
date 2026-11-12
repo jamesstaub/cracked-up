@@ -167,10 +167,30 @@ export function execute(scope: ScopeImpl, command: Command): void {
       }
       return;
     }
+    case 'inside': {
+      const inner = scope.node(command.node)?.insideScope;
+      if (!inner) {
+        throw new CrackedUpError(
+          'missing-target',
+          `Scope "${scope.name}" has no macro instance with the id "${String(command.node)}".`,
+        );
+      }
+      if (!Array.isArray(command.commands)) {
+        throw new CrackedUpError('invalid-command', 'An "inside" command needs a "commands" list.');
+      }
+      inner.dispatch(command.commands);
+      return;
+    }
+    case 'restartSequence': {
+      scope.transport.get(command.name)?.restart();
+      return;
+    }
+    // These carry no callback: the callback lives with a remote, and the link that serves it handles them.
+    case 'once':
     case 'sequence':
       throw new CrackedUpError(
         'unsupported',
-        `The "${command.op}" command is not implemented yet.`,
+        `The "${command.op}" command only works through a link to a remote (cracked-up/remote).`,
       );
     default: {
       const unknown = command as { op?: unknown };

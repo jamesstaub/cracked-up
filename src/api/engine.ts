@@ -56,6 +56,8 @@ export interface BufferStore {
   /** Registers audio the host already has. Encoded data is decoded; an AudioBuffer is used as is. */
   add(key: string, data: AudioBuffer | ArrayBuffer): BufferRef;
   get(key: string): BufferRef | undefined;
+  /** Every entry, in the order added. */
+  list(): readonly BufferRef[];
   delete(key: string): boolean;
   on(event: 'ready' | 'error', listener: (ref: BufferRef) => void): Unsubscribe;
 }

@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "description": "A TypeScript reimagining of \"I Dropped My Phone The Screen Cracked\" by Bill Orcutt: build and sequence Web Audio graphs.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked.git"
+  },
+  "homepage": "https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked#readme",
+  "bugs": "https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked/issues",
   "type": "module",
   "sideEffects": [
     "./dist/global/*"

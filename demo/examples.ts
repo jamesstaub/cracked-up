@@ -39,6 +39,29 @@ export function exampleFor(info: NodeTypeInfo): string {
   if (type === 'input') {
     return `// Asks for the microphone. Use headphones, or the speakers will feed back.\n__().input().delay(0.3).gain(0.5).to('main');`;
   }
+  if (type === 'multiband') {
+    return (
+      `// Three drums share a bus, and the multiband squashes the lows, mids and highs of the mix separately.\n` +
+      `__.bus('drums').to(null);\n` +
+      `__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');\n` +
+      `__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('drums');\n` +
+      `__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.35).to('drums');\n` +
+      `__.bus('drums').chain().multiband({ lowThreshold: -30, lowRatio: 6, lowGain: 8, highThreshold: -24 }).gain(0.6).to('main');\n` +
+      `__.transport.sequence({ steps: 16, step: '1/16' }, (ev) => {\n` +
+      `  if (ev.index % 4 === 0) __('#kick').trigger();\n` +
+      `  if (ev.index % 8 === 4) __('#snare').trigger();\n` +
+      `  if (ev.index % 2 === 0) __('#hat').trigger();\n` +
+      `});`
+    );
+  }
+  if (type === 'tapedelay') {
+    return (
+      `// One snare hit a bar, and the tape repeats it in dotted eighths, darker and more wobbly each time.\n` +
+      `__().sampler({ id: 'hit', buffer: 'snare' })\n` +
+      `  .tapedelay({ time: __.transport.seconds('1/8d'), feedback: 0.65, wow: 0.5 }).gain(0.5).to('main');\n` +
+      `__.transport.every('1 bar', () => __('#hit').trigger());`
+    );
+  }
   switch (info.category) {
     case 'source':
       return `__().${type}(${argument}).gain(0.2).to('main');`;

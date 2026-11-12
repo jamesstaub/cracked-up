@@ -3,3 +3,4 @@ export * from './pattern';
 export * from './random';
 export * from './curves';
 export * from './music';
+export * from './wav';

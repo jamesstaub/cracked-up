@@ -12,6 +12,8 @@ describe('docs examples', () => {
     expect(types.length).toBeGreaterThan(10);
     const failures: string[] = [];
     for (const info of types) {
+      // An offline engine has no microphone, so the input example cannot run here.
+      if (info.type === 'input') continue;
       const engine = await offlineEngine(1);
       for (const name of ['kick', 'snare', 'hat']) engine.buffers.add(name, ones(0.05));
       const errors: string[] = [];

@@ -194,6 +194,48 @@ export interface NodeTypeMap {
     attack: number;
     release: number;
   }>;
+  recorder: NodeShape<
+    { latency: number },
+    {
+      /** Store key the recording is written to. Default: the node's id. */
+      into?: string;
+      /** 1 or 2. Default 2. */
+      channels?: number;
+    },
+    never,
+    {
+      /** Seconds to record for. Omitted: until `release()`. */
+      duration?: number;
+      /** Store key for this take, instead of the node's `into`. */
+      key?: string;
+    }
+  >;
+  looper: NodeShape<
+    { gain: number; monitor: number; latency: number },
+    {
+      /** Loop length for the first layer. Default '1 bar'. */
+      length?: import('./transport').Duration;
+      channels?: number;
+    },
+    never,
+    {
+      /** Loop length, when this trigger records the first layer. */
+      length?: import('./transport').Duration;
+      /** How many times round the loop to record. Default 1. 0 records until `release()`. */
+      cycles?: number;
+    }
+  >;
+  input: NodeShape<
+    { gain: number },
+    {
+      /** Which input device, from `navigator.mediaDevices.enumerateDevices()`. Default: the system's. */
+      deviceId?: string;
+      /** A stream the host already has, used instead of asking for the microphone. */
+      stream?: MediaStream;
+      /** Leave the browser's echo cancellation, noise suppression and gain control on. Default false. */
+      processing?: boolean;
+    }
+  >;
   monosynth: NodeShape<SynthParams, { shape?: SynthShape }, never, NoteTrigger>;
   polysynth: NodeShape<SynthParams, { shape?: SynthShape; voices?: number }, never, NoteTrigger>;
 }
@@ -263,6 +305,8 @@ export type NodeCategory =
 /** What `build` receives. Everything a node needs comes from here; nothing is global. */
 export interface BuildContext {
   readonly audio: BaseAudioContext;
+  /** The id of the node being built. */
+  readonly id: string;
   /** Seeded random source, so offline renders repeat exactly. Returns 0 <= n < 1. */
   random(): number;
   /** Resolves a buffer source through the engine's shared store. The entry may still be loading. */
@@ -274,6 +318,16 @@ export interface BuildContext {
   value(name: string, at: number): ParamValue;
   /** Creates an AudioWorkletNode for a processor the library or the host has registered. */
   worklet(name: string, options?: AudioWorkletNodeOptions): AudioWorkletNode;
+  /**
+   * A place in the engine's buffer store for audio this node produces (a recording). The entry exists
+   * from now on, so samplers can be given its key before anything has been recorded; each `write`
+   * replaces its audio and fires the store's `ready` event.
+   */
+  bufferSink(key: string): { readonly ref: BufferRef; write(buffer: AudioBuffer): void };
+  /** Seconds a musical duration lasts at the transport's current tempo. */
+  seconds(duration: import('./transport').Duration): number;
+  /** Reports a failure that happens after `build` has returned, such as a refused microphone. */
+  report(message: string, cause?: unknown): void;
 }
 
 /** A parameter that is not a plain AudioParam: called with the value and the audio time it applies at. */

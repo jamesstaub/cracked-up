@@ -170,6 +170,16 @@ export class EngineImpl {
   buildContext(node: NodeImpl): BuildContext {
     return {
       audio: this.context,
+      id: node.id,
+      bufferSink: (key: string) => this.buffersImpl.sink(key),
+      seconds: (duration) => this.transportImpl.seconds(duration),
+      report: (message: string, cause?: unknown) =>
+        node.scope.report(
+          new CrackedUpError('build-failed', `${node.type} "${node.id}": ${message}`, {
+            nodeId: node.id,
+            ...(cause === undefined ? {} : { cause }),
+          }),
+        ),
       random: () => this.random.float(),
       buffer: (source: BufferSource) => this.buffersImpl.resolve(source),
       value: (name: string, at: number) => {

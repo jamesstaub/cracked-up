@@ -49,7 +49,8 @@ Then the declarations:
 | `build()`, `apply()` | Done. Both reconcile: unchanged nodes are kept and keep sounding, changed values are set in place, a node is replaced only if its type or creation options changed. `build()` also reconciles sequences and the buses earlier builds made, and leaves the scope as it was if the builder throws |
 | `bypass` | Done. A short crossfade between the node and a path around it; a bypassed source is silent |
 | Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. Tests fail if a built-in type, parameter or option lacks a description, or if a type's generated example does not run |
-| External clock sources, recording | Not yet. They throw or report `unsupported` |
+| Recording | `recorder` (sample-exact, into the buffer store; recorders triggered together line up, which gives stems), `looper` (layers, undo, clear, latency shift; a worklet, so it works offline and never drifts from the audio clock), `input` (microphone, or a stream the host supplies), `encodeWav` in `cracked-up/util`. Both worklets are controlled through audio-rate parameters used as gates, not messages, so timing is exact and offline renders work. Live capture is tested only in Chromium (a pretend microphone); the rest is tested offline in all three browsers. Not done: a compressed long-take mode (`MediaRecorder`), measuring memory on long takes, automatic latency detection |
+| External clock sources | Not yet. They throw or report `unsupported` |
 
 Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. Every type in the type map is implemented.
 

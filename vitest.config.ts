@@ -8,7 +8,20 @@ const browserProject = (name: 'chromium' | 'firefox' | 'webkit') => ({
     browser: {
       enabled: true,
       headless: true,
-      provider: playwright(),
+      provider: playwright(
+        name === 'chromium'
+          ? {
+              launchOptions: {
+                // For the live recording test: sound without a click, and a pretend microphone.
+                args: [
+                  '--autoplay-policy=no-user-gesture-required',
+                  '--use-fake-device-for-media-stream',
+                  '--use-fake-ui-for-media-stream',
+                ],
+              },
+            }
+          : {},
+      ),
       instances: [{ browser: name }],
     },
   },

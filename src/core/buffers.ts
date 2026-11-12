@@ -10,14 +10,22 @@ class BufferRefImpl implements BufferRef {
   state: 'loading' | 'ready' | 'error' = 'loading';
   buffer: AudioBuffer | null = null;
   error: Error | null = null;
-  readonly ready: Promise<AudioBuffer>;
+  ready: Promise<AudioBuffer>;
   private customSlices: readonly number[] | null = null;
+  /** For an entry that is written to rather than loaded: settles `ready` on the first write. */
+  private first: ((buffer: AudioBuffer) => void) | null = null;
 
   constructor(
     readonly key: string,
-    source: Promise<AudioBuffer>,
-    events: Emitter<BufferEvents>,
+    source: Promise<AudioBuffer> | null,
+    private events: Emitter<BufferEvents>,
   ) {
+    if (source === null) {
+      this.ready = new Promise<AudioBuffer>((resolve) => {
+        this.first = resolve;
+      });
+      return;
+    }
     this.ready = source.then(
       (buffer) => {
         this.buffer = buffer;
@@ -37,6 +45,20 @@ class BufferRefImpl implements BufferRef {
     );
     // A failed load is reported through the store's `error` event; nobody has to await `ready`.
     this.ready.catch(() => {});
+  }
+
+  /** Replaces the audio, as a new recording does. */
+  write(buffer: AudioBuffer): void {
+    this.buffer = buffer;
+    this.state = 'ready';
+    this.error = null;
+    if (this.first) {
+      this.first(buffer);
+      this.first = null;
+    } else {
+      this.ready = Promise.resolve(buffer);
+    }
+    this.events.emit('ready', this);
   }
 
   get duration(): number | null {
@@ -115,6 +137,23 @@ export class BufferStoreImpl implements BufferStore {
       'buffer',
       'A buffer must be a URL, a store key, an AudioBuffer or a BufferRef.',
     );
+  }
+
+  /** An entry that a node writes recordings to. Made empty if the key is new. */
+  sink(key: string): { ref: BufferRef; write(buffer: AudioBuffer): void } {
+    let ref = this.refs.get(key);
+    if (!ref) {
+      ref = new BufferRefImpl(key, null, this.events);
+      this.refs.set(key, ref);
+    }
+    const target = ref;
+    return {
+      ref: target,
+      write: (buffer) => {
+        this.byBuffer.set(buffer, target);
+        target.write(buffer);
+      },
+    };
   }
 
   /** The store key for a value that is a buffer or buffer entry; null for anything else. */

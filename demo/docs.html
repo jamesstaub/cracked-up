@@ -487,6 +487,228 @@ __.transport.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
   __('#s').trigger({ slice: ev.value });
 });</code></pre>
 
+        <h2 id="slicing">Slicing a drum break</h2>
+        <p>
+          A <em>break</em> is a few bars of a drummer playing alone. Cut into slices, it becomes a
+          drum kit that keeps the feel of the original playing: you can play the slices in a new
+          order, repeat them, reverse them and change their pitch. Jungle and breakcore are built on
+          this.
+        </p>
+        <p>
+          The live demo loads one break under the name <code>'break'</code>. It is
+          <a href="https://freesound.org/people/deadrobotmusic/sounds/629052/"
+            >Crunchy Drum Break 2 [128bpm]</a
+          >
+          by deadrobotmusic, shared on Freesound under the
+          <a href="https://creativecommons.org/publicdomain/zero/1.0/">Creative Commons 0</a>
+          licence. The demo page fetches it from Freesound when audio starts. If that fails, the
+          page says so, samplers that play <code>'break'</code> are silent, and everything else
+          works.
+        </p>
+        <p>
+          The break is 8 bars long at 128 beats per minute, which is 15 seconds. The demo page cuts
+          it into 128 slices, one for every sixteenth note: slice 0 is the first sixteenth of bar 1,
+          slice 16 is the first sixteenth of bar 2, and so on. In every bar the kick drum is on
+          sixteenths 0, 7 and 14, the snare is on 4 and 10, and there is a hi-hat on the other even
+          ones. The odd ones mostly hold the tail of the hit before.
+        </p>
+        <h3>Staying in time</h3>
+        <p>
+          <code>trigger({ slice: n })</code> plays slice <code>n</code>. A slice of this break lasts
+          one sixteenth note at 128 bpm. To make it last one sixteenth note at your tempo, play it
+          faster or slower by the ratio of the two tempos: <code>speed = your bpm / 128</code>. Then
+          the break follows the transport at any tempo. Like a record, a sample played faster also
+          sounds higher.
+        </p>
+        <pre><code>__.transport.bpm = 150;
+__().sampler({ id: 'break', buffer: 'break' }).to('main');
+
+// The break was played at 128 bpm. At this speed one slice lasts exactly one step.
+const speed = __.transport.bpm / 128;
+
+// 128 steps, one for each slice: the whole break, in order, at your tempo.
+__.transport.sequence('break', { steps: 128 }, (ev) =&gt; {
+  __('#break').trigger({ slice: ev.index, speed });
+});</code></pre>
+        <p>
+          Change the bpm and the break stays in time. A slice number past the last slice wraps round
+          to the start.
+        </p>
+        <h3>Setting the grid</h3>
+        <p>
+          The slices of a buffer are a list of boundaries in seconds. You can replace the list at
+          any time. This cuts the same break into 64 eighth notes instead. It is not run from here,
+          because it would change the grid for every other example until you reload the demo:
+        </p>
+        <pre data-static><code>const sound = engine.buffers.get('break');
+// 64 slices need 65 boundaries, spread evenly over the 15 seconds.
+sound.slices = fillArray(65, (i) =&gt; (i * 15) / 64);</code></pre>
+        <p>
+          An even grid works for this break because it starts exactly on its first hit, ends exactly
+          on a bar line, and was played to a steady beat. For a break that does not, start the list
+          later than 0, or put each boundary where a hit begins.
+        </p>
+        <h3>A new order</h3>
+        <p>
+          Give the sequence a pattern of slice numbers and the drummer plays a beat that was never
+          recorded:
+        </p>
+        <pre><code>__.transport.bpm = 150;
+__().sampler({ id: 'break', buffer: 'break' }).to('main');
+const speed = __.transport.bpm / 128;
+
+// Which sixteenth of the first bar to play on each step.
+// 0 is a kick, 4 and 10 are snares, 12 is a hat.
+const order = [0, 0, 4, 12, 7, 4, 12, 0, 10, 14, 4, 4, 0, 7, 4, 10];
+
+__.transport.sequence('break', { steps: order }, (ev) =&gt; {
+  __('#break').trigger({ slice: ev.value, speed });
+});</code></pre>
+        <h3>Rolls, reverses and pitch</h3>
+        <p>
+          A <em>roll</em> is one hit repeated very fast. <code>ev.at(0.5)</code> is the moment
+          halfway through a step, so several triggers at different fractions of the step make a
+          roll. <code>duration</code> cuts each hit short, <code>reverse: true</code> plays a slice
+          backwards, and multiplying <code>speed</code> changes the pitch: twice the speed is an
+          octave higher and lasts half as long.
+        </p>
+        <pre><code>__.transport.bpm = 150;
+// choke: false lets every hit end by itself: after its slice, or after its duration.
+__().sampler({ id: 'break', buffer: 'break', choke: false }).to('main');
+const speed = __.transport.bpm / 128;
+
+__.transport.sequence('break', { steps: 16 }, (ev) =&gt; {
+  const hit = __('#break');
+  if (ev.bar % 2 === 1 &amp;&amp; ev.index &gt;= 12) {
+    // A roll: the snare four times inside each of the last four steps, getting higher.
+    for (let i = 0; i &lt; 4; i++) {
+      hit.trigger({
+        slice: 4,
+        at: ev.at(i / 4),
+        speed: speed * (1 + (ev.index - 12) / 4),
+        duration: ev.duration / 4,
+      });
+    }
+  } else if (ev.index === 6) {
+    // Backwards: the sound swells up to the next step.
+    hit.trigger({ slice: 4, speed, reverse: true });
+  } else if (ev.index === 9) {
+    // Twice as fast: an octave higher and half as long.
+    hit.trigger({ slice: ev.index, speed: speed * 2 });
+  } else {
+    hit.trigger({ slice: ev.index, speed });
+  }
+});</code></pre>
+        <h3>All together: breakcore</h3>
+        <p>
+          Breakcore is fast and restless: the break is cut up, reordered, stuttered and pitched, and
+          it rarely plays the same bar twice. This example has a four-bar phrase. Bar 1 is the break
+          in order with a few tricks. Bar 2 is a new order. Bar 3 is half-time, dark and low. Bar 4
+          is double-time and ends in a snare roll. A sub bass plays under every kick drum, and now
+          and then a snare is thrown into an echo. The random choices come from a seed, so the
+          phrase is the same each time round. Change the seed, the tempo or a pattern and listen.
+        </p>
+        <pre><code>// Breakcore from one drum break: sliced, shuffled, rolled and pitched.
+// The sound is "Crunchy Drum Break 2 [128bpm]" by deadrobotmusic (Creative Commons 0):
+// https://freesound.org/people/deadrobotmusic/sounds/629052/
+
+__.transport.bpm = 172;
+
+// The break is 8 bars at 128 bpm. The demo page has cut it into 128 slices,
+// one for every sixteenth note. Played at this speed a slice lasts exactly one step, so the
+// break stays in time at any tempo. Change the bpm above and listen.
+const speed = __.transport.bpm / 128;
+
+// --- The sounds ---------------------------------------------------------------
+// The drum bus is made gritty and goes through a filter. to(null) means the bus
+// is heard only through this chain.
+__.bus('drums').to(null).chain()
+  .bitcrusher({ bits: 10, rate: 0.6 })
+  .lowpass({ id: 'tone', frequency: 14000 })
+  .to('main');
+// choke: false lets every hit end by itself: after its slice, or after its duration.
+__().sampler({ id: 'break', buffer: 'break', choke: false }).to('drums');
+
+// A second player of the same break, heard only as echoes: a "delay throw".
+__().sampler({ id: 'throw', buffer: 'break' })
+  .highpass(600)
+  .delay({ time: __.transport.seconds('1/8d'), feedback: 0.6, mix: 1 })
+  .gain(0.5)
+  .to('main');
+
+// A sub bass. It plays under every kick drum, wherever the kick ends up.
+__().sine({ id: 'sub', gate: 'closed' }).overdrive(0.5).gain(0.5).to('main');
+const bassNotes = [43.65, 43.65, 51.91, 38.89]; // one per bar: F, F, G sharp, D sharp
+
+// --- The plan -----------------------------------------------------------------
+// In each bar of the break the kick is on sixteenths 0, 7 and 14, the snare on 4 and 10.
+const kicks = [0, 7, 14];
+const inOrder = fillArray(16, (i) =&gt; i);
+const chopped = [0, 0, 4, 7, 7, 4, 2, 0, 10, 14, 4, 4, 0, 7, 4, 10];
+
+// A seed makes the random choices come out the same on every run. Try another number.
+const random = createRandom(5);
+// The eight eighth notes of a bar, in a random order.
+const jumbled = shuffle([0, 2, 4, 6, 8, 10, 12, 14], random).flatMap((s) =&gt; [s, s + 1]);
+
+// The phrase is four bars long. Each bar has a pattern and a feel:
+// 1 is normal, 0.5 is half-time, 2 is double-time.
+const patterns = [inOrder, chopped, inOrder, jumbled];
+const feels = [1, 1, 0.5, 2];
+// A trick for each step, chosen once, so the phrase has a shape that comes back.
+// The first step of a bar is always left alone.
+const tricks = fillArray(64, (i) =&gt;
+  i % 16 &gt; 0 &amp;&amp; chance(0.3, random) ? pick(['roll', 'reverse', 'high', 'gate', 'rest'], random) : 'plain',
+);
+
+// Plays one slice. If it holds a kick drum, the sub bass plays with it.
+const hit = (slice, at, options) =&gt; {
+  __('#break').trigger({ slice, at, speed, ...options });
+  if (kicks.includes(slice % 16)) __('#sub').trigger({ at, duration: 0.14 });
+};
+
+// --- The break ----------------------------------------------------------------
+__.transport.sequence('break', { steps: 16 }, (ev) =&gt; {
+  const bar = ev.bar % 4;
+  const step = ev.index;
+  const trick = tricks[bar * 16 + step];
+  // Use the matching bar of the break, so the drummer's own changes come through.
+  const from = 16 * (ev.bar % 8);
+  const slice = from + patterns[bar][step];
+
+  if (step === 0) {
+    __('#sub').set({ frequency: bassNotes[bar] });
+    // The half-time bar is darker.
+    __('#tone').set({ frequency: feels[bar] === 0.5 ? 2500 : 14000 });
+  }
+
+  if (bar === 3 &amp;&amp; step &gt;= 8) {
+    // The fill that ends the phrase: a snare roll that gets faster and higher.
+    const count = [2, 2, 3, 3, 4, 4, 6, 8][step - 8];
+    const rollSpeed = speed * (1 + (step - 8) / 8);
+    for (let i = 0; i &lt; count; i++) {
+      hit(from + 4, ev.at(i / count), { speed: rollSpeed, duration: ev.duration / count });
+    }
+  } else if (feels[bar] === 0.5) {
+    // Half-time: on every second step, one slice at half speed. It lasts two steps
+    // and sounds an octave lower.
+    if (step % 2 === 0) hit(from + patterns[bar][step / 2], ev.time, { speed: speed / 2 });
+  } else if (feels[bar] === 2) {
+    // Double-time: two slices in every step, at twice the speed.
+    hit(from + patterns[bar][(step * 2) % 16], ev.time, { speed: speed * 2 });
+    hit(from + patterns[bar][(step * 2 + 1) % 16], ev.at(0.5), { speed: speed * 2 });
+  } else if (trick === 'roll') {
+    // A stutter: the same slice three times inside one step.
+    for (let i = 0; i &lt; 3; i++) hit(slice, ev.at(i / 3), { duration: ev.duration / 3 });
+  } else if (trick === 'reverse') hit(slice, ev.time, { reverse: true });
+  else if (trick === 'high') hit(slice, ev.time, { speed: speed * 2 });
+  else if (trick === 'gate') hit(slice, ev.time, { duration: ev.duration * 0.3 });
+  else if (trick !== 'rest') hit(slice, ev.time, {});
+
+  // Throw the second snare of bars 2 and 4 into the echo.
+  if (bar % 2 === 1 &amp;&amp; step === 10) __('#throw').trigger({ slice: from + 4, speed });
+});</code></pre>
+
         <h2 id="time">Time</h2>
         <p>
           Most calls take an optional <code>at</code>: the moment the change should happen, in
@@ -1141,6 +1363,13 @@ __.transport.every('1/8', () =&gt; {
               <tr>
                 <td><code>'kick'</code>, <code>'snare'</code>, <code>'hat'</code></td>
                 <td>Three short sounds made by the demo page, for samplers to play</td>
+              </tr>
+              <tr>
+                <td><code>'break'</code></td>
+                <td>
+                  A drum break in 128 slices, fetched from Freesound. See
+                  <a href="#slicing">Slicing a drum break</a>
+                </td>
               </tr>
             </tbody>
           </table>

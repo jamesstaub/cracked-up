@@ -1,10 +1,15 @@
+# Runs on every push and pull request: the same checks a release has to pass.
 name: CI
 on:
   push:
+    branches: ['**']
   pull_request:
 jobs:
-  ci:
+  check:
     runs-on: ubuntu-latest
+    env:
+      # GitHub's machines may have no sound device, so the two tests that need a live one are skipped.
+      VITE_SKIP_LIVE_AUDIO: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -12,8 +17,5 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run build
-      - run: npm test
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run check

@@ -261,7 +261,10 @@ describe('input', () => {
     }
   });
 
-  const isChromium = /Chrome\//.test(navigator.userAgent);
+  // VITE_SKIP_LIVE_AUDIO is set where there may be no sound device at all (the release checks on GitHub).
+  const isChromium =
+    /Chrome\//.test(navigator.userAgent) &&
+    !(import.meta as { env?: Record<string, string | undefined> }).env?.['VITE_SKIP_LIVE_AUDIO'];
 
   // Needs sound without a click and a microphone, which the test setup provides only in Chromium.
   it.skipIf(!isChromium)('records a live input in real time', async () => {

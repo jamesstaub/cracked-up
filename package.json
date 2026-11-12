@@ -1,10 +1,9 @@
 {
   "name": "cracked-up",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A TypeScript reimagining of \"I Dropped My Phone The Screen Cracked\" by Bill Orcutt: build and sequence Web Audio graphs.",
   "license": "MIT",
   "type": "module",
-  "homepage": "https://github.com/billorcutt/i_dropped_my_phone_the_screen_cracked",
   "sideEffects": [
     "./dist/global/*"
   ],
@@ -12,7 +11,8 @@
     "node": ">=22.12"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -54,7 +54,11 @@
     "test": "vitest run --project chromium",
     "test:all-browsers": "vitest run --project chromium --project firefox --project webkit",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check": "npm run typecheck && npm run lint && npm run build && npm run test:all-browsers",
+    "preversion": "npm run check",
+    "version": "node scripts/changelog.mjs release && git add CHANGELOG.md",
+    "release:notes": "node scripts/changelog.mjs notes"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

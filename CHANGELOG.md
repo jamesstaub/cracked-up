@@ -1,0 +1,48 @@
+# Changelog
+
+What changed in each release of cracked-up. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). How versions are chosen and released is
+described in the README.
+
+Write changes under "Unreleased" as you make them, grouped under Added, Changed, Fixed or Removed.
+`npm version` turns that section into the new release's section.
+
+## [Unreleased]
+
+## [0.1.0] - 2026-11-12
+
+The first numbered version. Everything is new; this lists what the library contains.
+
+### Added
+
+- **Engine and graph.** An engine built on an audio context you supply, live or offline, with no
+  global state. Scopes with their own ids, buses, immutable selections with a CSS-style selector
+  grammar, chains, and one shortcut setter per parameter name.
+- **Parameters** with metadata (range, unit, curve, description), scheduled sets, ramps, temporary
+  offsets and audio-rate modulation.
+- **Transport.** Look-ahead scheduling with sequences, polyrhythm, swing, tempo changes, a loop
+  region, `every` and `at`, and the same callbacks in offline renders. `__.transport` is the
+  transport as one scope sees it.
+- **Rebuilding in place.** `scope.build()` and `scope.apply()` keep unchanged nodes sounding, set
+  changed values on them, and remove what is no longer asked for. `build()` undoes itself if the
+  builder throws. `bypass` on any node.
+- **Node types**: sources, filters, dynamics, delays, distortion, modulators, envelopes, a sampler
+  with slices, `monosynth` and `polysynth`, a `bitcrusher` worklet, `recorder`, `looper`, `input`,
+  and the effect macros `multiband` and `tapedelay`. `defineNode` and `defineMacro` for your own.
+- **Recording.** Sample-exact recording into the buffer store, aligned stems from an offline
+  render, a layered looper, and `encodeWav`.
+- **`cracked-up/remote`.** The same scripting API for code in a sandboxed frame or Worker, driven
+  by plain-data commands, including sequences and macros defined in the sandbox.
+- **`cracked-up/midi`.** Devices, messages, controller binding and learn, timed output, and clock
+  sync in both directions.
+- **`cracked-up/util`.** The composing helpers from Cracked, pattern transforms, binary patterns,
+  sieves, Euclidean rhythms, scales and chords, conversions, and seeded randomness.
+- **Demo and docs** (`npm run demo`): a live-coding page, a sandboxed version of it, a guide with a
+  node reference generated from the library, and a guide to running other people's scripts.
+
+### Known limits
+
+- Clock sync has not been measured against real MIDI hardware. Safari has no Web MIDI.
+- Each trip round a feedback loop costs 128 samples in Chromium and WebKit, and none in Firefox.
+- Live audio capture is tested only in Chromium.

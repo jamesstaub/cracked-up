@@ -1,0 +1,53 @@
+# Runs when a version tag (v1.2.3) is pushed: checks everything, then creates a GitHub release with
+# the notes from CHANGELOG.md and the built package attached.
+#
+# To make a release, see "Versions and releases" in the README. In short:
+#   npm version minor && git push --follow-tags
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VITE_SKIP_LIVE_AUDIO: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: The tag must match the version in package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME but package.json says $version." >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Release notes from the changelog
+        run: node scripts/changelog.mjs notes "$VERSION" > release-notes.md
+
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run check
+
+      - name: Pack the library as it would be installed
+        run: npm pack
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A version with a hyphen (1.2.0-beta.1) is marked as a pre-release.
+          flags=""
+          case "$VERSION" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" cracked-up-*.tgz \
+            --title "cracked-up $VERSION" \
+            --notes-file release-notes.md \
+            $flags

@@ -3,6 +3,7 @@
  * node definitions themselves, and adds a "Try it" link to every example.
  */
 
+import { version } from '../package.json';
 import { createEngine } from '../src';
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
 import { exampleFor } from './examples';
@@ -206,6 +207,9 @@ function addTryLinks(): void {
 }
 
 async function main(): Promise<void> {
+  // The version shown is the one in package.json, so it cannot fall behind a release.
+  const status = document.querySelector('#status');
+  if (status) status.textContent = `Version ${version}, pre-alpha. ${status.textContent ?? ''}`;
   // The registry needs an engine, and an engine needs a context. A one-sample offline context makes
   // no sound and needs no user gesture.
   const engine = await createEngine({ context: new OfflineAudioContext(1, 1, 44100) });

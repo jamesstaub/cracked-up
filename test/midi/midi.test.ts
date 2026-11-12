@@ -498,7 +498,10 @@ describe('following MIDI clock', () => {
     expect(engine.transport.state).toBe('paused');
   });
 
-  const isChromium = /Chrome\//.test(navigator.userAgent);
+  // VITE_SKIP_LIVE_AUDIO is set where there may be no sound device at all (the release checks on GitHub).
+  const isChromium =
+    /Chrome\//.test(navigator.userAgent) &&
+    !(import.meta as { env?: Record<string, string | undefined> }).env?.['VITE_SKIP_LIVE_AUDIO'];
 
   // Needs a running audio clock, which the test setup allows without a click only in Chromium.
   it.skipIf(!isChromium)('keeps a live transport on a clock sent in real time', async () => {

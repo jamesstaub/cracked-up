@@ -6,3 +6,5 @@ coverage/
 .vitest-attachments/
 __screenshots__/
 .vitest
+*.tgz
+release-notes.md

@@ -246,7 +246,8 @@ export interface NodeData {
 export type EdgeTarget = { node: string } | { node: string; param: string } | { bus: string };
 
 export interface EdgeData {
-  from: string;
+  /** A node id, or a bus when the connection continues from a bus's mix (`bus.chain()`). */
+  from: string | { bus: string };
   to: EdgeTarget;
 }
 

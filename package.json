@@ -33,6 +33,10 @@
       "types": "./dist/util/index.d.ts",
       "import": "./dist/util/index.js"
     },
+    "./remote": {
+      "types": "./dist/remote/index.d.ts",
+      "import": "./dist/remote/index.js"
+    },
     "./global": {
       "types": "./dist/global/index.d.ts",
       "import": "./dist/global/index.js"

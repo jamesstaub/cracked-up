@@ -5,6 +5,7 @@ import type {
   GraphData,
   Json,
   NodeData,
+  ParamChange,
   ParamValue,
   ScopeApi,
   ScopeEvents,
@@ -393,6 +394,18 @@ export class ScopeImpl {
     return bus;
   }
 
+  /** A bus of this scope itself. Taking a bus's mix is only allowed from the scope that owns it. */
+  private ownBus(name: string): BusImpl {
+    const bus = this.buses.get(name);
+    if (!bus) {
+      throw new CrackedUpError(
+        'missing-target',
+        `Scope "${this.name}" has no bus of its own called "${name}" to continue from.`,
+      );
+    }
+    return bus;
+  }
+
   /** Finds a bus by name here or in a parent scope. */
   resolveBus(name: string): BusImpl {
     const known = new Set<string>();
@@ -455,6 +468,17 @@ export class ScopeImpl {
         } else {
           edges.push({ from: node.id, to: { bus: to.name } });
         }
+      }
+    }
+    // What continues from a bus (a chain started with `bus.chain()`).
+    for (const bus of this.buses.values()) {
+      for (const edge of bus.node.outputs) {
+        if (!this.describable(edge)) continue;
+        const to = edge.to;
+        if (to instanceof NodeImpl) edges.push({ from: { bus: bus.name }, to: { node: to.id } });
+        else if (to instanceof ParamImpl) {
+          edges.push({ from: { bus: bus.name }, to: { node: to.node.id, param: to.name } });
+        } else edges.push({ from: { bus: bus.name }, to: { bus: to.name } });
       }
     }
     return { nodes, edges };
@@ -541,7 +565,8 @@ export class ScopeImpl {
         };
         for (const edge of graph.edges) {
           try {
-            const from = wanted(edge.from);
+            const from =
+              typeof edge.from === 'string' ? wanted(edge.from) : this.ownBus(edge.from.bus).node;
             let to: EdgeEnd | null;
             if ('bus' in edge.to) to = this.resolveBus(edge.to.bus);
             else {
@@ -729,6 +754,10 @@ export class ScopeImpl {
         this.report(toGraphError(thrown, 'invalid-command'));
       }
     }
+  }
+
+  paramChanged(change: ParamChange): void {
+    this.events.emit('param:changed', change);
   }
 
   report(error: CrackedUpError): void {

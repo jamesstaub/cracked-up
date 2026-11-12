@@ -122,8 +122,14 @@ export class ParamImpl {
       this.target(this.effectiveAt(at), at);
     }
     if (next !== previous) {
-      this.events.emit('change', { param: this.asPublic(), value: next, previous, at });
+      this.emitChange({ param: this.asPublic(), value: next, previous, at });
     }
+  }
+
+  /** Tells this parameter's listeners and the scope's `param:changed` listeners. */
+  private emitChange(change: ParamChange): void {
+    this.events.emit('change', change);
+    this.node.scope.paramChanged(change);
   }
 
   get normalized(): number {
@@ -166,7 +172,7 @@ export class ParamImpl {
       this.base = to;
       this.baseLine.set(end, to);
       if (to !== previous) {
-        this.events.emit('change', { param: this.asPublic(), value: to, previous, at: end });
+        this.emitChange({ param: this.asPublic(), value: to, previous, at: end });
       }
       return;
     }
@@ -194,7 +200,7 @@ export class ParamImpl {
     this.base = to;
     this.baseLine.set(end, to);
     if (to !== previous) {
-      this.events.emit('change', { param: this.asPublic(), value: to, previous, at: end });
+      this.emitChange({ param: this.asPublic(), value: to, previous, at: end });
     }
   }
 

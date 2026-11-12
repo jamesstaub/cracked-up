@@ -25,11 +25,14 @@
  * Not available remotely: native AudioNodes (`node.output`, `bus.input`), `defineNode` with a `build`
  * function, and worklets. Those need the audio context and stay on the host.
  *
- * Planned for after graph reconciliation (Phase 4). The command set in graph.ts is fixed earlier so
- * that Phases 1 and 2 route every mutating method through it.
+ * Times: a remote has no audio clock. Inside a sequence callback an operation defaults to the event's
+ * time, as it does locally. Anywhere else it is sent with time 0, which the host reads as "now".
+ *
+ * Not built yet: macros defined inside the sandbox (the `define` message). Macros registered on the
+ * host work, including their methods through `call`.
  */
 
-import type { Command, GraphData, Json, ScopeApi, ScopeSnapshot } from './graph';
+import type { Command, GraphData, GraphError, Json, ScopeApi, ScopeSnapshot } from './graph';
 import type { MacroParam, NodeCategory, NodeTypeInfo } from './nodes';
 import type { ParamValue } from './params';
 import type {
@@ -86,6 +89,8 @@ export type HostMessage =
   | { type: 'params'; changes: readonly { node: string; param: string; value: ParamValue }[] }
   /** The scope's graph changed on the host. */
   | { type: 'snapshot'; snapshot: ScopeSnapshot }
+  /** Something the remote sent could not be applied. */
+  | { type: 'error'; error: RemoteError }
   | { type: 'buffer'; key: string; duration: number; slices: readonly number[] }
   /** A method of a sandbox-defined macro was called, or one of its exposed parameters was set. */
   | {
@@ -95,6 +100,12 @@ export type HostMessage =
       args: Readonly<Record<string, Json>>;
       at: number;
     };
+
+/** A `GraphError` as data. */
+export type RemoteError = Pick<GraphError, 'code' | 'message' | 'nodeId'>;
+
+/** What a remote needs to start: everything `RemoteOptions` asks for except `send`. */
+export type RemoteState = Pick<RemoteOptions, 'snapshot' | 'transport' | 'types'>;
 
 /** The part of the transport a remote script can use. Tempo changes are sent as `transport` commands. */
 export interface RemoteTransport {
@@ -124,6 +135,22 @@ export interface Remote {
   readonly transport: RemoteTransport;
   /** Feed every message from the host here. */
   receive(message: HostMessage): void;
+
+  /**
+   * Runs `fn` and makes the scope match what it built, like `Scope.build`: the host keeps nodes that
+   * are unchanged, and sequences `fn` no longer declares are removed. If `fn` throws, nothing is sent
+   * and the error is rethrown.
+   */
+  build(fn: (__: ScopeApi) => void): void;
+
+  /** The graph as this remote currently believes it to be. */
+  describe(): GraphData;
+
+  /** Sends what is waiting now instead of at the end of the current turn of the event loop. */
+  flush(): void;
+
+  /** Errors the host reports back, and errors thrown by this remote's sequence callbacks. */
+  on(event: 'error', listener: (error: RemoteError) => void): () => void;
 }
 
 export interface LinkOptions {
@@ -139,6 +166,11 @@ export interface LinkOptions {
 export interface Link {
   /** Feed every message from the sandbox here. Commands are applied to the linked scope only. */
   receive(message: RemoteMessage): void;
+  /**
+   * What to create the remote with. Plain data, safe to post to a frame or Worker. Take it right
+   * before creating the remote, so nothing changes in between.
+   */
+  state(): RemoteState;
   /** Stops forwarding and removes the sequences and macro types the remote created. */
   dispose(): void;
 }

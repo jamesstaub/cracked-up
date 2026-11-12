@@ -7,6 +7,7 @@ export default defineConfig({
     'worklets/index': 'src/worklets/index.ts',
     'util/index': 'src/util/index.ts',
     'global/index': 'src/global/index.ts',
+    'remote/index': 'src/remote/index.ts',
   },
   format: ['esm'],
   dts: true,

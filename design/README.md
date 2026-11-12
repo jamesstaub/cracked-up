@@ -1,6 +1,6 @@
 # API design (Phase 0)
 
-Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. `remote.ts` is declared there but not implemented yet.
+Status: approved by the owner on 2026-11-11 with the decisions below. The declarations now live in `src/api/` as the library's real types. `cracked-up/remote` is implemented in `src/remote/`, except macros defined inside a sandbox.
 
 This folder is the proposed public API for Phases 1 and 2 of cracked-up (graph core and transport), written as TypeScript declarations, plus example programs that are type-checked against it. The plan it belongs to is in the Euclip repo: `docs/plans/cracked-up-and-euclip-v2.md`.
 
@@ -43,12 +43,13 @@ Then the declarations:
 | Buffer store, slices | Done |
 | Macros: `defineMacro`, private inner scope with `in` and `out` buses, exposed parameters, methods, nesting | Done |
 | `cracked-up/global` | Done |
-| Commands | Node, connection, bus, `bypass`, `apply`, `setStep`, `clearSequence` and `transport` commands done. `sequence` reports `unsupported` until `cracked-up/remote` |
+| Commands | Done. `sequence` needs a link (its callback lives in the sandbox), so plain `dispatch` reports it as `unsupported`. A `bus` command cannot change a bus of an outer scope |
+| `cracked-up/remote` | `createRemote` (sandbox side, no Web Audio) and `linkRemote` (host side) done: chains, selections, shortcut setters, parameters, buses, `build`, named sequences with callbacks in the sandbox, tempo, errors sent back, host changes mirrored. `demo/sandbox.html` runs it in a frame with an opaque origin. Not done: macros defined in the sandbox (the `define` message), `Sequence.restart`, buffer info in the sandbox |
 | `describe()`, `snapshot()` | Done. Connections that cross scopes are not described yet |
 | `build()`, `apply()` | Done. Both reconcile: unchanged nodes are kept and keep sounding, changed values are set in place, a node is replaced only if its type or creation options changed. `build()` also reconciles sequences and the buses earlier builds made, and leaves the scope as it was if the builder throws |
 | `bypass` | Done. A short crossfade between the node and a path around it; a bypassed source is silent |
 | Docs | `demo/docs.html`: a guide, plus a node reference generated from the definitions' metadata. Tests fail if a built-in type, parameter or option lacks a description, or if a type's generated example does not run |
-| `cracked-up/remote`, external clock sources, recording | Not yet. They throw or report `unsupported` |
+| External clock sources, recording | Not yet. They throw or report `unsupported` |
 
 Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs page. Every type in the type map is implemented.
 
@@ -76,7 +77,8 @@ Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs p
 ## Open points
 
 - **Remote sequences need a name.** A callback that lives in a sandbox is addressed by its sequence name, so `RemoteTransport.sequence` requires one.
-- **Round-trip budget.** A sandboxed sequence callback must answer within the transport's look-ahead (default 100 ms). To be measured when the remote entry point is built.
+- **Round-trip budget.** A sandboxed sequence callback must answer within the transport's look-ahead (default 100 ms). Measured in `demo/sandbox.html` (headless Chromium, sandboxed iframe, `postMessage` both ways): about 0.6 ms mean and under 2 ms worst, so the budget is not a concern on an idle page. A frame that blocks its own thread for longer than the look-ahead will be late; the demo counts those.
+- **Remote graph edits are whole-graph.** A remote sends its full mirrored graph as one `apply` whenever its structure changed, at most once per turn of the event loop. If the host changes the structure at the same moment, the remote's version wins. Connections changed on the host are not mirrored until the next snapshot (sent when nodes are added or removed).
 - **Custom node types in chains.** A type registered at runtime gets a chain method at runtime, but TypeScript only knows about it if `NodeTypeMap` is augmented. Graph data works for any type.
 
 ## Not in this draft

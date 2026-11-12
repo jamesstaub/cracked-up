@@ -396,6 +396,8 @@ export interface NodeTypeInfo {
   readonly isMacro: boolean;
   readonly triggerable: boolean;
   readonly shorthand: string | null;
+  /** For a modulator: the parameter of the next node in a chain that it connects to by default. */
+  readonly modulates: string | null;
   readonly params: readonly import('./params').ParamMeta[];
   /** Creation-only options, by name. */
   readonly options: Readonly<Record<string, OptionInfo>>;

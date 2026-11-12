@@ -108,6 +108,7 @@ export class RegistryImpl implements Registry {
         isMacro,
         triggerable,
         shorthand: definition.shorthand ?? null,
+        modulates: (definition as { modulates?: string }).modulates ?? null,
         params: [...params.values()],
         options: definition.options ?? {},
         triggerOptions: definition.triggerOptions ?? {},

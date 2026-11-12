@@ -16,13 +16,17 @@
       <span id="status">Audio is off. Press Start, or just type.</span>
     </header>
     <main>
-      <textarea
-        id="editor"
-        spellcheck="false"
-        autocomplete="off"
-        autocapitalize="off"
-        aria-label="Code"
-      ></textarea>
+      <div class="editor">
+        <!-- The coloured copy of the code. The textarea above it holds the real text. -->
+        <pre id="highlight" aria-hidden="true"><code></code></pre>
+        <textarea
+          id="editor"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          aria-label="Code"
+        ></textarea>
+      </div>
       <aside>
         <h2>Samples</h2>
         <ul id="samples"></ul>

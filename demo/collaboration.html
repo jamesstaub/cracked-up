@@ -88,6 +88,7 @@
         </p>
         <pre
           data-static
+          data-lang="text"
         ><code>your page                                   sandboxed frame (no origin)
 ---------                                   ---------------------------
 Engine, audio graph, transport              the script
@@ -171,6 +172,7 @@ function runDirect(scope, code) {
         </p>
         <pre
           data-static
+          data-lang="html"
         ><code>&lt;iframe id="guest" sandbox="allow-scripts" hidden&gt;&lt;/iframe&gt;</code></pre>
         <p>
           A Worker on its own is <em>not</em> a sandbox. A Worker created by your page has your
@@ -185,6 +187,7 @@ function runDirect(scope, code) {
         </p>
         <pre
           data-static
+          data-lang="text"
         ><code>Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'</code></pre>
         <p>
           <code>'unsafe-eval'</code> is there because the frame turns script text into a function.
@@ -574,5 +577,6 @@ const link = linkRemote(scope, {
         </ul>
       </article>
     </div>
+    <script type="module" src="./collaboration.ts"></script>
   </body>
 </html>

@@ -9,6 +9,7 @@ import { createEngine } from '../src';
 import type { Engine } from '../src';
 import { linkRemote } from '../src/remote';
 import type { Link } from '../src/remote';
+import { attachHighlighter } from './highlight';
 import { addSamples } from './samples';
 import type { FromFrame, ToFrame } from './sandbox-protocol';
 
@@ -187,6 +188,7 @@ async function start(): Promise<void> {
 }
 
 editor.value = DEFAULT_CODE;
+attachHighlighter(editor, document.querySelector<HTMLPreElement>('#highlight')!);
 editor.addEventListener('keyup', () => {
   if (engine) sendCode();
   else void start();

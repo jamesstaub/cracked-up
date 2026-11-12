@@ -9,6 +9,13 @@
   --error-bg: #fdecea;
   --error-text: #9b1c14;
   --ok: #2f7d4f;
+  --code-comment: #737168;
+  --code-string: #2a7347;
+  --code-number: #8f5300;
+  --code-keyword: #8a3ea8;
+  --code-dunder: #b4530a;
+  --code-property: #1f5fa8;
+  --code-selection: rgba(180, 83, 10, 0.22);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -21,6 +28,13 @@
     --error-bg: #3a1917;
     --error-text: #ffb4ab;
     --ok: #7fd3a0;
+    --code-comment: #8f8d85;
+    --code-string: #8fd6a4;
+    --code-number: #e8c170;
+    --code-keyword: #cda8f2;
+    --code-dunder: #f0a35e;
+    --code-property: #8ebcf2;
+    --code-selection: rgba(240, 163, 94, 0.28);
   }
 }
 * {
@@ -81,24 +95,85 @@ main {
   grid-template-columns: minmax(0, 1fr) 260px;
   min-height: 0;
 }
-#editor {
+/* The editor is a textarea with transparent text over a <pre> that shows the same text in colour.
+   Everything that places a glyph is set once, for both, so the caret sits on the text it edits. */
+.editor {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+}
+#editor,
+#highlight {
+  display: block;
   width: 100%;
   height: 100%;
-  resize: none;
+  margin: 0;
   border: 0;
-  outline: 0;
   padding: 16px;
-  background: var(--panel);
-  color: var(--text);
   font:
     13px/1.6 ui-monospace,
     'SF Mono',
     Menlo,
     Consolas,
     monospace;
+  font-variant-ligatures: none;
+  letter-spacing: 0;
+  text-align: left;
   tab-size: 2;
   white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+#highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  pointer-events: none;
+  user-select: none;
+}
+#highlight code {
+  display: block;
+  font: inherit;
+}
+#editor {
+  position: relative;
+  resize: none;
+  outline: 0;
+  border-radius: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
   overflow: auto;
+}
+#editor::selection {
+  background: var(--code-selection);
+  color: transparent;
+}
+
+/* Token colours, for the editor and for the examples in the docs. Weight and slant never change:
+   a bold or italic glyph of another width would move the text off the caret. */
+.tok-comment {
+  color: var(--code-comment);
+}
+.tok-string,
+.tok-regex {
+  color: var(--code-string);
+}
+.tok-number,
+.tok-literal {
+  color: var(--code-number);
+}
+.tok-keyword {
+  color: var(--code-keyword);
+}
+.tok-dunder {
+  color: var(--code-dunder);
+}
+.tok-property {
+  color: var(--code-property);
 }
 aside {
   border-left: 1px solid var(--border);

@@ -10,6 +10,7 @@
 import { createEngine } from '../src';
 import type { Engine } from '../src';
 import * as util from '../src/util';
+import { attachHighlighter } from './highlight';
 import { addSamples } from './samples';
 
 const DEFAULT_CODE = `// Edit this code: it re-runs on every key up.
@@ -277,6 +278,11 @@ function initialCode(): string {
 }
 
 editor.value = initialCode();
+/** Redraws the coloured code behind the editor. Call it after setting the editor's text from code. */
+const refreshHighlight = attachHighlighter(
+  editor,
+  document.querySelector<HTMLPreElement>('#highlight')!,
+);
 
 editor.addEventListener('keyup', () => {
   if (engine) run(engine);
@@ -288,6 +294,7 @@ editor.addEventListener('keydown', (event) => {
   if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) return;
   event.preventDefault();
   editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
+  refreshHighlight();
 });
 
 toggle.addEventListener('click', () => {
@@ -296,6 +303,7 @@ toggle.addEventListener('click', () => {
 
 reset.addEventListener('click', () => {
   editor.value = DEFAULT_CODE;
+  refreshHighlight();
   lastTried = null;
   if (engine) run(engine);
   editor.focus();
@@ -306,6 +314,7 @@ window.addEventListener('hashchange', () => {
   const code = codeFromAddress();
   if (code === null) return;
   editor.value = code;
+  refreshHighlight();
   if (engine) run(engine);
 });
 

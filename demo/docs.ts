@@ -6,6 +6,7 @@
 import { createEngine } from '../src';
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
 import { exampleFor } from './examples';
+import { highlightBlocks } from './highlight';
 
 const CATEGORY_TITLES: Record<string, string> = {
   source: 'Sources',
@@ -183,6 +184,8 @@ async function main(): Promise<void> {
   const types = engine.registry.list();
   buildReference(types);
   buildContents(types);
+  // Before the links go in: highlighting rewrites each <code>, and a link reads its text.
+  highlightBlocks(document.querySelector('article')!);
   addTryLinks();
   engine.dispose();
   // The reference was added after load, so a link straight to one of its entries needs a nudge.

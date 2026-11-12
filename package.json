@@ -33,6 +33,10 @@
       "types": "./dist/util/index.d.ts",
       "import": "./dist/util/index.js"
     },
+    "./midi": {
+      "types": "./dist/midi/index.d.ts",
+      "import": "./dist/midi/index.js"
+    },
     "./remote": {
       "types": "./dist/remote/index.d.ts",
       "import": "./dist/remote/index.js"

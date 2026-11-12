@@ -119,7 +119,10 @@ export interface TransportPosition {
  */
 export interface ClockSource {
   readonly kind: 'internal' | 'external';
-  /** External sources report the tempo they measure; the transport's `bpm` becomes read-only. */
+  /**
+   * External sources report the tempo they measure. While one leads, setting the transport's `bpm`
+   * does nothing. `cracked-up/midi` provides one that follows MIDI clock.
+   */
   readonly bpm: number | null;
 }
 

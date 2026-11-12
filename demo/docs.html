@@ -595,6 +595,78 @@ const file = new Blob([encodeWav(mix, { bitDepth: 24 })], { type: 'audio/wav' })
           recording or render.
         </p>
 
+        <h2 id="midi">MIDI</h2>
+        <p>
+          MIDI lives in its own part of the library, <code>cracked-up/midi</code>, and belongs to
+          the page rather than to a script: the page asks for access once and decides what to do
+          with it. It needs a browser with Web MIDI (Chrome, Edge, Firefox; not Safari), and
+          <code>requestMidi</code> fails with a clear message where there is none. The examples here
+          are for a page's own code, not for the live demo.
+        </p>
+        <pre data-static><code>import { requestMidi } from 'cracked-up/midi';
+
+const midi = await requestMidi(engine);
+midi.inputs;                       // [{ id, name, manufacturer }, ...]
+midi.on('devices', () =&gt; { /* something was plugged in or removed */ });</code></pre>
+        <h3>Playing and controlling</h3>
+        <pre
+          data-static
+        ><code>// Notes from a keyboard play a synth: note-on triggers the pitch, note-off releases it.
+engine.chain().polysynth({ id: 'keys' }).to('main');
+midi.play(() =&gt; engine.select('#keys'));
+
+// Any message, on any channel, with as many listeners as you like.
+midi.on('noteon', (note) =&gt; console.log(note.note, note.velocity, note.channel), { channel: 10 });
+midi.on('pitchbend', (bend) =&gt; engine.select('#keys').set({ detune: bend.value * 200 }));
+
+// Tie a knob to a parameter. The knob's travel covers the parameter's control range.
+midi.bind({ controller: 74 }, () =&gt; engine.select('#filter').param('frequency'));
+
+// Or let the person choose the knob: this waits for the next one they move.
+const binding = await midi.learn(() =&gt; engine.select('#filter').param('frequency'));
+binding.remove();</code></pre>
+        <p>
+          Give <code>bind</code> and <code>learn</code> a function that finds the parameter, as
+          above, rather than the parameter itself. Then the knob keeps working after code is re-run
+          and the node behind it has been replaced.
+        </p>
+        <h3>Sending notes</h3>
+        <pre
+          data-static
+        ><code>const out = midi.output('My Synth');   // by name or id; the first output if you give none
+out.channel = 2;
+
+engine.transport.sequence('bass', { steps: [36, 0, 36, 43], step: '1/8' }, (ev) =&gt; {
+  // No time given: inside a sequence it lands exactly on the step.
+  if (ev.value) out.note(ev.value, { duration: ev.duration * 0.8, velocity: 0.9 });
+});
+out.cc(1, 0.5);
+out.pitchBend(-1);</code></pre>
+        <h3>Keeping time with other gear</h3>
+        <pre
+          data-static
+        ><code>// Other gear follows this page: clock pulses, Start, Stop, and where to continue from.
+const stopSending = midi.sendClock('Drum Machine');
+
+// This page follows other gear: its Start and Stop, its tempo, its position.
+const follow = midi.follow('Drum Machine');
+follow.bpm;      // the tempo measured from the incoming clock
+follow.error;    // how far the transport is from the clock right now, in seconds
+follow.stop();   // go back to the transport's own tempo</code></pre>
+        <p>
+          While following, setting <code>transport.bpm</code> does nothing, so code that sets a
+          tempo can be re-run without fighting the clock. Timing is matched to what is heard, not to
+          what has been computed: notes and clock sent out are delayed by the audio output's
+          latency, so a drum machine and the page's own sound line up at the speakers.
+        </p>
+        <p>
+          How tight is it? With a pretend clock whose pulses each arrive up to 1.5 milliseconds
+          early or late, the transport stays within 2 milliseconds of it at 70, 120 and 174 bpm, and
+          comes back onto the clock after a tempo change. That has been measured with simulated and
+          in-browser clocks only. It has not yet been measured against real hardware, where the MIDI
+          interface and driver add their own delay and unevenness.
+        </p>
+
         <h2 id="bypass">Bypassing a node</h2>
         <p>
           A bypassed effect passes its input straight to its output. A bypassed source, or a

@@ -8,6 +8,7 @@ export default defineConfig({
     'util/index': 'src/util/index.ts',
     'global/index': 'src/global/index.ts',
     'remote/index': 'src/remote/index.ts',
+    'midi/index': 'src/midi/index.ts',
   },
   format: ['esm'],
   dts: true,

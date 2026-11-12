@@ -379,6 +379,8 @@ interface Collecting {
 
 export class TransportImpl {
   private collecting: Collecting | null = null;
+  /** The external clock the tempo follows, if any. */
+  private external: ClockSource | null = null;
   readonly engine: EngineImpl;
 
   lookahead = 0.1;
@@ -424,6 +426,15 @@ export class TransportImpl {
   set bpm(value: number) {
     if (!(value > 0) || !Number.isFinite(value))
       throw new RangeError('bpm must be a number above 0.');
+    // While an external clock leads, the tempo is its to set. Code that sets a tempo of its own (a
+    // script re-run while synced) is ignored rather than refused.
+    if (this.external) return;
+    this.driveTempo(value);
+  }
+
+  /** Sets the tempo regardless of who leads. External clock sources call this as they measure. */
+  driveTempo(value: number): void {
+    if (!(value > 0) || !Number.isFinite(value)) return;
     if (value === this.tempo) return;
     this.tempo = value;
     if (this.playState === 'started') {
@@ -489,13 +500,11 @@ export class TransportImpl {
   }
 
   get clock(): ClockSource {
-    return { kind: 'internal', bpm: null };
+    return this.external ?? { kind: 'internal', bpm: null };
   }
 
   set clock(source: ClockSource) {
-    if (source.kind !== 'internal') {
-      throw new CrackedUpError('unsupported', 'External clock sources arrive with MIDI support.');
-    }
+    this.external = source.kind === 'external' ? source : null;
   }
 
   // --- Position and conversions -------------------------------------------------------------------

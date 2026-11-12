@@ -492,6 +492,38 @@ __.transport.sequence('feed', { steps: 'x..x..x.' + '.'.repeat(24), step: '1/8' 
 __.transport.every('4 bars', () =&gt; {
   __('#loop').call('clear').trigger();
 });</code></pre>
+        <h3>Recording any part of your sound</h3>
+        <p>
+          Recorders and loopers take whatever is connected to them, not just a microphone. The usual
+          way to choose what gets captured is a bus: send any number of chains to it, and continue
+          from the bus into the recorder or looper.
+        </p>
+        <pre
+          data-static
+        ><code>// Listen in. The bus keeps feeding the output; the recorder hears what passes.
+__.bus('drums').chain().recorder({ id: 'tape', into: 'drum-bar' });
+
+// Sit in the path. to(null) stops the bus feeding the output by itself, so its one way
+// out is through the looper. Without it you would hear the input twice.
+__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '2 bars' }).to('main');
+
+__().saw({ id: 'bass' }).gain(0.2).to('loop-in');
+__().polysynth({ id: 'keys' }).to('loop-in');
+
+// The whole mix.
+__.bus('main').chain().recorder({ id: 'all', into: 'mix' });</code></pre>
+        <p>
+          Recordings and loops stay in time if you start them on a bar line and measure them in
+          bars: start from a transport callback (<code>every('4 bars', ...)</code>), give a recorder
+          <code>duration: __.transport.seconds('1 bar')</code>, and give a looper a
+          <code>length</code> such as <code>'2 bars'</code>. The starter code in the live demo does
+          both.
+        </p>
+        <p>
+          Layers added to a looper after the first are recorded at its <code>overdub</code> level,
+          0.7 unless you change it, so that layers stacked on each other do not add up to
+          distortion. Set <code>overdub: 1</code> to record every layer at full level.
+        </p>
         <p>
           <code>input</code> is a microphone or audio interface. The browser asks for permission the
           first time. Sound from an input arrives late, by the time it takes to get through the

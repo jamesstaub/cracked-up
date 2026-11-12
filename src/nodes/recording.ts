@@ -187,6 +187,14 @@ export const looper = defineNode({
       rate: 'audio',
       description: 'Level of the input passed straight through. 0 lets only the loop out.',
     },
+    overdub: {
+      default: 0.7,
+      min: 0,
+      max: 1,
+      rate: 'audio',
+      description:
+        'Level at which layers after the first are recorded. Below 1 so that layers stacked on each other do not add up to distortion. Read when a layer starts.',
+    },
     latency: LATENCY,
   },
   options: {
@@ -228,6 +236,7 @@ export const looper = defineNode({
       params: {
         gain: param('gain'),
         monitor: param('monitor'),
+        overdub: param('overdub'),
         latency(value, at) {
           latency = value as number;
           param('latency').setValueAtTime(latency, at);

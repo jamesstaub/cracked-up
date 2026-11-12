@@ -152,6 +152,7 @@ class Looper extends AudioWorkletProcessor {
       gate('clear', 0),
       { name: 'gain', defaultValue: 1, minValue: 0, maxValue: 4, automationRate: 'a-rate' },
       { name: 'monitor', defaultValue: 1, minValue: 0, maxValue: 4, automationRate: 'k-rate' },
+      { name: 'overdub', defaultValue: 0.7, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'length', defaultValue: 2, minValue: 0.001, maxValue: 120, automationRate: 'k-rate' },
       { name: 'latency', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
@@ -167,6 +168,7 @@ class Looper extends AudioWorkletProcessor {
     this.nextStart = 0;
     this.previousLength = 0;
     this.recording = false;
+    this.writeGain = 1;
     this.wasRecord = false;
     this.wasUndo = false;
     this.wasClear = false;
@@ -216,6 +218,9 @@ class Looper extends AudioWorkletProcessor {
           this.nextStart = this.anchor + Math.round(this.exact);
           this.previousLength = this.nextStart - this.cycleStart;
         }
+        // The first layer is recorded as it is; layers on top of it are recorded quieter, so that
+        // stacking them does not push the sum past full scale.
+        this.writeGain = this.layers.length === 0 ? 1 : parameters.overdub[0];
         this.newLayer(channels);
         this.recording = true;
       } else if (!record && this.wasRecord) {
@@ -251,7 +256,9 @@ class Looper extends AudioWorkletProcessor {
           // What arrives now was played "latency" ago: write it where the loop was then.
           let write = position - latency;
           if (write < 0) write += this.previousLength;
-          if (write >= 0) this.layers[this.layers.length - 1][channel][write] += dry;
+          if (write >= 0) {
+            this.layers[this.layers.length - 1][channel][write] += dry * this.writeGain;
+          }
         }
       }
     }

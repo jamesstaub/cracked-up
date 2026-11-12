@@ -211,7 +211,7 @@ export interface NodeTypeMap {
     }
   >;
   looper: NodeShape<
-    { gain: number; monitor: number; latency: number },
+    { gain: number; monitor: number; overdub: number; latency: number },
     {
       /** Loop length for the first layer. Default '1 bar'. */
       length?: import('./transport').Duration;

@@ -55,6 +55,8 @@ interface BuildState {
   newEdges: EdgeImpl[];
   buses: Set<BusImpl>;
   newBuses: BusImpl[];
+  /** Buses whose destination this run set. */
+  routed: Set<BusImpl>;
 }
 
 interface ReconcileOptions {
@@ -329,6 +331,11 @@ export class ScopeImpl {
     const build = this.building;
     if (build && !build.created.has(node)) return;
     node.dispose();
+  }
+
+  /** Called when a bus of this scope is given a destination. */
+  noteRoute(bus: BusImpl): void {
+    if (bus.scope === this) this.building?.routed.add(bus);
   }
 
   /** Called for every connection asked for from one of this scope's nodes, new or already there. */
@@ -630,6 +637,7 @@ export class ScopeImpl {
       newEdges: [],
       buses: new Set(),
       newBuses: [],
+      routed: new Set(),
     };
     const sources = [...before, ...[...this.buses.values()].map((bus) => bus.node)];
     for (const node of sources) {
@@ -701,6 +709,10 @@ export class ScopeImpl {
         if (this.buses.get(bus.name) === bus) this.buses.delete(bus.name);
       }
       for (const bus of build.newBuses) this.builtBuses.add(bus);
+      // A bus an earlier build re-routed goes back to the default unless this build routes it again.
+      for (const bus of this.builtBuses) {
+        if (!build.routed.has(bus) && !this.owner) bus.route(this.engine.mainBus ?? null);
+      }
     }
 
     const added = this.nodeList.filter((node) => build.created.has(node));

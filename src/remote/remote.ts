@@ -342,8 +342,8 @@ class RemoteBus {
     return this.remote.scopeView;
   }
 
-  to(target: string | RemoteBus): this {
-    this.destination = typeof target === 'string' ? target : target.name;
+  to(target: string | RemoteBus | null): this {
+    this.destination = target === null || typeof target === 'string' ? target : target.name;
     this.remote.emit({ op: 'bus', name: this.name, to: this.destination }, true);
     return this;
   }

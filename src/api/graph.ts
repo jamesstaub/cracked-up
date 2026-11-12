@@ -216,8 +216,12 @@ export interface Bus {
   readonly name: string;
   readonly scope: Scope;
   readonly gain: Param<number>;
-  /** Where this bus sends its mix. Default: the engine's `main` bus. */
-  to(target: string | Bus): this;
+  /**
+   * Where this bus sends its mix. Default: the engine's `main` bus. `null` sends it nowhere, so it is
+   * heard only through what continues from it with `chain()`: use that when the chain is the bus's
+   * one way out, such as a bus that feeds a looper.
+   */
+  to(target: string | Bus | null): this;
   /** Starts a chain fed by this bus's mix, for processing everything sent to it. */
   chain(): Chain;
   readonly input: AudioNode;
@@ -344,7 +348,7 @@ export type Command =
   | { op: 'connect'; target: CommandTarget; to: EdgeTarget }
   | { op: 'disconnect'; target: CommandTarget; to?: EdgeTarget }
   | { op: 'dispose'; target: CommandTarget }
-  | { op: 'bus'; name: string; to?: string; gain?: number }
+  | { op: 'bus'; name: string; to?: string | null; gain?: number }
   // Sequences (the callback stays with whoever created the sequence; see remote.ts)
   | { op: 'sequence'; name: string; options: import('./transport').SequenceOptions }
   /** A single callback at a position, for `transport.at`. Like `sequence`, the callback stays with its creator. */

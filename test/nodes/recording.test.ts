@@ -168,6 +168,32 @@ describe('looper', () => {
     expect(hits(audio)).toEqual([0.22, 0.32, 0.42, 0.45, 0.52, 0.55, 0.62, 0.72].map(frames));
   });
 
+  it('records layers after the first below full level, by the overdub amount', async () => {
+    for (const [init, expected] of [
+      [{}, 0.7],
+      [{ overdub: 1 }, 1],
+      [{ overdub: 0.25 }, 0.25],
+    ] as const) {
+      const engine = await loopOf(0.55, [0.12, 0.35], { length: 0.2, ...init });
+      engine.select('#loop').trigger({ at: 0.1 }).trigger({ at: 0.3 });
+      const data = (await engine.render()).getChannelData(0);
+      expect(data[frames(0.22)]).toBeCloseTo(1, 6);
+      expect(data[frames(0.45)]).toBeCloseTo(expected, 6);
+    }
+  });
+
+  it('starts again cleanly when cleared and triggered at the same moment', async () => {
+    const engine = await loopOf(0.75, [0.12, 0.45], { length: 0.2 });
+    const loop = engine.select('#loop');
+    loop.trigger({ at: 0.1 });
+    loop.call('clear', {}, { at: 0.4 }).trigger({ at: 0.4 });
+    const audio = await engine.render();
+    const data = audio.getChannelData(0);
+    expect(hits(audio)).toEqual([0.22, 0.32, 0.55, 0.65].map(frames));
+    // It is a first layer again, so it is at full level.
+    expect(data[frames(0.55)]).toBeCloseTo(1, 6);
+  });
+
   it('keeps recording round the loop until released when asked to', async () => {
     const engine = await loopOf(0.65, [0.12, 0.27], { length: 0.2 });
     engine.select('#loop').trigger({ at: 0.1, cycles: 0 }).release({ at: 0.3 });
@@ -316,5 +342,90 @@ describe('encodeWav', () => {
       for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i]! - b[i]!));
       expect(worst).toBeLessThan(bitDepth === 16 ? 1e-4 : 1e-6);
     }
+  });
+});
+
+describe('capturing any part of a graph', () => {
+  it('loops everything sent to a bus, heard once, when the bus leads only into the looper', async () => {
+    const engine = await offlineEngine(0.5);
+    engine.buffers.add('ones', ones(0.05));
+    const scope = engine.scope('song');
+    scope
+      .bus('loop-in')
+      .to(null)
+      .chain()
+      .looper({ id: 'loop', length: 0.2, channels: 1 })
+      .to('main');
+    // Two different chains feed the bus: a sampler through a gain, and another through a filter.
+    scope.chain().sampler({ id: 'a', buffer: 'ones' }).gain(0.25).to('loop-in');
+    scope.chain().sampler({ id: 'b', buffer: 'ones' }).gain(0.5).to('loop-in');
+    scope.select('#a').trigger({ at: 0.1 });
+    scope.select('#b').trigger({ at: 0.12 });
+    scope.select('#loop').trigger({ at: 0.1 });
+    const audio = await engine.render();
+    // While recording, the input is heard once (through the looper), not twice.
+    expect(valueAt(audio, 0.11)).toBeCloseTo(0.25, 6);
+    expect(valueAt(audio, 0.13)).toBeCloseTo(0.75, 6);
+    expect(valueAt(audio, 0.18)).toBeCloseTo(0, 6);
+    // One loop later the same mix comes back.
+    expect(valueAt(audio, 0.21)).toBeCloseTo(0.25, 6);
+    expect(valueAt(audio, 0.23)).toBeCloseTo(0.75, 6);
+    expect(valueAt(audio, 0.33)).toBeCloseTo(0.75, 6);
+    expect(scope.snapshot().buses).toEqual([{ name: 'loop-in', to: null, gain: 1 }]);
+  });
+
+  it('records a bus that also keeps playing, a synth, and the whole mix', async () => {
+    const engine = await offlineEngine(0.4);
+    engine.buffers.add('ones', ones(0.4));
+    // A tap: the bus still feeds the output, and the recorder listens in.
+    engine.bus('drums').chain().recorder({ id: 'tap', into: 'drums-take', channels: 1 });
+    engine.chain().sampler({ id: 'dc', buffer: 'ones' }).gain(0.25).to('drums');
+    // The output of a macro.
+    engine.chain().polysynth({ id: 'synth' }).recorder({ id: 'syn', channels: 1 }).to('main');
+    // Everything.
+    engine.bus('main').chain().recorder({ id: 'all', into: 'mix-take', channels: 1 });
+
+    engine.select('#dc').trigger({ at: 0 });
+    engine.select('#synth').trigger({ at: 0.05, pitch: 60, duration: 0.2 });
+    engine.select('recorder').trigger({ at: 0 });
+    const mix = (await engine.render()).getChannelData(0);
+    const drums = (await engine.buffers.get('drums-take')!.ready).getChannelData(0);
+    const synth = (await engine.buffers.get('syn')!.ready).getChannelData(0);
+    const all = (await engine.buffers.get('mix-take')!.ready).getChannelData(0);
+
+    expect(drums[4800]).toBeCloseTo(0.25, 6);
+    expect(Math.max(...synth.map(Math.abs))).toBeGreaterThan(0.01);
+    let worst = 0;
+    for (let i = 0; i < mix.length; i++) worst = Math.max(worst, Math.abs(mix[i]! - all[i]!));
+    expect(worst).toBeLessThan(1e-6);
+    // The mix really is the two parts added together.
+    expect(mix[9600]).toBeCloseTo(drums[9600]! + synth[9600]!, 5);
+  });
+
+  it('re-routing a bus leaves the chain that continues from it connected', async () => {
+    const engine = await offlineEngine(0.2);
+    engine.buffers.add('ones', ones(0.2));
+    const bus = engine.bus('fx');
+    bus.chain().gain(0.5).to('main');
+    engine.chain().sampler({ id: 'dc', buffer: 'ones' }).to('fx');
+    engine.select('#dc').trigger({ at: 0 });
+    bus.to(null).to('main').to(null);
+    expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(0.5, 6);
+  });
+
+  it('a rebuild that no longer sends a bus nowhere puts it back on the output', async () => {
+    const engine = await offlineEngine(0.2);
+    engine.buffers.add('ones', ones(0.2));
+    const scope = engine.scope('song');
+    const program = (detached: boolean) =>
+      scope.build((__) => {
+        const bus = __.bus('side');
+        if (detached) bus.to(null);
+        __().sampler({ id: 'dc', buffer: 'ones' }).to('side');
+      });
+    await program(true);
+    await program(false);
+    scope.select('#dc').trigger({ at: 0 });
+    expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(1, 6);
   });
 });

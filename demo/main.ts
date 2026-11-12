@@ -17,47 +17,76 @@ const DEFAULT_CODE = `// Edit this code: it re-runs on every key up.
 
 __.transport.bpm = 110;
 
-// Three samplers. 'kick', 'snare' and 'hat' are made by this page.
-__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
-__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('main');
-__().sampler({ id: 'hat', buffer: 'hat' }).highpass(6000).gain(0.35).to('main');
+// --- Drums, mixed on a bus of their own ---------------------------------------
+// 'kick', 'snare' and 'hat' are sounds made by this page.
+__.bus('drums');
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('drums');
+__().sampler({ id: 'hat', buffer: 'hat' }).highpass(6000).gain(0.35).to('drums');
 
 // A pattern is a string or an array. Steps are sixteenth notes unless you say otherwise.
 __.transport.sequence('kick', { steps: 'x..x..x...x..x..' }, (ev) => {
   if (ev.value) __('#kick').trigger();
 });
-
-// Quarter-note steps: the snare lands on beats 2 and 4.
 __.transport.sequence('snare', { steps: [0, 1], step: '1/4' }, (ev) => {
   if (ev.value) __('#snare').trigger();
 });
-
-// Five hits spread evenly over eight swung eighth notes.
 __.transport.sequence('hat', { steps: euclid(5, 8), step: '1/8', swing: 0.58 }, (ev) => {
   if (ev.value) __('#hat').trigger({ speed: 1 + ev.index * 0.04 });
 });
 
-// A bass: an oscillator that is silent until triggered, through a filter.
+// --- A recording that stays in time -------------------------------------------
+// A recorder listening in on the drum bus. The bus goes on playing as normal.
+__.bus('drums').chain().recorder({ id: 'tape', into: 'drum-bar' });
+
+// A sampler that plays whatever was recorded last, at half speed.
+__().sampler({ id: 'tape-play', buffer: 'drum-bar', speed: 0.5 })
+  .lowpass(900).gain(0.7).to('main');
+
+// Every four bars, record exactly one bar, starting on the bar line...
+__.transport.every('4 bars', () => {
+  __('#tape').trigger({ duration: __.transport.seconds('1 bar') });
+});
+// ...and two bars later, play it. At half speed one bar lasts two, so it ends on the bar.
+__.transport.every('4 bars', () => __('#tape-play').trigger(), { offset: '2 bars' });
+
+// --- A loop that stays in time ------------------------------------------------
+// Anything sent to 'loop-in' can be looped. to(null) means this bus goes nowhere
+// by itself: its only way out is through the looper, which passes the sound on.
+__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '2 bars' }).to('main');
+
 __().saw({ id: 'bass', gate: 'closed' })
   .lowpass({ id: 'filter', frequency: 500, q: 6 })
   .gain(0.25)
-  .to('main');
-
-// A slow sine wave moving the filter's cutoff by +/- 300 Hz.
+  .to('loop-in');
 __().sine(0.2).gain(300).modulate('#filter', 'frequency');
+__().sine({ id: 'blip', gate: 'closed', frequency: 880 }).gain(0.1).to('loop-in');
 
-// Step values can be any number. Here each one is a pitch in Hz, and 0 is a rest.
+// The bass is only played in bars 1 and 2 of every eight, and the blips only in
+// bars 3 and 4. The looper records each as a layer and keeps both going.
 __.transport.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step: '1/8' }, (ev) => {
-  if (ev.value) {
+  if (ev.value && ev.bar % 8 < 2) {
     __('#bass').set({ frequency: ev.value }).trigger({ duration: ev.duration * 0.6 });
   }
 });
+__.transport.sequence('blips', { steps: 'x..x.x..', step: '1/8' }, (ev) => {
+  if (ev.value && ev.bar % 8 >= 2 && ev.bar % 8 < 4) __('#blip').trigger({ duration: 0.04 });
+});
+
+// Bar 1: empty the looper and record two bars. Bar 3: record a second layer on top.
+// Layers after the first are recorded a little quieter (the looper's 'overdub' level).
+__.transport.every('8 bars', () => __('#loop').call('clear').trigger());
+__.transport.every('8 bars', () => __('#loop').trigger(), { offset: '2 bars' });
 `;
 
 // The key carries a version. Bump it whenever the names available to demo code change, so code saved
 // by an older version of the page (which may use names that no longer exist) is not loaded.
-const STORAGE_KEY = 'cracked-up-demo-code-v3';
-const OLD_STORAGE_KEYS = ['cracked-up-demo-code', 'cracked-up-demo-code-v2'];
+const STORAGE_KEY = 'cracked-up-demo-code-v4';
+const OLD_STORAGE_KEYS = [
+  'cracked-up-demo-code',
+  'cracked-up-demo-code-v2',
+  'cracked-up-demo-code-v3',
+];
 
 const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
 const toggle = document.querySelector<HTMLButtonElement>('#toggle')!;

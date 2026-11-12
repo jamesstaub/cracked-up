@@ -50,7 +50,18 @@ export class BusImpl {
     return this.destination?.name ?? null;
   }
 
-  to(target: string | Bus): this {
+  /** True when the bus has been told to go nowhere (`to(null)`). */
+  get detached(): boolean {
+    return !this.connected;
+  }
+
+  to(target: string | Bus | null): this {
+    this.scope.noteRoute(this);
+    if (target === null) {
+      // Nowhere: the mix is heard only through chains that continue from this bus.
+      this.unroute();
+      return this;
+    }
     const bus =
       typeof target === 'string' ? this.scope.resolveBus(target) : (target as unknown as BusImpl);
     if (bus === this) {
@@ -63,16 +74,31 @@ export class BusImpl {
   /** Sends the bus's mix to another bus, or to the context's output when given null. */
   route(destination: BusImpl | null): void {
     if (this.connected && destination === this.destination) return;
-    if (this.connected) this.output.disconnect();
+    this.unroute();
     this.destination = destination;
-    this.output.connect(destination ? destination.input : this.scope.engine.context.destination);
+    this.output.connect(this.target());
     this.connected = true;
+  }
+
+  private target(): AudioNode {
+    return this.destination ? this.destination.input : this.scope.engine.context.destination;
+  }
+
+  /** Removes only the bus's own route, leaving chains that continue from it connected. */
+  private unroute(): void {
+    if (!this.connected) return;
+    try {
+      this.output.disconnect(this.target());
+    } catch {
+      // Already gone.
+    }
+    this.connected = false;
+    this.destination = null;
   }
 
   dispose(): void {
     for (const edge of [...this.sources]) disconnectEdge(edge);
-    if (this.connected) this.output.disconnect();
-    this.connected = false;
+    this.unroute();
     this.node.dispose();
   }
 }

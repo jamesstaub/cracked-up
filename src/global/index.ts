@@ -11,10 +11,14 @@ import { EngineImpl } from '../core/engine';
 export { euclid } from '../util/pattern';
 
 /** The default engine. Its context starts suspended until `play()` is called from a user gesture. */
-export const engine = new EngineImpl({ context: new AudioContext() }) as unknown as Engine;
+const impl = new EngineImpl({ context: new AudioContext() });
+export const engine = impl as unknown as Engine;
 
-/** Resolves with the default engine once it is ready to use. */
-export const ready: Promise<Engine> = Promise.resolve(engine);
+/**
+ * Resolves with the default engine once its AudioWorklet processors have loaded. Everything except
+ * the node types that need them (`bitcrusher`) works before that.
+ */
+export const ready: Promise<Engine> = impl.loadWorklets().then(() => engine);
 
 /** Starts a chain with no argument, or selects nodes with a selector. */
 export const __: ScopeApi = engine.$;

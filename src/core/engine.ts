@@ -12,6 +12,7 @@ import type {
 } from '../api';
 import { builtinNodes } from '../nodes/builtin';
 import { createRandom } from '../util/random';
+import { processorSource } from '../worklets/processors';
 import { BufferStoreImpl } from './buffers';
 import type { BusImpl } from './bus';
 import { ChainImpl } from './chain';
@@ -25,6 +26,9 @@ import { TransportImpl } from './transport';
 
 /** Fixed seed for offline engines, so a render repeats exactly unless the caller asks otherwise. */
 const OFFLINE_SEED = 0x5eed;
+
+/** One load of the processor module per audio context, shared by every engine built on it. */
+const workletLoads = new WeakMap<BaseAudioContext, Promise<void>>();
 
 function isOffline(context: BaseAudioContext): context is OfflineAudioContext {
   return typeof (context as OfflineAudioContext).startRendering === 'function';
@@ -50,6 +54,9 @@ export class EngineImpl {
 
   private events = new Emitter<EngineEvents>();
   private disposed = false;
+  private workletsLoaded = false;
+  /** Why the worklet processors could not be loaded, if they could not. */
+  private workletError: string | null = null;
 
   // Each engine has its own Selection and Chain classes, because their generated methods (one setter
   // per parameter name, one chain method per node type) depend on what is registered with that engine.
@@ -104,6 +111,40 @@ export class EngineImpl {
     }
   }
 
+  /**
+   * Loads the library's AudioWorklet processors into this engine's context. From a blob URL by
+   * default; from `url` when a content security policy forbids that.
+   */
+  async loadWorklets(url?: string | URL): Promise<void> {
+    if (this.workletsLoaded) return;
+    const worklet = this.context.audioWorklet;
+    if (!worklet) {
+      this.workletError = 'This browser has no AudioWorklet support, which this node type needs.';
+      return;
+    }
+    // A processor name can be registered once per context, so share the load between engines on it.
+    let loading = workletLoads.get(this.context);
+    if (!loading) {
+      const blobUrl =
+        url === undefined
+          ? URL.createObjectURL(new Blob([processorSource], { type: 'text/javascript' }))
+          : null;
+      loading = worklet.addModule(url ?? blobUrl!).finally(() => {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+      });
+      workletLoads.set(this.context, loading);
+    }
+    try {
+      await loading;
+      this.workletsLoaded = true;
+    } catch (thrown) {
+      const reason = thrown instanceof Error ? thrown.message : String(thrown);
+      this.workletError =
+        `The AudioWorklet processors could not be loaded (${reason}). If a content security policy ` +
+        'blocks blob URLs, serve the source from `cracked-up/worklets` and pass its URL as `workletUrl`.';
+    }
+  }
+
   // --- Time ---------------------------------------------------------------------------------------
 
   now(): number {
@@ -137,8 +178,16 @@ export class EngineImpl {
         }
         return param.effectiveAt(at);
       },
-      worklet: (name: string, options?: AudioWorkletNodeOptions) =>
-        new AudioWorkletNode(this.context, name, options),
+      worklet: (name: string, options?: AudioWorkletNodeOptions) => {
+        if (!this.workletsLoaded) {
+          throw new CrackedUpError(
+            'unsupported',
+            this.workletError ??
+              'AudioWorklet processors are not loaded yet. Create the engine with createEngine(), or wait for `ready`.',
+          );
+        }
+        return new AudioWorkletNode(this.context, name, options);
+      },
     };
   }
 
@@ -213,7 +262,13 @@ export class EngineImpl {
   }
 }
 
-/** Creates an engine on the given audio context. Async because later phases load worklet modules here. */
-export function createEngine(options: EngineOptions): Promise<Engine> {
-  return Promise.resolve(new EngineImpl(options) as unknown as Engine);
+/**
+ * Creates an engine on the given audio context and loads the library's AudioWorklet processors into
+ * it. If they cannot be loaded the engine still works; only the node types that need them fail, with
+ * an error that says why.
+ */
+export async function createEngine(options: EngineOptions): Promise<Engine> {
+  const engine = new EngineImpl(options);
+  await engine.loadWorklets(options.workletUrl);
+  return engine as unknown as Engine;
 }

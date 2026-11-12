@@ -129,7 +129,7 @@ export function execute(scope: ScopeImpl, command: Command): void {
       return;
     }
     case 'setStep': {
-      const sequence = scope.engine.transport.get(command.name);
+      const sequence = scope.transport.get(command.name);
       if (!sequence) {
         throw new CrackedUpError(
           'missing-target',
@@ -140,7 +140,7 @@ export function execute(scope: ScopeImpl, command: Command): void {
       return;
     }
     case 'clearSequence': {
-      scope.engine.transport.clear(command.name);
+      scope.transport.clear(command.name);
       return;
     }
     case 'transport': {

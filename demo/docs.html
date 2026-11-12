@@ -61,7 +61,7 @@ __.bus('main').gain.set(0.5); // overall level</code></pre>
         <pre><code>__.bus('drums').gain.set(0.8);
 __().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
 __().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
-t.every('1/4', () => __('sampler').trigger());</code></pre>
+__.transport.every('1/4', () => __('sampler').trigger());</code></pre>
         <p>
           Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
         </p>
@@ -169,7 +169,7 @@ __().sine(0.5).gain(300).modulate('#filter', 'frequency');</code></pre>
         <pre><code>__().sampler({ id: 'kick', buffer: 'kick', class: 'drums' }).to('main');
 __().sampler({ id: 'hat', buffer: 'hat', class: 'drums' }).to('main');
 
-t.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
+__.transport.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
   __(ev.value === 1 ? '#kick' : '#hat').trigger();
 });</code></pre>
         <p>
@@ -237,7 +237,7 @@ __('#filter').ramp('frequency', 3000, { duration: 4 });</code></pre>
           <code>trigger</code> apply to that hit only.
         </p>
         <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
-t.sequence('hat', { steps: 4, step: '1/8' }, (ev) => {
+__.transport.sequence('hat', { steps: 4, step: '1/8' }, (ev) => {
   __('#hat').trigger({ speed: 1 + ev.index * 0.2, velocity: 0.6 });
 });</code></pre>
         <p>
@@ -246,7 +246,7 @@ t.sequence('hat', { steps: 4, step: '1/8' }, (ev) => {
           make one that is silent until triggered, create it with <code>gate: 'closed'</code>.
         </p>
         <pre><code>__().square({ id: 'blip', frequency: 660, gate: 'closed' }).gain(0.15).to('main');
-t.every('1/4', () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
+__.transport.every('1/4', () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
 
         <h2 id="buffers">Samplers and where their audio comes from</h2>
         <p>
@@ -296,7 +296,7 @@ t.every('1/4', () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
         <pre><code>const kit = engine.buffers.get('snare');
 kit.slices = [0, 0.03, 0.1, 0.25];
 __().sampler({ id: 's', buffer: 'snare' }).to('main');
-t.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
+__.transport.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
   __('#s').trigger({ slice: ev.value });
 });</code></pre>
 
@@ -319,12 +319,12 @@ __('#tone').set({ frequency: 440 }, { at: now + 2 });</code></pre>
         <p>
           The transport keeps musical time: a tempo and a position in beats. A <em>sequence</em> is
           a repeating pattern of steps on it. For each step, your function is called with an event
-          describing that step. In the demo the transport is called <code>t</code>.
+          describing that step. You reach it as <code>__.transport</code>.
         </p>
-        <pre><code>t.bpm = 120;
+        <pre><code>__.transport.bpm = 120;
 __().sampler({ id: 'kick', buffer: 'kick' }).to('main');
 
-t.sequence('kick', { steps: 'x...x...x..x..x.' }, (ev) => {
+__.transport.sequence('kick', { steps: 'x...x...x..x..x.' }, (ev) => {
   if (ev.value) __('#kick').trigger();
 });</code></pre>
         <p>
@@ -440,21 +440,21 @@ t.sequence('kick', { steps: 'x...x...x..x..x.' }, (ev) => {
 __().sampler({ id: 'hat', buffer: 'hat' }).gain(0.5).to('main');
 
 // Four against five in the same bar.
-t.sequence('four', { steps: 4, span: '1 bar' }, () => __('#kick').trigger());
-t.sequence('five', { steps: 5, span: '1 bar' }, () => __('#hat').trigger());</code></pre>
+__.transport.sequence('four', { steps: 4, span: '1 bar' }, () => __('#kick').trigger());
+__.transport.sequence('five', { steps: 5, span: '1 bar' }, () => __('#hat').trigger());</code></pre>
         <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
 
 // A swung pattern with a quick double hit on the last step.
-t.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) => {
+__.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) => {
   if (!ev.value) return;
   __('#hat').trigger();
   if (ev.index === 3) __('#hat').trigger({ at: ev.at(0.5), velocity: 0.5 });
 });</code></pre>
         <p>
-          Giving a sequence a name lets you change it: calling <code>t.sequence</code> again with
-          the same name replaces the old one without losing its place.
-          <code>t.every('1/4', fn)</code> calls a function at a regular interval with no pattern,
-          and <code>t.at('2 bars', fn)</code> calls one once.
+          Giving a sequence a name lets you change it: calling
+          <code>__.transport.sequence</code> again with the same name replaces the old one without
+          losing its place. <code>__.transport.every('1/4', fn)</code> calls a function at a regular
+          interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
 
         <h2 id="demo-names">Names available in the live demo</h2>
@@ -480,10 +480,12 @@ t.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) => {
                 <td>The engine itself: <code>engine.buffers</code>, <code>engine.context</code></td>
               </tr>
               <tr>
-                <td><code>t</code></td>
+                <td><code>__.transport</code></td>
                 <td>
-                  The transport: <code>t.bpm</code>, <code>t.sequence(...)</code>,
-                  <code>t.every(...)</code>, <code>t.at(...)</code>
+                  The transport: <code>.bpm</code>, <code>.sequence(...)</code>,
+                  <code>.every(...)</code>, <code>.at(...)</code>. If you use it a lot, give it a
+                  short name:
+                  <code>const t = __.transport;</code>
                 </td>
               </tr>
               <tr>

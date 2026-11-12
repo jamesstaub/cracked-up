@@ -60,7 +60,7 @@ Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs p
 - `.connect('#main-output')` is `.to('main')`: chains end at a named bus.
 - `class` takes space-separated names, not comma-separated.
 - `*` does not include the nodes inside macros. Reach those with `polysynth lowpass` or `polysynth *`.
-- `__.loop(...)` and `.bind('step', ...)` are `transport.steps(...)` and `transport.sequence(...)`. The callback receives an event with the exact audio time.
+- `__.loop(...)` and `.bind('step', ...)` are `__.transport.steps(...)` and `__.transport.sequence(...)`. The callback receives an event with the exact audio time.
 
 ## Decisions (from the owner, 2026-11-11)
 
@@ -69,7 +69,7 @@ Node types: see `src/nodes/builtin.ts`, or the generated reference in the docs p
 3. **Shortcut setters: yes**, generated from the registered parameter names. A parameter whose name is already a selection method (today only `release`) is set with `.set()`.
 4. **`*` excludes macro internals**, with descendant selectors and `selection.select()` as the way in.
 5. **Buses carry no built-in meaning.** The library has no notion of tracks or a master. The engine has one bus, `main`, feeding the output. Any other bus is created by the caller and feeds `main` until routed elsewhere. `.to('name')` fails clearly if no bus of that name exists in the scope or its parents.
-6. **One transport per engine; sequences belong to it,** not to scopes. A host that ties sequences to something of its own (a track, say) keeps the handles `sequence()` returns, or their names, and stops them itself.
+6. **One transport per engine; sequences belong to it.** Scripts reach it as `__.transport`: the same transport seen from that `__`'s scope. Tempo, position and timing are shared; sequence names are per scope, and disposing a scope removes what it scheduled. `engine.transport` is the engine-wide view.
 7. **Commands cover everything.** Every mutating method and its matching command run the same internal operation, so a command can do whatever a method can. Macros add their own operations as `methods`, reachable through the `call` command. `src/api/remote.ts` describes how a sandboxed script gets the full scripting API on top of that: writes become commands, reads come from a mirrored snapshot, and sequence callbacks run in the sandbox ahead of time.
 
 ## Open points

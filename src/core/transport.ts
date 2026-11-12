@@ -33,9 +33,14 @@ function mod(value: number, divisor: number): number {
  * Something that produces events at positions on the transport. The scheduler repeatedly asks every
  * source for its next position and fires the earliest.
  */
+/** A scope that schedules through its own view of the transport, or null for the engine-wide view. */
+type Owner = object | null;
+
 interface Source {
   readonly order: number;
   readonly serial: number;
+  /** Who scheduled it: a scope, or null for the engine itself. Decides what a scope's clean-up removes. */
+  owner: Owner;
   /** Position in beats of the next event, or null when there is none. */
   peek(): number | null;
   /** Re-arms so the next event is the first at or after the position. */
@@ -52,6 +57,7 @@ interface Source {
 
 class SequenceImpl implements Source {
   readonly serial: number;
+  owner: Owner = null;
   name: string | null;
   muted = false;
 
@@ -236,6 +242,7 @@ class SequenceImpl implements Source {
 /** A single callback at one position. */
 class OneShot implements Source {
   readonly order = 0;
+  owner: Owner = null;
   private armed = false;
   private fired = false;
 
@@ -271,6 +278,7 @@ class OneShot implements Source {
 
 /** A callback repeated at a fixed interval. */
 class Repeater implements Source {
+  owner: Owner = null;
   private next = 0;
 
   constructor(
@@ -379,7 +387,9 @@ export class TransportImpl {
   private processing = false;
 
   private sources: Source[] = [];
-  private named = new Map<string, SequenceImpl>();
+  /** Named sequences, per owner: each scope has its own names. */
+  private named = new Map<Owner, Map<string, SequenceImpl>>();
+  private views = new Map<Owner, TransportView>();
   private serial = 0;
 
   private ticker = new Ticker();
@@ -724,56 +734,61 @@ export class TransportImpl {
   }
 
   // --- Sequences and scheduled callbacks ----------------------------------------------------------
+  // These take the owner that is scheduling. Scripts and hosts reach them through a TransportView.
 
-  sequence(options: SequenceOptions, callback: SequenceCallback): Sequence;
-  sequence(name: string, options: SequenceOptions, callback: SequenceCallback): Sequence;
-  sequence(
-    first: string | SequenceOptions,
-    second: SequenceOptions | SequenceCallback,
-    third?: SequenceCallback,
+  /** The transport as one owner sees it. The same view is returned each time for the same owner. */
+  view(owner: Owner): TransportView {
+    let view = this.views.get(owner);
+    if (!view) {
+      view = new TransportView(this, owner);
+      this.views.set(owner, view);
+    }
+    return view;
+  }
+
+  addSequence(
+    owner: Owner,
+    name: string | null,
+    options: SequenceOptions,
+    callback: SequenceCallback,
   ): Sequence {
-    const name = typeof first === 'string' ? first : null;
-    const options = (typeof first === 'string' ? second : first) as SequenceOptions;
-    const callback = (typeof first === 'string' ? third : second) as SequenceCallback;
     if (typeof callback !== 'function')
       throw new TypeError('A sequence needs a callback function.');
-
-    const existing = name === null ? undefined : this.named.get(name);
+    const existing = name === null ? undefined : this.named.get(owner)?.get(name);
     if (existing) {
       existing.replace(options, callback);
       existing.rearm(this.armPosition());
       return existing as unknown as Sequence;
     }
     const created = new SequenceImpl(this, this.serial++, name, options, callback);
+    created.owner = owner;
     created.reset(this.armPosition());
     this.sources.push(created);
-    if (name !== null) this.named.set(name, created);
+    if (name !== null) {
+      let names = this.named.get(owner);
+      if (!names) {
+        names = new Map();
+        this.named.set(owner, names);
+      }
+      names.set(name, created);
+    }
     return created as unknown as Sequence;
   }
 
-  steps(pattern: Pattern, callback: StepCallback): Sequence;
-  steps(name: string, pattern: Pattern, callback: StepCallback): Sequence;
-  steps(first: string | Pattern, second: Pattern | StepCallback, third?: StepCallback): Sequence {
-    // Two strings and a function means (name, pattern, callback); otherwise the first argument is the pattern.
-    const named = typeof third === 'function';
-    const pattern = (named ? second : first) as Pattern;
-    const callback = (named ? third : second) as StepCallback;
-    if (typeof callback !== 'function') throw new TypeError('steps() needs a callback function.');
-    const wrapped: SequenceCallback = (event) =>
-      callback(event.index, event.value, event.steps, event);
-    return named
-      ? this.sequence(first as string, { steps: pattern }, wrapped)
-      : this.sequence({ steps: pattern }, wrapped);
-  }
-
-  at(position: Position, callback: (event: ScheduledEvent) => void): Unsubscribe {
+  addOneShot(
+    owner: Owner,
+    position: Position,
+    callback: (event: ScheduledEvent) => void,
+  ): Unsubscribe {
     const source = new OneShot(this, this.serial++, this.beats(position), callback);
+    source.owner = owner;
     source.reset(this.armPosition());
     this.sources.push(source);
     return () => this.remove(source);
   }
 
-  every(
+  addRepeater(
+    owner: Owner,
     interval: Duration,
     callback: (event: ScheduledEvent) => void,
     options: { offset?: Duration; order?: number } = {},
@@ -782,30 +797,44 @@ export class TransportImpl {
     if (!(beats > 1e-6)) throw new RangeError('every() needs an interval longer than zero.');
     const offset = options.offset === undefined ? 0 : this.beats(options.offset);
     const source = new Repeater(this, this.serial++, beats, offset, options.order ?? 0, callback);
+    source.owner = owner;
     source.reset(this.armPosition());
     this.sources.push(source);
     return () => this.remove(source);
   }
 
-  get(name: string): Sequence | undefined {
-    return this.named.get(name) as unknown as Sequence | undefined;
+  getSequence(owner: Owner, name: string): Sequence | undefined {
+    return this.named.get(owner)?.get(name) as unknown as Sequence | undefined;
   }
 
-  clear(name?: string): this {
-    if (name === undefined) {
-      this.sources = [];
-      this.named.clear();
-    } else {
-      const sequence = this.named.get(name);
+  /** Removes one named sequence of an owner, or everything that owner scheduled. */
+  clearOwned(owner: Owner, name?: string): void {
+    if (name !== undefined) {
+      const sequence = this.named.get(owner)?.get(name);
       if (sequence) this.remove(sequence);
+      return;
     }
-    return this;
+    this.sources = this.sources.filter((source) => source.owner !== owner);
+    this.named.delete(owner);
+  }
+
+  /** Removes everything scheduled by anyone. */
+  clearAll(): void {
+    this.sources = [];
+    this.named.clear();
+  }
+
+  /** Forgets an owner that is going away, removing what it scheduled. */
+  release(owner: Owner): void {
+    this.clearOwned(owner);
+    this.views.delete(owner);
   }
 
   remove(source: Source): void {
     this.sources = this.sources.filter((other) => other !== source);
     if (source instanceof SequenceImpl && source.name !== null) {
-      if (this.named.get(source.name) === source) this.named.delete(source.name);
+      const names = this.named.get(source.owner);
+      if (names?.get(source.name) === source) names.delete(source.name);
     }
   }
 
@@ -864,8 +893,187 @@ export class TransportImpl {
     this.playState = 'stopped';
     this.sources = [];
     this.named.clear();
+    this.views.clear();
     this.displayListeners.clear();
     this.displayQueue = [];
     this.events.clear();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The transport as one scope sees it
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The public face of the transport. There is one transport per engine; a view adds only bookkeeping:
+ * it remembers who scheduled what. Tempo, position and timing are shared by every view, while sequence
+ * names belong to the view's owner, and disposing a scope removes what was scheduled through its view.
+ * The engine's own view (`engine.transport`) has no owner and its `clear()` removes everything.
+ */
+export class TransportView {
+  constructor(
+    private impl: TransportImpl,
+    private owner: Owner,
+  ) {}
+
+  get bpm(): number {
+    return this.impl.bpm;
+  }
+  set bpm(value: number) {
+    this.impl.bpm = value;
+  }
+
+  get swing(): number {
+    return this.impl.swing;
+  }
+  set swing(value: number) {
+    this.impl.swing = value;
+  }
+
+  get timeSignature(): readonly [number, number] {
+    return this.impl.timeSignature;
+  }
+  set timeSignature(value: readonly [number, number]) {
+    this.impl.timeSignature = value;
+  }
+
+  get stepLength(): Duration {
+    return this.impl.stepLength;
+  }
+  set stepLength(value: Duration) {
+    this.impl.stepLength = value;
+  }
+
+  get loop(): { start: Position; end: Position } | null {
+    return this.impl.loop;
+  }
+  set loop(region: { start: Position; end: Position } | null) {
+    this.impl.loop = region;
+  }
+
+  get lookahead(): number {
+    return this.impl.lookahead;
+  }
+  set lookahead(seconds: number) {
+    this.impl.lookahead = seconds;
+  }
+
+  get interval(): number {
+    return this.impl.interval;
+  }
+  set interval(seconds: number) {
+    this.impl.interval = seconds;
+  }
+
+  get clock(): ClockSource {
+    return this.impl.clock;
+  }
+  set clock(source: ClockSource) {
+    this.impl.clock = source;
+  }
+
+  get state(): 'stopped' | 'started' | 'paused' {
+    return this.impl.state;
+  }
+
+  get position(): TransportPosition {
+    return this.impl.position;
+  }
+
+  start(options?: { at?: number; from?: Position }): this {
+    this.impl.start(options);
+    return this;
+  }
+
+  stop(options?: { at?: number }): this {
+    this.impl.stop(options);
+    return this;
+  }
+
+  pause(options?: { at?: number }): this {
+    this.impl.pause(options);
+    return this;
+  }
+
+  seek(position: Position): this {
+    this.impl.seek(position);
+    return this;
+  }
+
+  sequence(options: SequenceOptions, callback: SequenceCallback): Sequence;
+  sequence(name: string, options: SequenceOptions, callback: SequenceCallback): Sequence;
+  sequence(
+    first: string | SequenceOptions,
+    second: SequenceOptions | SequenceCallback,
+    third?: SequenceCallback,
+  ): Sequence {
+    return typeof first === 'string'
+      ? this.impl.addSequence(
+          this.owner,
+          first,
+          second as SequenceOptions,
+          third as SequenceCallback,
+        )
+      : this.impl.addSequence(this.owner, null, first, second as SequenceCallback);
+  }
+
+  steps(pattern: Pattern, callback: StepCallback): Sequence;
+  steps(name: string, pattern: Pattern, callback: StepCallback): Sequence;
+  steps(first: string | Pattern, second: Pattern | StepCallback, third?: StepCallback): Sequence {
+    // Two strings and a function means (name, pattern, callback); otherwise the first argument is the pattern.
+    const named = typeof third === 'function';
+    const pattern = (named ? second : first) as Pattern;
+    const callback = (named ? third : second) as StepCallback;
+    if (typeof callback !== 'function') throw new TypeError('steps() needs a callback function.');
+    const wrapped: SequenceCallback = (event) =>
+      callback(event.index, event.value, event.steps, event);
+    return this.impl.addSequence(
+      this.owner,
+      named ? (first as string) : null,
+      { steps: pattern },
+      wrapped,
+    );
+  }
+
+  at(position: Position, callback: (event: ScheduledEvent) => void): Unsubscribe {
+    return this.impl.addOneShot(this.owner, position, callback);
+  }
+
+  every(
+    interval: Duration,
+    callback: (event: ScheduledEvent) => void,
+    options?: { offset?: Duration; order?: number },
+  ): Unsubscribe {
+    return this.impl.addRepeater(this.owner, interval, callback, options);
+  }
+
+  get(name: string): Sequence | undefined {
+    return this.impl.getSequence(this.owner, name);
+  }
+
+  clear(name?: string): this {
+    if (name === undefined && this.owner === null) this.impl.clearAll();
+    else this.impl.clearOwned(this.owner, name);
+    return this;
+  }
+
+  onDisplay(listener: (event: SequenceEvent) => void): Unsubscribe {
+    return this.impl.onDisplay(listener);
+  }
+
+  toAudioTime(position: Position): number {
+    return this.impl.toAudioTime(position);
+  }
+
+  toBeats(audioTime: number): number {
+    return this.impl.toBeats(audioTime);
+  }
+
+  seconds(duration: Duration): number {
+    return this.impl.seconds(duration);
+  }
+
+  on<E extends keyof TransportEvents>(event: E, listener: TransportEvents[E]): Unsubscribe {
+    return this.impl.on(event, listener);
   }
 }

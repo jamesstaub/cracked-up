@@ -22,6 +22,7 @@ import { CrackedUpError, Emitter, toGraphError } from './errors';
 import { NodeImpl } from './node';
 import { ParamImpl } from './param';
 import type { SelectionImpl } from './selection';
+import type { TransportView } from './transport';
 
 const COMMON_KEYS = new Set(['id', 'class', 'tags', 'bypass', 'modulates']);
 
@@ -74,8 +75,18 @@ export class ScopeImpl {
     Object.defineProperties(api, {
       scope: { value: this, enumerable: true },
       bus: { value: (busName: string) => this.bus(busName), enumerable: true },
+      transport: { get: () => this.transport, enumerable: true },
     });
     this.$ = api;
+  }
+
+  /**
+   * The transport as this scope sees it. Sequence names are this scope's own, and what is scheduled
+   * through it is removed when the scope is disposed. The root scope shares the engine's view.
+   */
+  get transport(): TransportView {
+    const isRoot = this.parent === null && this.owner === null;
+    return this.engine.transportImpl.view(isRoot ? null : this);
   }
 
   get children(): readonly ScopeImpl[] {
@@ -388,6 +399,7 @@ export class ScopeImpl {
   dispose(): void {
     if (this.disposed) return;
     for (const child of [...this.childScopes]) child.dispose();
+    if (this.parent !== null || this.owner !== null) this.engine.transportImpl.release(this);
     for (const node of [...this.nodeList]) node.dispose();
     for (const bus of this.buses.values()) bus.dispose();
     this.buses.clear();

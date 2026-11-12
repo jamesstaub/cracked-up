@@ -2,7 +2,7 @@ import type { NodeTypeInfo } from '../src';
 
 /**
  * A short runnable example for a node type, built from its metadata, for the docs page. It is written
- * for the live demo, where `__` builds and selects and `t` is the transport.
+ * for the live demo, where `__` builds and selects and `__.transport` is the transport.
  *
  * A test runs the example for every registered type, so a new node type cannot ship with a broken one.
  */
@@ -12,7 +12,7 @@ export function exampleFor(info: NodeTypeInfo): string {
   const argument = shorthand ? String(shorthand.default) : '';
 
   if (type === 'sampler') {
-    return `__().sampler({ id: 'hit', buffer: 'kick' }).to('main');\nt.every('1/4', () => __('#hit').trigger());`;
+    return `__().sampler({ id: 'hit', buffer: 'kick' }).to('main');\n__.transport.every('1/4', () => __('#hit').trigger());`;
   }
   switch (info.category) {
     case 'source':
@@ -43,13 +43,13 @@ export function exampleFor(info: NodeTypeInfo): string {
       // An envelope is silent until triggered.
       return (
         `__().saw(110).${type}({ id: 'env' }).gain(0.2).to('main');\n` +
-        `t.every('1/4', () => __('#env').trigger({ duration: 0.1 }));`
+        `__.transport.every('1/4', () => __('#env').trigger({ duration: 0.1 }));`
       );
     case 'synth':
       // Plays a short arpeggio from a sequence.
       return (
         `__().${type}({ id: 'synth', shape: 'saw', cutoff: 1500, release: 0.3 }).to('main');\n` +
-        `t.sequence({ steps: 8, step: '1/8' }, (ev) =>\n` +
+        `__.transport.sequence({ steps: 8, step: '1/8' }, (ev) =>\n` +
         `  __('#synth').trigger({ pitch: [48, 55, 60, 64][ev.index % 4], duration: 0.15 }));`
       );
     case 'delay':
@@ -57,7 +57,7 @@ export function exampleFor(info: NodeTypeInfo): string {
       // Easier to hear on a short sound than on a drone.
       return (
         `__().sampler({ id: 'hit', buffer: 'snare' }).${type}(${argument}).gain(0.5).to('main');\n` +
-        `t.every('1/2', () => __('#hit').trigger());`
+        `__.transport.every('1/2', () => __('#hit').trigger());`
       );
     default:
       if (type === 'panner') return `__().saw(110).gain(0.2).panner(-0.8).to('main');`;

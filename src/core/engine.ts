@@ -23,6 +23,7 @@ import type { RegistryEntry } from './registry';
 import { ScopeImpl } from './scope';
 import { SelectionImpl } from './selection';
 import { TransportImpl } from './transport';
+import type { TransportView } from './transport';
 
 /** Fixed seed for offline engines, so a render repeats exactly unless the caller asks otherwise. */
 const OFFLINE_SEED = 0x5eed;
@@ -206,8 +207,9 @@ export class EngineImpl {
     return this.registryImpl;
   }
 
-  get transport(): TransportImpl {
-    return this.transportImpl;
+  /** The engine-wide view of the transport: no owner, and `clear()` removes everything. */
+  get transport(): TransportView {
+    return this.transportImpl.view(null);
   }
 
   get $(): ScopeApi {

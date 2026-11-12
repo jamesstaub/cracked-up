@@ -1,20 +1,21 @@
 /**
  * Live demo: a text box whose code is re-run on every key up.
  *
- * Each run builds into a fresh scope and schedules its own sequences. If the code compiles and runs,
- * the previous run's nodes and sequences are removed; if it fails, the new run's are thrown away and
- * the previous run keeps playing, so a half-typed line never interrupts the sound. Sequences take their
- * place from the transport's position, so a new run comes in exactly in time with the old one.
+ * Each run gets its own scope: `__` builds nodes in it, and `__.transport` schedules sequences that
+ * belong to it. If the code compiles and runs, the previous run's scope is disposed, which removes its
+ * nodes and sequences; if it fails, the new scope is disposed instead and the previous run keeps
+ * playing, so a half-typed line never interrupts the sound. Sequences take their place from the
+ * transport's position, so a new run comes in exactly in time with the old one.
  */
 
 import { createEngine } from '../src';
-import type { Engine, Scope, Transport } from '../src';
+import type { Engine, Scope } from '../src';
 import * as util from '../src/util';
 
 const DEFAULT_CODE = `// Edit this code: it re-runs on every key up.
 // While it has an error, the last working version keeps playing.
 
-t.bpm = 110;
+__.transport.bpm = 110;
 
 // Three samplers. 'kick', 'snare' and 'hat' are made by this page.
 __().sampler({ id: 'kick', buffer: 'kick' }).to('main');
@@ -22,17 +23,17 @@ __().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('main');
 __().sampler({ id: 'hat', buffer: 'hat' }).highpass(6000).gain(0.35).to('main');
 
 // A pattern is a string or an array. Steps are sixteenth notes unless you say otherwise.
-t.sequence('kick', { steps: 'x..x..x...x..x..' }, (ev) => {
+__.transport.sequence('kick', { steps: 'x..x..x...x..x..' }, (ev) => {
   if (ev.value) __('#kick').trigger();
 });
 
 // Quarter-note steps: the snare lands on beats 2 and 4.
-t.sequence('snare', { steps: [0, 1], step: '1/4' }, (ev) => {
+__.transport.sequence('snare', { steps: [0, 1], step: '1/4' }, (ev) => {
   if (ev.value) __('#snare').trigger();
 });
 
 // Five hits spread evenly over eight swung eighth notes.
-t.sequence('hat', { steps: euclid(5, 8), step: '1/8', swing: 0.58 }, (ev) => {
+__.transport.sequence('hat', { steps: euclid(5, 8), step: '1/8', swing: 0.58 }, (ev) => {
   if (ev.value) __('#hat').trigger({ speed: 1 + ev.index * 0.04 });
 });
 
@@ -46,7 +47,7 @@ __().saw({ id: 'bass', gate: 'closed' })
 __().sine(0.2).gain(300).modulate('#filter', 'frequency');
 
 // Step values can be any number. Here each one is a pitch in Hz, and 0 is a rest.
-t.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step: '1/8' }, (ev) => {
+__.transport.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step: '1/8' }, (ev) => {
   if (ev.value) {
     __('#bass').set({ frequency: ev.value }).trigger({ duration: ev.duration * 0.6 });
   }
@@ -55,8 +56,8 @@ t.sequence('bass', { steps: [55, 0, 55, 82.4, 0, 65.4, 0, 110], step: '1/8' }, (
 
 // The key carries a version. Bump it whenever the names available to demo code change, so code saved
 // by an older version of the page (which may use names that no longer exist) is not loaded.
-const STORAGE_KEY = 'cracked-up-demo-code-v2';
-const OLD_STORAGE_KEYS = ['cracked-up-demo-code'];
+const STORAGE_KEY = 'cracked-up-demo-code-v3';
+const OLD_STORAGE_KEYS = ['cracked-up-demo-code', 'cracked-up-demo-code-v2'];
 
 const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
 const toggle = document.querySelector<HTMLButtonElement>('#toggle')!;
@@ -64,7 +65,7 @@ const reset = document.querySelector<HTMLButtonElement>('#reset')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
 const message = document.querySelector<HTMLDivElement>('#message')!;
 
-/** The names user code can use besides `__`, `t` and `engine`. */
+/** The names user code can use besides `__` and `engine`. */
 const helpers = {
   euclid: util.euclid,
   pitchToFreq: util.pitchToFreq,
@@ -77,7 +78,6 @@ const helpers = {
 let engine: Engine | null = null;
 let booting: Promise<Engine> | null = null;
 let liveScope: Scope | null = null;
-let removeLiveSequences: () => void = () => {};
 let generation = 0;
 /** The code most recently attempted, so keys that do not change the text (arrows, shift) do nothing. */
 let lastTried: string | null = null;
@@ -139,82 +139,6 @@ function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-/**
- * The transport as one run of the user's code sees it (`t`). Everything the run schedules is
- * remembered so it can be removed as a whole, and names are private to the run, so a new run never
- * overwrites the sequences of the run that is still playing.
- */
-function transportForRun(transport: Transport, run: number) {
-  const made: (() => void)[] = [];
-  const key = (name: string) => `run${run}:${name}`;
-  const facade = {
-    get bpm() {
-      return transport.bpm;
-    },
-    set bpm(value: number) {
-      transport.bpm = value;
-    },
-    get swing() {
-      return transport.swing;
-    },
-    set swing(value: number) {
-      transport.swing = value;
-    },
-    get stepLength() {
-      return transport.stepLength;
-    },
-    set stepLength(value: Transport['stepLength']) {
-      transport.stepLength = value;
-    },
-    get position() {
-      return transport.position;
-    },
-    sequence(...args: unknown[]) {
-      const [first, second, third] = args as Parameters<Transport['sequence']> & unknown[];
-      const sequence =
-        typeof first === 'string'
-          ? transport.sequence(key(first), second as never, third as never)
-          : transport.sequence(first as never, second as never);
-      made.push(() => sequence.stop());
-      return sequence;
-    },
-    steps(...args: unknown[]) {
-      const [first, second, third] = args;
-      const sequence =
-        typeof third === 'function'
-          ? transport.steps(key(first as string), second as never, third as never)
-          : transport.steps(first as never, second as never);
-      made.push(() => sequence.stop());
-      return sequence;
-    },
-    at(...args: Parameters<Transport['at']>) {
-      const cancel = transport.at(...args);
-      made.push(cancel);
-      return cancel;
-    },
-    every(...args: Parameters<Transport['every']>) {
-      const cancel = transport.every(...args);
-      made.push(cancel);
-      return cancel;
-    },
-    get(name: string) {
-      return transport.get(key(name));
-    },
-    clear(name?: string) {
-      if (name === undefined) removeAll();
-      else transport.clear(key(name));
-      return facade;
-    },
-    seconds(duration: Parameters<Transport['seconds']>[0]) {
-      return transport.seconds(duration);
-    },
-  };
-  const removeAll = () => {
-    for (const remove of made.splice(0)) remove();
-  };
-  return { facade, removeAll };
-}
-
 function run(target: Engine): void {
   const code = editor.value;
   if (code === lastTried) return;
@@ -228,36 +152,29 @@ function run(target: Engine): void {
   // Compile first. A syntax error touches nothing.
   let program: (...args: unknown[]) => void;
   try {
-    program = new Function(
-      '__',
-      't',
-      'engine',
-      ...Object.keys(helpers),
-      `"use strict";\n${code}`,
-    ) as (...args: unknown[]) => void;
+    program = new Function('__', 'engine', ...Object.keys(helpers), `"use strict";\n${code}`) as (
+      ...args: unknown[]
+    ) => void;
   } catch (error) {
     showMessage(describeError(error), true);
     return;
   }
 
   const scope = target.scope(`live-${++generation}`);
-  const { facade, removeAll } = transportForRun(target.transport, generation);
 
   try {
-    program(scope.$, facade, target, ...Object.values(helpers));
+    program(scope.$, target, ...Object.values(helpers));
   } catch (error) {
-    // Runtime error: discard what this run built and leave the previous run playing.
-    removeAll();
+    // Runtime error: discard what this run built and leave the previous run playing. Disposing the
+    // scope removes its nodes and whatever it scheduled through `__.transport`.
     scope.dispose();
     showMessage(describeError(error), true);
     return;
   }
 
   // Success: swap. The old run goes only now, so there is no gap while typing.
-  removeLiveSequences();
   liveScope?.dispose();
   liveScope = scope;
-  removeLiveSequences = removeAll;
   const count = scope.select('*').length;
   showMessage(`Running. ${count} node${count === 1 ? '' : 's'}.`);
 }
@@ -349,9 +266,9 @@ function fillReference(target: Engine): void {
   fillList('helpers', [
     ['__()', 'start a chain'],
     ["__('selector')", 'select nodes'],
-    ['t.sequence(name, options, fn)', 'a repeating pattern'],
-    ['t.every(interval, fn)', 'a repeating callback'],
-    ['t.bpm', 'tempo'],
+    ['__.transport.sequence(name, options, fn)', 'a repeating pattern'],
+    ['__.transport.every(interval, fn)', 'a repeating callback'],
+    ['__.transport.bpm', 'tempo'],
     ...Object.keys(helpers).map((name) => [name, ''] as const),
   ]);
 }

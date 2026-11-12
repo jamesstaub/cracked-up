@@ -328,4 +328,87 @@ describe('transport', () => {
     engine.root.dispatch([{ op: 'clearSequence', name: 'part' }]);
     expect(t.get('part')).toBeUndefined();
   });
+
+  describe('seen from a scope (`__.transport`)', () => {
+    it('is the one transport: tempo and position are shared by every view', async () => {
+      const engine = await clicker(1);
+      const a = engine.scope('a');
+      expect(engine.$.transport).toBe(engine.transport);
+      expect(a.$.transport).toBe(a.transport);
+      expect(a.transport).not.toBe(engine.transport);
+      a.transport.bpm = 90;
+      expect(engine.transport.bpm).toBe(90);
+      expect(engine.scope('b').transport.bpm).toBe(90);
+      a.transport.start();
+      expect(engine.transport.state).toBe('started');
+    });
+
+    it('keeps sequence names per scope', async () => {
+      const engine = await clicker(1);
+      const a = engine.scope('a');
+      const b = engine.scope('b');
+      const calls = { a: 0, b: 0 };
+      const fromA = a.transport.sequence('kick', { steps: 1, step: '1/4' }, () => calls.a++);
+      const fromB = b.$.transport.sequence('kick', { steps: 1, step: '1/8' }, () => calls.b++);
+      expect(fromA).not.toBe(fromB);
+      expect(a.transport.get('kick')).toBe(fromA);
+      expect(b.transport.get('kick')).toBe(fromB);
+      expect(engine.transport.get('kick')).toBeUndefined();
+      engine.transport.start();
+      await engine.render();
+      expect(calls).toEqual({ a: 2, b: 4 });
+    });
+
+    it('disposing a scope removes what it scheduled and nothing else', async () => {
+      const engine = await clicker(1);
+      const a = engine.scope('a');
+      const b = engine.scope('b');
+      const calls = { a: 0, b: 0, root: 0 };
+      a.transport.sequence('part', { steps: 1, step: '1/4' }, () => calls.a++);
+      a.transport.sequence({ steps: 1, step: '1/4' }, () => calls.a++);
+      a.transport.every('1/4', () => calls.a++);
+      a.transport.at(0, () => calls.a++);
+      b.transport.sequence('part', { steps: 1, step: '1/4' }, () => calls.b++);
+      engine.transport.every('1/4', () => calls.root++);
+      a.dispose();
+      engine.transport.start();
+      await engine.render();
+      expect(calls).toEqual({ a: 0, b: 2, root: 2 });
+    });
+
+    it("a scope's clear() removes its own; the engine's removes everything", async () => {
+      const engine = await clicker(1);
+      const a = engine.scope('a');
+      const b = engine.scope('b');
+      const calls = { a: 0, b: 0 };
+      a.transport.sequence({ steps: 1, step: '1/4' }, () => calls.a++);
+      b.transport.sequence({ steps: 1, step: '1/4' }, () => calls.b++);
+      a.transport.clear();
+      engine.transport.start();
+      await engine.render();
+      expect(calls).toEqual({ a: 0, b: 2 });
+
+      const other = await clicker(1);
+      let count = 0;
+      other.scope('a').transport.sequence({ steps: 1 }, () => count++);
+      other.transport.clear();
+      other.transport.start();
+      await other.render();
+      expect(count).toBe(0);
+    });
+
+    it('sequence commands reach only the scope they are dispatched to', async () => {
+      const engine = await clicker(1);
+      const a = engine.scope('a');
+      const b = engine.scope('b');
+      const inA = a.transport.sequence('part', { steps: [0, 0] }, () => {});
+      const inB = b.transport.sequence('part', { steps: [0, 0] }, () => {});
+      a.dispatch([{ op: 'setStep', name: 'part', index: 0, value: 7 }]);
+      expect(inA.steps).toEqual([7, 0]);
+      expect(inB.steps).toEqual([0, 0]);
+      a.dispatch([{ op: 'clearSequence', name: 'part' }]);
+      expect(a.transport.get('part')).toBeUndefined();
+      expect(b.transport.get('part')).toBe(inB);
+    });
+  });
 });

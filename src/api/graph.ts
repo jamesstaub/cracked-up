@@ -362,6 +362,8 @@ export interface ScopeApi {
 
   readonly scope: Scope;
   bus(name: string): Bus;
+  /** The transport, as seen from this scope. See `Scope.transport`. */
+  readonly transport: import('./transport').Transport;
 }
 
 /** A scope's readable state as plain data: its graph with current base values, and its buses. */
@@ -383,6 +385,14 @@ export interface Scope {
 
   /** Gets or creates a child scope. */
   scope(name: string): Scope;
+
+  /**
+   * The engine's transport, as seen from this scope. There is one transport, so tempo, position and
+   * timing are shared. What differs per scope is bookkeeping: sequence names are the scope's own (two
+   * scopes can each have a sequence called 'kick'), and everything scheduled through this view is
+   * removed when the scope is disposed.
+   */
+  readonly transport: import('./transport').Transport;
 
   /** `__` bound to this scope. */
   readonly $: ScopeApi;
@@ -427,8 +437,7 @@ export interface Scope {
   snapshot(): ScopeSnapshot;
 
   /**
-   * Disposes every node, bus and child scope. Sequences belong to the transport, not to scopes; a host
-   * that ties sequences to a scope keeps their handles (or names) and stops them itself.
+   * Disposes every node, bus and child scope, and removes what was scheduled through `transport`.
    */
   dispose(): void;
 }

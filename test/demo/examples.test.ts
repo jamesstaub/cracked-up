@@ -4,7 +4,7 @@ import { offlineEngine, ones } from '../core/setup';
 
 /**
  * The docs page shows one generated example per node type. Each must run as written, against the
- * same names the live demo provides (`__`, `t`, and the 'kick' / 'snare' / 'hat' buffers).
+ * same names the live demo provides (`__`, `engine`, and the 'kick' / 'snare' / 'hat' buffers).
  */
 describe('docs examples', () => {
   it('runs the generated example for every registered node type', async () => {
@@ -17,7 +17,7 @@ describe('docs examples', () => {
       const errors: string[] = [];
       engine.on('error', (error) => errors.push(error.message));
       try {
-        new Function('__', 't', 'engine', exampleFor(info))(engine.$, engine.transport, engine);
+        new Function('__', 'engine', exampleFor(info))(engine.$, engine);
         engine.transport.start();
         await engine.render();
       } catch (error) {

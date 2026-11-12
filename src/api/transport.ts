@@ -172,9 +172,12 @@ export interface Transport {
     options?: { offset?: Duration; order?: number },
   ): Unsubscribe;
 
-  /** Looks up a named sequence. */
+  /** Looks up a named sequence. Names belong to the scope whose view this is. */
   get(name: string): Sequence | undefined;
-  /** Removes one named sequence, or everything scheduled on the transport. */
+  /**
+   * Removes one named sequence, or with no name everything scheduled through this view of the
+   * transport. On the engine's own view (`engine.transport`) that is everything, from every scope.
+   */
   clear(name?: string): this;
 
   /**

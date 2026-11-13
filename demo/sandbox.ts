@@ -1,7 +1,7 @@
 /**
  * Sandboxed script demo: the page owns the engine, a sandboxed frame runs the code.
  *
- *   textarea --code--> frame: remote.build(code) --commands--> page: link -> scope
+ *   editor --code--> frame:   remote.build(code) --commands--> page: link -> scope
  *                      frame: sequence callbacks <--events---- page: transport
  */
 
@@ -9,8 +9,10 @@ import { createEngine } from '../src';
 import type { Engine } from '../src';
 import { linkRemote } from '../src/remote';
 import type { Link } from '../src/remote';
+import { catalogFromRemoteState, createCatalogStore, createEditor } from '../src/editor';
+import type { EditorCatalog } from '../src/editor';
 import { BREAK, BREAK_CREDIT, loadBreak } from './break';
-import { attachHighlighter } from './highlight';
+import { DEMO_BUFFERS, builtinTypes } from './catalog';
 import { addSamples } from './samples';
 import type { FromFrame, ToFrame } from './sandbox-protocol';
 
@@ -66,7 +68,6 @@ __.transport.every('1/4', (ev) => {
 // document.cookie; localStorage.getItem('x'); parent.document.title;
 `;
 
-const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
 const toggle = document.querySelector<HTMLButtonElement>('#toggle')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
 const message = document.querySelector<HTMLDivElement>('#message')!;
@@ -87,6 +88,56 @@ function showMessage(text: string, isError: boolean): void {
   message.textContent = [said.text, notice].filter(Boolean).join('\n');
   message.classList.toggle('error', isError);
 }
+
+// --- The editor ---------------------------------------------------------------------------------------
+
+/**
+ * The editor is in the page, and the page side of a sandbox has no script objects, only data. So the
+ * catalog is made from what the link tells the frame (`link.state()`): the node types, including
+ * ones the script defined itself, and the buffers.
+ */
+const EXTRA: EditorCatalog = {
+  globals: [
+    {
+      name: 'define',
+      signature: 'define(definition)',
+      description:
+        'Defines a node type in the sandbox: { type, params, build(__), trigger(__, options) }.',
+    },
+  ],
+};
+
+const catalog = createCatalogStore({ buffers: DEMO_BUFFERS, ...EXTRA });
+void builtinTypes().then((types) => {
+  if (!link) catalog.update({ types });
+});
+
+function refreshCatalog(): void {
+  if (!link) return;
+  const fromLink = catalogFromRemoteState(link.state(), EXTRA);
+  const known = new Set(
+    (fromLink.buffers ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.key)),
+  );
+  catalog.set({
+    ...fromLink,
+    buffers: [
+      ...(fromLink.buffers ?? []),
+      ...DEMO_BUFFERS.filter((entry) => !known.has(entry.key)),
+    ],
+  });
+}
+
+const editor = createEditor({
+  parent: document.querySelector<HTMLDivElement>('#editor')!,
+  doc: DEFAULT_CODE,
+  catalog,
+  errorPanel: false,
+  onChange: () => {
+    if (engine) sendCode();
+    else void start();
+  },
+});
+Object.assign(window, { editor });
 
 // --- Round-trip timing --------------------------------------------------------------------------------
 
@@ -135,6 +186,10 @@ const frameReady = new Promise<void>((resolve) => {
       }
       link?.receive(data.message);
     } else if (data.kind === 'result') {
+      // A script that ran may have defined node types; the link knows them now.
+      refreshCatalog();
+      if (data.error === null) editor.clearError();
+      else editor.showError(data.error);
       showMessage(
         data.error ?? `Running in the sandbox. ${data.nodes} node${data.nodes === 1 ? '' : 's'}.`,
         data.error !== null,
@@ -188,6 +243,8 @@ function boot(): Promise<void> {
       allow: (command) => command.op !== 'loadBuffer',
     });
     toFrame({ kind: 'init', state: link.state() });
+    created.buffers.on('ready', refreshCatalog);
+    refreshCatalog();
     engine = created;
     // For looking at the page's engine from the browser's console. The frame cannot reach it.
     Object.assign(window, { engine: created });
@@ -204,16 +261,9 @@ async function start(): Promise<void> {
   sendCode();
 }
 
-editor.value = DEFAULT_CODE;
-attachHighlighter(editor, document.querySelector<HTMLPreElement>('#highlight')!);
-
 const credit = document.querySelector<HTMLAnchorElement>('#break-credit')!;
 credit.href = BREAK.page;
 credit.textContent = BREAK_CREDIT;
-editor.addEventListener('keyup', () => {
-  if (engine) sendCode();
-  else void start();
-});
 toggle.addEventListener('click', () => {
   if (engine?.context.state === 'running') {
     void (engine.context as AudioContext).suspend().then(updateStatus);

@@ -103,66 +103,31 @@ main {
   grid-template-columns: minmax(0, 1fr) 260px;
   min-height: 0;
 }
-/* The editor is a textarea with transparent text over a <pre> that shows the same text in colour.
-   Everything that places a glyph is set once, for both, so the caret sits on the text it edits. */
+/* The editor is cracked-up/editor, which brings its own styles. It fills this box. Its colours are
+   the page's: the editor reads them from the --cu-* properties below. */
 .editor {
-  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--panel);
-}
-#editor,
-#highlight {
-  display: block;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  border: 0;
-  padding: 16px;
-  font:
-    13px/1.6 ui-monospace,
-    'SF Mono',
-    Menlo,
-    Consolas,
-    monospace;
-  font-variant-ligatures: none;
-  letter-spacing: 0;
-  text-align: left;
-  tab-size: 2;
-  white-space: pre;
-  overflow-wrap: normal;
-  word-break: normal;
-}
-#highlight {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  color: var(--text);
-  pointer-events: none;
-  user-select: none;
-}
-#highlight code {
-  display: block;
-  font: inherit;
-}
-#editor {
-  position: relative;
-  resize: none;
-  outline: 0;
-  border-radius: 0;
-  background: transparent;
-  color: transparent;
-  caret-color: var(--text);
-  overflow: auto;
-}
-#editor::selection {
-  background: var(--code-selection);
-  color: transparent;
+  --cu-bg: var(--panel);
+  --cu-text: var(--text);
+  --cu-muted: var(--muted);
+  --cu-border: var(--border);
+  --cu-accent: var(--accent);
+  --cu-panel-bg: var(--bg);
+  --cu-selection: var(--code-selection);
+  --cu-error-bg: var(--error-bg);
+  --cu-error-text: var(--error-text);
+  --cu-code-comment: var(--code-comment);
+  --cu-code-string: var(--code-string);
+  --cu-code-number: var(--code-number);
+  --cu-code-keyword: var(--code-keyword);
+  --cu-code-dunder: var(--code-dunder);
+  --cu-code-property: var(--code-property);
 }
 
-/* Token colours, for the editor and for the examples in the docs. Weight and slant never change:
-   a bold or italic glyph of another width would move the text off the caret. */
+/* Token colours for the examples in the docs. Weight and slant never change. */
 .tok-comment {
   color: var(--code-comment);
 }
@@ -212,6 +177,13 @@ aside ul {
 aside li span {
   color: var(--muted);
 }
+/* A row that puts its text in the editor when clicked. */
+aside li.insert {
+  cursor: pointer;
+}
+aside li.insert:hover {
+  color: var(--accent);
+}
 aside h3 {
   font-size: 11px;
   font-weight: 600;
@@ -222,7 +194,6 @@ aside h3 {
 #helper-groups li {
   padding-left: 1em;
   text-indent: -1em;
-  cursor: help;
 }
 aside .more {
   font-size: 12px;

@@ -1,7 +1,4 @@
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
-
-const page = (name: string): string => fileURLToPath(new URL(`./${name}.html`, import.meta.url));
 
 export default defineConfig({
   // Relative addresses, so the built site works wherever it is put (GitHub Pages serves it under
@@ -11,16 +8,17 @@ export default defineConfig({
   server: { cors: true },
   preview: { cors: true },
   build: {
-    outDir: fileURLToPath(new URL('../demo-dist', import.meta.url)),
+    // Paths here are relative to this folder.
+    outDir: '../demo-dist',
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        index: page('index'),
-        docs: page('docs'),
-        sandbox: page('sandbox'),
-        'sandbox-frame': page('sandbox-frame'),
-        collaboration: page('collaboration'),
-      },
+      input: [
+        'index.html',
+        'docs.html',
+        'sandbox.html',
+        'sandbox-frame.html',
+        'collaboration.html',
+      ],
     },
   },
 });

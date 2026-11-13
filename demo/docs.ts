@@ -11,7 +11,13 @@ import { INTERACTION_DOCS } from '../src/util';
 import { exampleFor } from './examples';
 import { HELPER_GROUPS } from './helpers';
 import { highlightBlocks } from './highlight';
-import { MIDI_FUNCTIONS, MIDI_MEMBERS, MIDI_OUT_MEMBERS } from './midi-reference';
+import {
+  MIDI_EVENT_MEMBERS,
+  MIDI_FOLLOW_MEMBERS,
+  MIDI_FUNCTIONS,
+  MIDI_MEMBERS,
+  MIDI_OUT_MEMBERS,
+} from './midi-reference';
 import type { MemberDoc } from './midi-reference';
 
 const CATEGORY_TITLES: Record<string, string> = {
@@ -250,6 +256,20 @@ const MIDI: readonly MemberSection[] = [
     short: 'out.',
     id: 'midi-out',
     members: MIDI_OUT_MEMBERS,
+  },
+  {
+    title: 'What midi.follow() gives',
+    prefix: 'follow.',
+    short: 'follow.',
+    id: 'midi-follow',
+    members: MIDI_FOLLOW_MEMBERS,
+  },
+  {
+    title: 'The message a midi.on listener is given',
+    prefix: 'message.',
+    short: 'message.',
+    id: 'midi-message',
+    members: MIDI_EVENT_MEMBERS,
   },
 ];
 

@@ -1023,8 +1023,9 @@ const file = new Blob([encodeWav(mix, { bitDepth: 24 })], { type: 'audio/wav' })
         <p>
           The live demo has done this for you: a <code>midi</code> object is there by that name, and
           the browser asks you to allow MIDI the first time your code uses it. Each run of the code
-          replaces the listeners and bindings of the run before. With a keyboard plugged in, this
-          plays a synth from it:
+          replaces the listeners and bindings of the run before, and a <code>follow</code> or
+          <code>sendClock</code> that has not changed is left running, so editing the code does not
+          restart the sync. With a keyboard plugged in, this plays a synth from it:
         </p>
         <pre><code>__().polysynth({ id: 'keys' }).to('main');
 midi.play(() =&gt; __('#keys'));
@@ -1100,6 +1101,25 @@ follow.stop();   // go back to the transport's own tempo</code></pre>
           in-browser clocks only. It has not yet been measured against real hardware, where the MIDI
           interface and driver add their own delay and unevenness.
         </p>
+
+        <h3>Code that is run again and again</h3>
+        <p>
+          A script that is re-run on every edit would add its listeners again each time, and would
+          start following the clock afresh, which takes about a beat to settle. Run it through
+          <code>midi.build</code> and its calls replace the ones the last run made. Listeners,
+          bindings and <code>play</code> are swapped. A <code>follow</code> or
+          <code>sendClock</code> with the same arguments as one already running is kept, with the
+          tempo it has measured. Calls the new run no longer makes are stopped, and if the run
+          throws, nothing changes. This is what the live demo does.
+        </p>
+        <pre data-static><code>// Each time the script changes:
+midi.build((midi) =&gt; runScript(midi));
+
+// Or in two steps, when you only know later whether the run worked:
+const session = midi.session();
+runScript(session.midi);
+if (ok) session.commit();
+else session.rollback();</code></pre>
 
         <h3>Every MIDI method</h3>
         <p>
@@ -1541,8 +1561,15 @@ async function run() {
   classes: ['drums'],
   buses: ['reverb-send'],
   sequences: ['intro'],
-  globals: [{ name: 'engine', description: 'The engine.' }],
-  // helpers: left out, the library's own are used
+  globals: [
+    { name: 'engine', description: 'The engine.' },
+    // kind says what a name is, so its members are completed: midi.follow(), midi.output().note()
+    { name: 'midi', kind: 'midi', description: 'MIDI in and out.' },
+  ],
+  midiInputs: midi.inputs.map((port) =&gt; port.name),    // offered where a port is named
+  midiOutputs: midi.outputs.map((port) =&gt; port.name),
+  // helpers: left out, the library's own are used. To offer keyPress and mouseMovement as well:
+  // helpers: [...builtinHelpers(), ...INTERACTION_DOCS]
 });</code></pre>
         <p>
           The catalog changes while people type: samples load, macros get defined. Call

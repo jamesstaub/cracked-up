@@ -493,6 +493,23 @@ describe('following MIDI clock', () => {
     expect((Math.abs(gap) * 60) / 128).toBeLessThan(0.002);
   });
 
+  it('waits out pulses from before a transport started by hand has begun', () => {
+    const transport = new SimTransport();
+    const follower = new ClockFollower(transport);
+    // Started by hand a moment in the future, as a live transport is: pulses until then fall before
+    // its beginning, where there is no position to lock to.
+    transport.start(0.2, 0);
+    const seeks: number[] = [];
+    const seek = transport.seek.bind(transport);
+    transport.seek = (beats) => {
+      seeks.push(beats);
+      seek(beats);
+    };
+    run(follower, transport, { bpm: 128, beats: 8, jitter: 0.001, from: 0, settle: 4 });
+    expect(seeks.every((beats) => beats >= 0)).toBe(true);
+    expect(follower.bpm).toBeCloseTo(128, 0);
+  });
+
   it('stopping an earlier follow leaves a later one in charge', async () => {
     const { engine, midi } = await setup(0.1);
     const first = midi.follow('Keys');

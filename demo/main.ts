@@ -111,8 +111,9 @@ let interaction: Interaction | null = null;
 const INTERACTION_NAMES = Object.keys(createInteraction().helpers);
 
 // `midi` is offered to scripts too. The browser is asked for MIDI access the first time code uses the
-// name, not before, so nobody is asked for a permission they do not need. Like the key and mouse
-// listeners, each run gets its own midi object, and the last run's is disposed of when it is replaced.
+// name, not before, so nobody is asked for a permission they do not need. The page keeps one midi
+// object. Each run makes its calls in a session of it, which replaces the last run's calls and leaves
+// a `follow` or `sendClock` that has not changed running, so an edit does not restart the sync.
 let midiAccess: MidiAccessLike | null = null;
 let midiProblem = '';
 let midiAsked: Promise<void> | null = null;
@@ -224,19 +225,26 @@ function run(target: Engine): void {
   const listening = createInteraction();
   const names = INTERACTION_NAMES.map((name) => listening.helpers[name]);
   // The same for MIDI: this run's listeners, bindings and clock replace the last run's.
-  const runMidi = wantsMidi && midiAccess ? createMidi(target, midiAccess) : null;
-  const midiName = runMidi ?? noMidi(midiProblem || 'midi is not set up.');
+  if (wantsMidi && midiAccess && !midi) {
+    midi = createMidi(target, midiAccess);
+    // The editor offers the ports by name, and keeps up as devices come and go.
+    const ports = (): void => catalog.set(catalogFor(target));
+    midi.on('devices', ports);
+    ports();
+  }
+  const session = midi?.session() ?? null;
+  const midiName = session?.midi ?? noMidi(midiProblem || 'midi is not set up.');
   scope
     .build((api) => program(api, target, ...Object.values(helpers), ...names, midiName))
     .then((result) => {
       if (result.errors[0]) {
         listening.clear();
-        runMidi?.dispose();
+        session?.rollback();
       } else {
         interaction?.clear();
         interaction = listening;
-        midi?.dispose();
-        midi = runMidi;
+        // Also for a run that no longer uses midi: committing its empty session stops the last run's.
+        session?.commit();
       }
       // Something later may have been typed since; its own run reports on it.
       if (code !== lastTried) return;
@@ -251,7 +259,7 @@ function run(target: Engine): void {
     })
     .catch((error: unknown) => {
       listening.clear();
-      runMidi?.dispose();
+      session?.rollback();
       showError(error);
     });
 }
@@ -464,6 +472,13 @@ function initialCode(): string {
 /** What the editor is told about an engine: its types and buffers, and the names this page adds. */
 function catalogFor(target: Engine | null): EditorCatalog {
   const extra: EditorCatalog = {
+    // The MIDI ports plugged in, once the page has MIDI, for where a script names one.
+    ...(midi
+      ? {
+          midiInputs: midi.inputs.map((port) => port.name),
+          midiOutputs: midi.outputs.map((port) => port.name),
+        }
+      : {}),
     helpers: [
       ...builtinHelpers(),
       ...INTERACTION_DOCS.map((doc) => ({ ...doc, group: 'Interaction' })),
@@ -475,6 +490,7 @@ function catalogFor(target: Engine | null): EditorCatalog {
       },
       {
         name: 'midi',
+        kind: 'midi',
         description:
           "MIDI in and out (cracked-up/midi): midi.play(() => __('#keys')), midi.on('noteon', fn), midi.bind({ controller: 74 }, target), midi.output().note(60), midi.sendClock(), midi.follow(). Using the name asks the browser for MIDI access.",
       },

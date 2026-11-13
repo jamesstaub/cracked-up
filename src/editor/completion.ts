@@ -24,6 +24,13 @@ import {
   DUNDER_CALL,
   DURATIONS,
   EVERY_OPTIONS,
+  KEY_PRESS_OPTIONS,
+  MIDI_BIND_OPTIONS,
+  MIDI_EVENT_TYPES,
+  MIDI_FILTER_OPTIONS,
+  MIDI_FOLLOW_OPTIONS,
+  MIDI_NOTE_OPTIONS,
+  MIDI_SEND_OPTIONS,
   OFFSET_OPTIONS,
   RAMP_OPTIONS,
   RELEASE_OPTIONS,
@@ -62,6 +69,13 @@ const OWNER_NAMES: Readonly<Record<ReceiverKind, string>> = {
   param: 'parameter',
   event: 'event',
   position: 'position',
+  midi: 'midi',
+  midiOut: 'MIDI output',
+  follow: 'clock follow',
+  binding: 'binding',
+  midiEvent: 'MIDI message',
+  keyInfo: 'key',
+  mouseInfo: 'pointer',
 };
 
 // --- How a completion is put into the text ---------------------------------------------------------
@@ -215,6 +229,9 @@ const typesOf = (scene: Scene, types: readonly string[] | null): NodeTypeInfo[] 
 export function keyOptions(scene: Scene, call: CallSite): KeyOption[] {
   const { name, index, receiver } = call;
   if (receiver === null) {
+    if (['keyPress', 'key_press'].includes(name) && index === 1) {
+      return fromOptions(KEY_PRESS_OPTIONS, 'Options');
+    }
     return name === 'define' || name === 'defineMacro' || name === 'defineNode'
       ? index === 0
         ? fromOptions(DEFINITION_OPTIONS, 'Definition', 'definition field')
@@ -222,6 +239,25 @@ export function keyOptions(scene: Scene, call: CallSite): KeyOption[] {
       : [];
   }
   const kind = receiver.kind;
+  if (kind === 'midi') {
+    if ((name === 'on' && index === 2) || ((name === 'play' || name === 'learn') && index === 1)) {
+      return fromOptions(MIDI_FILTER_OPTIONS, 'Which messages');
+    }
+    if (name === 'bind' && index === 0) return fromOptions(MIDI_BIND_OPTIONS, 'Controller');
+    if (name === 'follow' && index === 1) return fromOptions(MIDI_FOLLOW_OPTIONS, 'Options');
+    return [];
+  }
+  if (kind === 'midiOut') {
+    if (name === 'note' && index === 1) return fromOptions(MIDI_NOTE_OPTIONS, 'Options');
+    if ((name === 'noteOn' || name === 'cc') && index === 2) {
+      return fromOptions(MIDI_SEND_OPTIONS, 'Options');
+    }
+    if (['noteOff', 'pitchBend', 'program'].includes(name) && index === 1) {
+      return fromOptions(MIDI_SEND_OPTIONS, 'Options');
+    }
+    if (name === 'send' && index === 1) return fromOptions(AT_OPTIONS, 'Options');
+    return [];
+  }
   const type = typeInfo(scene, name);
   if (type && index === 0 && (kind === 'chain' || kind === 'unknown')) {
     return [
@@ -356,6 +392,7 @@ function valueItems(scene: Scene, call: CallSite, key: string): ValueItem[] {
   if (/BufferRef|AudioBuffer/.test(type) || key === 'buffer' || key === 'into') {
     return bufferItems(scene.catalog);
   }
+  if (call.receiver?.kind === 'midi' && key === 'input') return portItems(scene, 'input');
   if (/duration|position/i.test(type)) return durationItems();
   if (type === 'boolean') {
     return [
@@ -368,6 +405,13 @@ function valueItems(scene: Scene, call: CallSite, key: string): ValueItem[] {
 }
 
 const unique = (names: readonly string[]): string[] => [...new Set(names)];
+
+/** The MIDI ports the host knows of, for where one is named. */
+const portItems = (scene: Scene, direction: 'input' | 'output'): ValueItem[] =>
+  (direction === 'input' ? scene.catalog.midiInputs : scene.catalog.midiOutputs).map((text) => ({
+    text,
+    detail: `MIDI ${direction}`,
+  }));
 
 const classNames = (scene: Scene): string[] =>
   unique([...scene.doc.classes.keys(), ...scene.catalog.classes]);
@@ -458,6 +502,13 @@ function stringItems(
   const { name, index, receiver } = call;
   if (receiver === null) return name === '__' && index === 0 ? 'selector' : null;
   const kind = receiver.kind;
+  if (kind === 'midi') {
+    if (index !== 0) return null;
+    if (name === 'on') return MIDI_EVENT_TYPES.map(([text, detail]) => ({ text, detail }));
+    if (name === 'follow') return portItems(scene, 'input');
+    if (name === 'output' || name === 'sendClock') return portItems(scene, 'output');
+    return null;
+  }
   if (index === 0) {
     if (name === 'to' || name === 'bus') return busNames(scene, pos, name === 'to');
     if (name === 'select' || name === 'filter' || name === 'connect' || name === 'modulate') {

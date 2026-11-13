@@ -52,8 +52,16 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   and a `clear()` that removes every listener added through it. Callbacks get `{ key, code }` or
   `{ x, y }` (0 to 1 across the page or an element). Keys typed into a text box or editor are left
   out. The live demo offers them to scripts and replaces a run's listeners on the next run.
-- The live demo offers `midi` to scripts. The browser is asked for MIDI access the first time code
-  uses the name, and each run's listeners and bindings replace the last run's.
+- **`midi.build(run)`** and **`midi.session()`**, for scripts that are re-run: a run's MIDI calls
+  replace the last run's, and a `follow` or `sendClock` whose arguments have not changed is left
+  running, so an edit does not restart the sync. Nothing changes if the run throws.
+- The live demo offers `midi` to scripts, through `midi.session()`. The browser is asked for MIDI
+  access the first time code uses the name.
+- **Editor**: completion, hover and signature help for MIDI and the interaction helpers. A host
+  names its midi object in the catalog (`globals: [{ name: 'midi', kind: 'midi' }]`) and lists the
+  ports (`midiInputs`, `midiOutputs`); the editor then completes `midi.`, what `output()`,
+  `follow()` and `bind()` return, the message a listener is given, port names, message kinds and
+  the keys of each options object, and what `keyPress` and `mouseMovement` callbacks are given.
 - **Docs**: an "Interaction" section, a reference of every sequencing and MIDI method, and groups
   in the contents list for sequencing, interaction, MIDI and each set of helpers, with a link per
   method.
@@ -71,6 +79,11 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   it to the beginning. Before, it was ignored, so a transport started by hand never lined up with
   the other device's bar.
 - `follow.stop()` on an earlier follow no longer takes the tempo back from a later one.
+- Following MIDI clock: a pulse that arrives before a transport started by hand has begun no longer
+  throws ("Invalid duration").
+- `build()`: a `set` or `ramp` the code makes after asking for a node now has the last word on a
+  re-run as well. Before, a kept node went back to the value it is made with, so the same code gave
+  one value the first time and another on every run after.
 
 ## [0.1.0] - 2026-11-12
 

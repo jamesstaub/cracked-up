@@ -6,6 +6,7 @@
 
 import type { BufferInfo, Engine, NodeTypeInfo, RemoteState } from '../api';
 import { HELPER_GROUPS } from '../util/helper-docs';
+import type { ReceiverKind } from './api-docs';
 
 /** A function scripts can call by name. */
 export interface HelperInfo {
@@ -38,6 +39,11 @@ export interface GlobalInfo {
   /** For a function, how to call it. */
   readonly signature?: string;
   readonly description: string;
+  /**
+   * What the name is, when it is one of the library's own objects, so that its members are completed
+   * and documented: `'midi'` for a midi object, `'transport'`, `'bus'` and so on.
+   */
+  readonly kind?: ReceiverKind;
 }
 
 export interface EditorCatalog {
@@ -55,6 +61,9 @@ export interface EditorCatalog {
   /** Bus names. `main` is always offered. */
   readonly buses?: readonly string[];
   readonly sequences?: readonly string[];
+  /** Names of the MIDI inputs and outputs connected, offered where a port is named. */
+  readonly midiInputs?: readonly string[];
+  readonly midiOutputs?: readonly string[];
   readonly globals?: readonly GlobalInfo[];
 }
 
@@ -157,6 +166,8 @@ export interface ResolvedCatalog {
   readonly classes: readonly string[];
   readonly buses: readonly string[];
   readonly sequences: readonly string[];
+  readonly midiInputs: readonly string[];
+  readonly midiOutputs: readonly string[];
   readonly globals: ReadonlyMap<string, GlobalInfo>;
 }
 
@@ -184,6 +195,8 @@ export function resolveCatalog(catalog: EditorCatalog): ResolvedCatalog {
     classes: catalog.classes ?? [],
     buses: catalog.buses ?? [],
     sequences: catalog.sequences ?? [],
+    midiInputs: catalog.midiInputs ?? [],
+    midiOutputs: catalog.midiOutputs ?? [],
     globals: new Map((catalog.globals ?? []).map((info) => [info.name, info])),
   };
   resolved.set(catalog, result);

@@ -351,7 +351,11 @@ export function selectorTypes(scene: Scene, selector: string): string[] | null {
 /** What a name refers to, from where it is declared. */
 function classifyName(scene: Scene, name: string, pos: number, depth: number): Receiver {
   const declared = scene.doc.definitions.get(name);
-  if (!declared || declared.length === 0) return UNKNOWN;
+  if (!declared || declared.length === 0) {
+    // A name the host offers, such as `midi`, when the host has said what it is.
+    const kind = scene.catalog.globals.get(name)?.kind;
+    return kind ? of(kind) : UNKNOWN;
+  }
   // The nearest declaration before the use; failing that, the first.
   const definition = [...declared].reverse().find((node) => node.from <= pos) ?? declared[0]!;
   const parent = definition.parent;
@@ -378,6 +382,18 @@ function classifyName(scene: Scene, name: string, pos: number, depth: number): R
     if (callee.name === 'onDisplay' && index === 0) return of('event');
     if (callee.name === 'split' && index === 0) return of('chain');
     if (callee.name === 'each' && index === 0) return of('node');
+    if (callee.name === 'build' && index === 0 && callee.object) {
+      const owner = classify(scene, callee.object, depth + 1);
+      if (owner.kind === 'midi') return of('midi');
+    }
+    if (callee.name === 'on' && index === 0 && callee.object) {
+      const owner = classify(scene, callee.object, depth + 1);
+      if (owner.kind === 'midi') return of('midiEvent');
+    }
+    if (!callee.object && index === 0) {
+      if (['keyPress', 'keyRelease', 'key_press'].includes(callee.name)) return of('keyInfo');
+      if (['mouseMovement', 'mouse_movement'].includes(callee.name)) return of('mouseInfo');
+    }
   }
   return UNKNOWN;
 }

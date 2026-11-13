@@ -157,7 +157,28 @@ export interface Midi {
    */
   follow(input?: string, options?: FollowOptions): ClockFollow;
 
+  /**
+   * For code that is run again and again, such as a script re-run on every edit. `run` is given a
+   * midi object to make its calls on, and when it returns those calls replace the ones the last
+   * `build` made: listeners, bindings and `play` are swapped, and a `follow` or `sendClock` with the
+   * same arguments as one already running is left running, so the sync is not restarted. Calls the
+   * new run no longer makes are stopped. If `run` throws, nothing changes.
+   */
+  build<T>(run: (midi: Midi) => T): T;
+  /**
+   * `build` in two steps, for when success is known only later: make calls on `session.midi`, then
+   * `commit()` to put them in place of the last session's, or `rollback()` to drop them.
+   */
+  session(): MidiSession;
+
   dispose(): void;
+}
+
+export interface MidiSession {
+  /** Stands in for the midi object. Nothing called on it takes effect until `commit`. */
+  readonly midi: Midi;
+  commit(): void;
+  rollback(): void;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -422,6 +443,170 @@ export function createMidi(
     return out;
   };
 
+  // --- Sessions: calls that replace the last run's ---------------------------------------------------
+
+  /** One call made in a session: how to start it, and how to stop it once started. */
+  interface Declared {
+    /** Calls with the same key are the same thing and are kept running across sessions. */
+    key: string | null;
+    start(): () => void;
+    stop: (() => void) | null;
+    /** What the real call returned, for a handle to read from. */
+    value: unknown;
+    dropped: boolean;
+  }
+  /** What the last committed session declared, running now. */
+  let current: Declared[] = [];
+
+  const makeSession = (): MidiSession => {
+    const declared: Declared[] = [];
+    let state: 'open' | 'committed' | 'dropped' = 'open';
+
+    const declare = (key: string | null, start: (entry: Declared) => () => void): Declared => {
+      const entry: Declared = {
+        key,
+        start: () => start(entry),
+        stop: null,
+        value: undefined,
+        dropped: false,
+      };
+      if (state === 'open') declared.push(entry);
+      else if (state === 'committed') {
+        // Called late, from a callback of a run that is in place: it takes effect at once.
+        entry.stop = entry.start();
+        current.push(entry);
+      } else entry.dropped = true;
+      return entry;
+    };
+    const drop = (entry: Declared): void => {
+      entry.dropped = true;
+      entry.stop?.();
+      entry.stop = null;
+      const index = current.indexOf(entry);
+      if (index >= 0) current.splice(index, 1);
+    };
+    const simple = (start: () => () => void): Unsubscribe => {
+      const entry = declare(null, start);
+      return () => drop(entry);
+    };
+    const bindingOf = (
+      entry: Declared,
+      controller: { controller: number } & MidiFilter,
+    ): MidiBinding => ({
+      controller: controller.controller,
+      channel: controller.channel ?? null,
+      input: controller.input ?? null,
+      remove: () => drop(entry),
+    });
+
+    const facade: Midi = {
+      get inputs() {
+        return midi.inputs;
+      },
+      get outputs() {
+        return midi.outputs;
+      },
+      get bindings() {
+        return midi.bindings;
+      },
+      on: ((event: never, listener: never, filter?: MidiFilter) =>
+        simple(() =>
+          (midi.on as (...args: unknown[]) => Unsubscribe)(event, listener, filter),
+        )) as Midi['on'],
+      play: (target, filter) => simple(() => midi.play(target, filter)),
+      bind(controller, target) {
+        const entry = declare(null, () => {
+          const binding = midi.bind(controller, target);
+          return () => binding.remove();
+        });
+        return bindingOf(entry, controller);
+      },
+      learn(target, filter) {
+        return new Promise<MidiBinding>((resolve, reject) => {
+          const entry = declare(null, () => {
+            let binding: MidiBinding | null = null;
+            let over = false;
+            midi.learn(target, filter).then((made) => {
+              if (over) return made.remove();
+              binding = made;
+              resolve({ ...made, remove: () => drop(entry) });
+            }, reject);
+            return () => {
+              over = true;
+              if (binding) binding.remove();
+              else midi.cancelLearn();
+            };
+          });
+        });
+      },
+      cancelLearn: () => midi.cancelLearn(),
+      output: (idOrName) => midi.output(idOrName),
+      sendClock(output) {
+        const name = typeof output === 'string' ? output : (output?.port.id ?? '');
+        const entry = declare(`sendClock:${name}`, () => midi.sendClock(output));
+        return () => drop(entry);
+      },
+      follow(input, followOptions) {
+        const key = `follow:${JSON.stringify([input ?? null, followOptions ?? null])}`;
+        const entry = declare(key, (self) => {
+          const real = midi.follow(input, followOptions);
+          self.value = real;
+          return real.stop;
+        });
+        const real = (): ClockFollow | undefined => entry.value as ClockFollow | undefined;
+        return {
+          get bpm() {
+            return real()?.bpm ?? null;
+          },
+          get error() {
+            return real()?.error ?? 0;
+          },
+          stop: () => drop(entry),
+        };
+      },
+      build: (run) => midi.build(run),
+      session: () => midi.session(),
+      dispose() {
+        for (const entry of declared) drop(entry);
+        state = 'dropped';
+      },
+    };
+
+    return {
+      midi: facade,
+      commit() {
+        if (state !== 'open' || disposed) return;
+        state = 'committed';
+        // What is already running under the same key carries on, with its state.
+        const running = new Map<string, Declared>();
+        for (const entry of current) if (entry.key !== null) running.set(entry.key, entry);
+        const kept = new Set<Declared>();
+        for (const entry of declared) {
+          const same = entry.key === null || entry.dropped ? undefined : running.get(entry.key);
+          if (!same || kept.has(same)) continue;
+          kept.add(same);
+          entry.stop = same.stop;
+          entry.value = same.value;
+          same.stop = null;
+        }
+        // The rest of the last session stops before anything new starts.
+        for (const entry of current) {
+          entry.stop?.();
+          entry.stop = null;
+        }
+        for (const entry of declared) {
+          if (!entry.dropped && entry.stop === null) entry.stop = entry.start();
+        }
+        current = declared.filter((entry) => !entry.dropped);
+      },
+      rollback() {
+        if (state !== 'open') return;
+        state = 'dropped';
+        for (const entry of declared) entry.dropped = true;
+      },
+    };
+  };
+
   const midi: Midi = {
     get inputs() {
       return [...access.inputs.values()].map(describePort);
@@ -582,9 +767,25 @@ export function createMidi(
       };
     },
 
+    build(run) {
+      const session = makeSession();
+      let result;
+      try {
+        result = run(session.midi);
+      } catch (thrown) {
+        session.rollback();
+        throw thrown;
+      }
+      session.commit();
+      return result;
+    },
+    session: makeSession,
+
     dispose() {
       if (disposed) return;
       disposed = true;
+      for (const entry of current) entry.stop?.();
+      current = [];
       for (const cleanup of [...cleanups]) cleanup();
       learning?.cancel();
       for (const [input, handler] of attached) input.removeEventListener('midimessage', handler);

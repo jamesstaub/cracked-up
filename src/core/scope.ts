@@ -31,6 +31,11 @@ const COMMON_KEYS = new Set(['id', 'class', 'tags', 'bypass', 'modulates']);
 /** What a rebuild asked a kept node to be. Applied when the rebuild succeeds. */
 interface PendingUpdate {
   values: Readonly<Record<string, ParamValue>>;
+  /**
+   * Parameters the build's own code set or ramped after asking for the node. Those calls have the
+   * last word, as they do the first time the code runs, when the node is new.
+   */
+  set?: Set<string>;
   classes: readonly string[];
   tags: Tags;
   bypass: boolean;
@@ -748,6 +753,7 @@ export class ScopeImpl {
   private updateKept(node: NodeImpl, update: PendingUpdate, at: number): boolean {
     let changed = false;
     for (const param of Object.values(node.params)) {
+      if (update.set?.has(param.name)) continue;
       const previous = param.value;
       const target = update.values[param.name] ?? param.meta.default;
       if (Object.is(target, previous)) continue;
@@ -783,6 +789,12 @@ export class ScopeImpl {
         this.report(toGraphError(thrown, 'invalid-command'));
       }
     }
+  }
+
+  /** A parameter was set or ramped. During a build this is remembered for a node that is being kept. */
+  paramSet(node: NodeImpl, name: string): void {
+    const pending = this.building?.pending.get(node);
+    if (pending) (pending.set ??= new Set()).add(name);
   }
 
   paramChanged(change: ParamChange): void {

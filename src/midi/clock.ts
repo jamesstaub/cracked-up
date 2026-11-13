@@ -121,6 +121,8 @@ export class ClockFollower {
     if (this.origin === null) {
       // Joined a clock that was already running: lock to the nearest pulse.
       const position = this.target.toBeats(time);
+      // A pulse from before the transport's own start has no place in it yet: wait for the next.
+      if (position < 0) return;
       this.origin = Math.round(position * PULSES_PER_BEAT) / PULSES_PER_BEAT;
       this.count = 0;
       this.error = 0;
@@ -129,7 +131,7 @@ export class ClockFollower {
     const expected = this.origin + this.count / PULSES_PER_BEAT;
     const gap = expected - this.target.toBeats(time);
     if (Math.abs(gap) > JUMP) {
-      this.target.seek(expected);
+      this.target.seek(Math.max(0, expected));
       this.target.drive(this.bpm);
       this.error = 0;
       return;

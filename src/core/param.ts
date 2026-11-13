@@ -111,6 +111,7 @@ export class ParamImpl {
   }
 
   applySet(value: ParamValue, at: number): void {
+    this.node.scope.paramSet(this.node, this.name);
     const next = this.coerce(value);
     const previous = this.base;
     this.base = next;
@@ -155,6 +156,7 @@ export class ParamImpl {
   }
 
   applyRamp(target: number, at: number, options: Omit<RampOptions, 'at'>): void {
+    this.node.scope.paramSet(this.node, this.name);
     const audio = this.audioParam;
     if (this.meta.kind === 'number' && !audio && this.links) {
       // A macro's exposed parameter: ramp each inner parameter it drives.

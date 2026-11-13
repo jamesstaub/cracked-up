@@ -34,7 +34,17 @@ export type ReceiverKind =
   | 'sequence'
   | 'param'
   | 'event'
-  | 'position';
+  | 'position'
+  /** The midi object of `cracked-up/midi`, when a host offers it to scripts. */
+  | 'midi'
+  | 'midiOut'
+  | 'follow'
+  | 'binding'
+  /** What a `midi.on` listener is given. */
+  | 'midiEvent'
+  /** What `keyPress` / `keyRelease` and `mouseMovement` callbacks are given. */
+  | 'keyInfo'
+  | 'mouseInfo';
 
 const TARGET = 'a selector, a selection, a node, a bus or a parameter';
 
@@ -479,6 +489,179 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     { name: 'beatInBar', description: 'Beats into the current bar.' },
     { name: 'seconds', description: 'Seconds from the start of the transport.' },
   ],
+  midi: [
+    { name: 'inputs', description: 'The MIDI inputs connected now, each with id, name and maker.' },
+    { name: 'outputs', description: 'The MIDI outputs connected now.' },
+    {
+      name: 'on',
+      signature: 'on(type, listener, { input, channel }?)',
+      description:
+        "Calls back for every message of one kind ('noteon', 'noteoff', 'cc', 'pitchbend', …), for all of them with 'message', or when a device is plugged in or removed with 'devices'. The filter narrows it to an input or channel. Returns a function that stops it.",
+    },
+    {
+      name: 'play',
+      signature: 'play(target, { input, channel }?)',
+      description:
+        "Plays arriving notes on the selected nodes: a note-on triggers with its pitch and velocity, a note-off releases it. Give a function that finds them, such as () => __('#keys'). Returns a function that stops it.",
+    },
+    {
+      name: 'bind',
+      signature: 'bind({ controller, channel?, input? }, target)',
+      description:
+        "Ties a controller (a knob or fader) to a parameter. The controller's travel covers the parameter's range. Give a function that finds the parameter, such as () => __('#filter').param('frequency').",
+      returns: 'binding',
+    },
+    {
+      name: 'learn',
+      signature: 'learn(target, { input, channel }?)',
+      description:
+        'Ties the next controller that is moved to the parameter. A promise that resolves once one has been.',
+    },
+    {
+      name: 'cancelLearn',
+      signature: 'cancelLearn()',
+      description: 'Stops waiting for a controller.',
+    },
+    { name: 'bindings', description: 'The controller bindings in place. Each has remove().' },
+    {
+      name: 'output',
+      signature: 'output(idOrName?)',
+      description: 'An output to send to, by id or name; the first one when no name is given.',
+      returns: 'midiOut',
+    },
+    {
+      name: 'sendClock',
+      signature: 'sendClock(output?)',
+      description:
+        'Sends MIDI clock so other gear follows the transport: 24 pulses per quarter note, Start, Stop and Continue. Returns a function that stops it.',
+    },
+    {
+      name: 'follow',
+      signature: 'follow(input?, { pull, window }?)',
+      description:
+        "Makes the transport follow MIDI clock arriving on an input, named by the port's name or id: its start and stop, tempo and position. With no input, clock from any port. Gives an object with bpm, error and stop().",
+      returns: 'follow',
+    },
+    {
+      name: 'build',
+      signature: 'build(run)',
+      description:
+        'For code that is run again and again. run is given a midi object to make its calls on, and when it returns they replace the calls the last build made. A follow or sendClock with the same arguments as one already running is left running, so the sync is not restarted. If run throws, nothing changes.',
+    },
+    {
+      name: 'session',
+      signature: 'session()',
+      description:
+        'build in two steps, for when success is known only later: make calls on session.midi, then commit() to put them in place or rollback() to drop them.',
+    },
+    {
+      name: 'dispose',
+      signature: 'dispose()',
+      description: 'Removes every listener and binding and stops sending and following.',
+    },
+  ],
+  midiOut: [
+    { name: 'port', description: 'The device: its id, name and maker.' },
+    { name: 'channel', description: 'The channel used when a call gives none. Starts as 1.' },
+    {
+      name: 'note',
+      signature: 'note(note, { duration, velocity, channel, at }?)',
+      description: 'A note-on now, or at a time, and its note-off duration seconds later.',
+      returns: 'same',
+    },
+    {
+      name: 'noteOn',
+      signature: 'noteOn(note, velocity?, { channel, at }?)',
+      description: 'Starts a note. It sounds until its noteOff.',
+      returns: 'same',
+    },
+    {
+      name: 'noteOff',
+      signature: 'noteOff(note, { channel, at }?)',
+      description: 'Ends a note.',
+      returns: 'same',
+    },
+    {
+      name: 'cc',
+      signature: 'cc(controller, value, { channel, at }?)',
+      description: 'Sends a controller value, 0 to 1.',
+      returns: 'same',
+    },
+    {
+      name: 'pitchBend',
+      signature: 'pitchBend(value, { channel, at }?)',
+      description: 'Bends the pitch: -1 is fully down, 0 is centre, 1 is fully up.',
+      returns: 'same',
+    },
+    {
+      name: 'program',
+      signature: 'program(number, { channel, at }?)',
+      description: 'Changes the sound (program) on the receiving device.',
+      returns: 'same',
+    },
+    {
+      name: 'send',
+      signature: 'send(message, { at }?)',
+      description: 'Sends any message object, or raw bytes.',
+      returns: 'same',
+    },
+  ],
+  follow: [
+    {
+      name: 'bpm',
+      description:
+        'The tempo measured from the incoming clock; null until a few pulses have arrived. Steadier than transport.bpm, which is nudged to stay in step.',
+    },
+    {
+      name: 'error',
+      description:
+        'How far the transport is from the incoming clock right now, in seconds. Positive: behind.',
+    },
+    {
+      name: 'stop',
+      signature: 'stop()',
+      description: 'Stops following and gives the tempo back to the transport.',
+    },
+  ],
+  binding: [
+    { name: 'controller', description: 'The controller number.' },
+    { name: 'channel', description: 'The channel it listens on, or null for any.' },
+    { name: 'input', description: 'The input it listens to, or null for any.' },
+    { name: 'remove', signature: 'remove()', description: 'Unties the controller.' },
+  ],
+  midiEvent: [
+    {
+      name: 'type',
+      description: "The kind of message: 'noteon', 'noteoff', 'cc', 'pitchbend', 'program', …",
+    },
+    { name: 'channel', description: '1 to 16. Clock and transport messages have none.' },
+    { name: 'note', description: 'Note number, 0 to 127; 60 is middle C. On note messages.' },
+    { name: 'velocity', description: 'How hard the note was played, 0 to 1. On note messages.' },
+    { name: 'controller', description: 'Controller number, 0 to 127. On cc messages.' },
+    {
+      name: 'value',
+      description: 'On cc messages: 0 to 1. On pitchbend messages: -1 to 1, 0 at centre.',
+    },
+    { name: 'program', description: 'Program number. On program messages.' },
+    { name: 'pressure', description: 'Aftertouch pressure, 0 to 1.' },
+    { name: 'time', description: 'Audio-clock time at which the message arrived.' },
+    { name: 'input', description: 'The port it arrived on: id, name and maker.' },
+  ],
+  keyInfo: [
+    { name: 'key', description: "What the key types: 'a', 'A', 'Enter', ' '." },
+    {
+      name: 'code',
+      description:
+        "Which physical key: 'KeyA', 'Space'. The same whatever the keyboard layout or shift state.",
+    },
+    { name: 'repeat', description: 'True for the repeats a held key sends.' },
+    { name: 'event', description: "The browser's own keyboard event." },
+  ],
+  mouseInfo: [
+    { name: 'x', description: '0 at the left edge of the page, 1 at the right.' },
+    { name: 'y', description: '0 at the top of the page, 1 at the bottom.' },
+    { name: 'event', description: "The browser's own pointer event." },
+  ],
 };
 
 const AT: ApiOption = {
@@ -579,6 +762,81 @@ export const RELEASE_OPTIONS: readonly ApiOption[] = [
 ];
 
 export const AT_OPTIONS: readonly ApiOption[] = [AT];
+
+const MIDI_CHANNEL: ApiOption = {
+  name: 'channel',
+  type: 'number',
+  description: 'MIDI channel, 1 to 16.',
+};
+
+/** `{ input, channel }`: which messages a midi listener, `play` or `learn` hears. */
+export const MIDI_FILTER_OPTIONS: readonly ApiOption[] = [
+  {
+    name: 'input',
+    type: 'string',
+    description: "Only this input, by the port's name or id. Left out: every input.",
+  },
+  { ...MIDI_CHANNEL, description: 'Only this channel, 1 to 16. Left out: every channel.' },
+];
+
+export const MIDI_BIND_OPTIONS: readonly ApiOption[] = [
+  { name: 'controller', type: 'number', description: 'Controller number, 0 to 127.' },
+  ...MIDI_FILTER_OPTIONS,
+];
+
+export const MIDI_SEND_OPTIONS: readonly ApiOption[] = [
+  { ...MIDI_CHANNEL, description: "Channel to send on. Left out: the output's own channel." },
+  AT,
+];
+
+export const MIDI_NOTE_OPTIONS: readonly ApiOption[] = [
+  { name: 'duration', type: 'number', description: 'Seconds until the note-off.' },
+  { name: 'velocity', type: 'number', default: '1', description: 'How hard, 0 to 1.' },
+  ...MIDI_SEND_OPTIONS,
+];
+
+export const MIDI_FOLLOW_OPTIONS: readonly ApiOption[] = [
+  {
+    name: 'pull',
+    type: 'number',
+    default: '1',
+    description:
+      'How firmly the transport is pulled back when it drifts from the clock. 1 closes a gap in about a beat; lower is smoother and slower.',
+  },
+  {
+    name: 'window',
+    type: 'number',
+    default: '24',
+    description: 'How many pulses the tempo is averaged over. 24 is one beat.',
+  },
+];
+
+export const KEY_PRESS_OPTIONS: readonly ApiOption[] = [
+  {
+    name: 'repeat',
+    type: 'boolean',
+    default: 'false',
+    description: 'Also call back for the repeats a held key sends.',
+  },
+];
+
+/** The kinds of message `midi.on` can listen for. */
+export const MIDI_EVENT_TYPES: readonly (readonly [string, string])[] = [
+  ['noteon', 'a note starts: note, velocity, channel'],
+  ['noteoff', 'a note ends: note, channel'],
+  ['cc', 'a controller moves: controller, value, channel'],
+  ['pitchbend', 'the pitch wheel: value from -1 to 1'],
+  ['program', 'a program change: program'],
+  ['aftertouch', 'channel pressure: pressure'],
+  ['polyaftertouch', 'pressure on one note: note, pressure'],
+  ['clock', 'one of the 24 clock pulses per quarter note'],
+  ['start', 'the other device started'],
+  ['continue', 'the other device continued'],
+  ['stop', 'the other device stopped'],
+  ['songposition', 'where a Continue resumes: beats'],
+  ['message', 'every message'],
+  ['devices', 'a device was plugged in or removed'],
+];
 
 export const EVERY_OPTIONS: readonly ApiOption[] = [
   { name: 'offset', type: 'duration', description: 'Shifts every call later.' },

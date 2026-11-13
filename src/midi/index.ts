@@ -16,6 +16,7 @@ export type {
   MidiOut,
   MidiOutputLike,
   MidiPort,
+  MidiSession,
   MidiTiming,
   ParamTarget,
   SendOptions,

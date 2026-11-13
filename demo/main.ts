@@ -1,5 +1,5 @@
 /**
- * Live demo: a text box whose code is re-run on every key up.
+ * Live demo: an editor whose code is re-run on every change.
  *
  * Every run goes through `build()` on one scope, which rebuilds in place: nodes the code still asks
  * for are kept and keep sounding, changed values are set on them, and what the code no longer asks for
@@ -8,13 +8,15 @@
  */
 
 import { createEngine } from '../src';
-import type { Engine } from '../src';
+import type { Engine, NodeTypeInfo } from '../src';
+import { catalogFromEngine, createCatalogStore, createEditor } from '../src/editor';
+import type { EditorCatalog } from '../src/editor';
 import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
 import { BREAK, BREAK_CREDIT, loadBreak } from './break';
-import { attachHighlighter } from './highlight';
+import { DEMO_BUFFERS, builtinTypes } from './catalog';
 import { addSamples } from './samples';
 
-const DEFAULT_CODE = `// Edit this code: it re-runs on every key up.
+const DEFAULT_CODE = `// Edit this code: it re-runs as you type.
 // While it has an error, the last working version keeps playing.
 
 __.transport.bpm = 110;
@@ -90,7 +92,6 @@ const OLD_STORAGE_KEYS = [
   'cracked-up-demo-code-v3',
 ];
 
-const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
 const toggle = document.querySelector<HTMLButtonElement>('#toggle')!;
 const reset = document.querySelector<HTMLButtonElement>('#reset')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
@@ -131,6 +132,13 @@ function describeError(error: unknown): string {
   return original instanceof Error ? `${original.name}: ${original.message}` : String(original);
 }
 
+/** Shows a failure in the footer and, when the editor can tell where it is, on its line. */
+function showError(error: unknown): void {
+  showMessage(describeError(error), true);
+  const original = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+  editor.showError(original);
+}
+
 function run(target: Engine): void {
   const code = editor.value;
   if (code === lastTried) return;
@@ -148,7 +156,7 @@ function run(target: Engine): void {
       ...args: unknown[]
     ) => void;
   } catch (error) {
-    showMessage(describeError(error), true);
+    showError(error);
     return;
   }
 
@@ -156,7 +164,10 @@ function run(target: Engine): void {
   scope
     .build((api) => program(api, target, ...Object.values(helpers)))
     .then((result) => {
-      if (result.errors[0]) return showMessage(describeError(result.errors[0]), true);
+      // Something later may have been typed since; its own run reports on it.
+      if (code !== lastTried) return;
+      if (result.errors[0]) return showError(result.errors[0]);
+      editor.clearError();
       const count = scope.select('*').length;
       const kept = result.unchanged.length + result.updated.length;
       showMessage(
@@ -164,7 +175,7 @@ function run(target: Engine): void {
           `${result.added.length} new, ${result.removed.length} removed.`,
       );
     })
-    .catch((error: unknown) => showMessage(describeError(error), true));
+    .catch((error: unknown) => showError(error));
 }
 
 // --- Starting and stopping audio --------------------------------------------------------------------
@@ -199,7 +210,7 @@ function boot(): Promise<Engine> {
     const context = new AudioContext();
     const created = await createEngine({ context });
     created.bus('main').gain.set(0.6);
-    created.on('error', (error) => showMessage(describeError(error), true));
+    created.on('error', showError);
     created.on('state', updateStatus);
     addSamples(created);
     // Not awaited: the break arrives when it arrives, and a sampler without audio is silent.
@@ -207,7 +218,11 @@ function boot(): Promise<Engine> {
       showNotice(problem);
       document.querySelector('#break-sample')?.classList.add('missing');
     });
-    fillReference(created);
+    fillReference(created.registry.list());
+    // From here the editor completes from the live engine: its types, and buffers as they load.
+    const refresh = (): void => catalog.set(catalogFor(created));
+    created.buffers.on('ready', refresh);
+    refresh();
     engine = created;
     // For poking at the engine from the browser's console: `engine.buffers.get('break').duration`.
     Object.assign(window, { engine: created });
@@ -232,14 +247,27 @@ async function stopAudio(): Promise<void> {
 
 // --- The reference column ---------------------------------------------------------------------------
 
-function fillList(id: string, rows: readonly (readonly [string, string])[]): void {
+/** Makes a list item put text into the editor when it is clicked. */
+function insertOnClick(item: HTMLElement, text: string): void {
+  item.classList.add('insert');
+  item.addEventListener('click', (event) => {
+    // A link inside the item (the break's credit) is followed, not inserted.
+    if ((event.target as HTMLElement).closest('a')) return;
+    editor.insert(text);
+    editor.focus();
+  });
+}
+
+/** Rows of [name, detail, the text a click inserts]. */
+function fillList(id: string, rows: readonly (readonly [string, string, string?])[]): void {
   const list = document.querySelector<HTMLUListElement>(`#${id}`)!;
   list.replaceChildren(
-    ...rows.map(([name, detail]) => {
+    ...rows.map(([name, detail, insert]) => {
       const item = document.createElement('li');
       const extra = document.createElement('span');
       extra.textContent = detail ? ` ${detail}` : '';
       item.append(name, extra);
+      if (insert) insertOnClick(item, insert);
       return item;
     }),
   );
@@ -248,9 +276,9 @@ function fillList(id: string, rows: readonly (readonly [string, string])[]): voi
 /** The sample names need no engine, so they and the break's credit are there before audio starts. */
 function fillSamples(): void {
   fillList('samples', [
-    ["'kick'", ''],
-    ["'snare'", ''],
-    ["'hat'", ''],
+    ["'kick'", '', "'kick'"],
+    ["'snare'", '', "'snare'"],
+    ["'hat'", '', "'hat'"],
   ]);
   const item = document.createElement('li');
   item.id = 'break-sample';
@@ -262,16 +290,19 @@ function fillSamples(): void {
   const detail = document.createElement('span');
   detail.append(' a drum break in 128 slices. ', credit);
   item.append(`'${BREAK.key}'`, detail);
+  insertOnClick(item, `'${BREAK.key}'`);
   document.querySelector<HTMLUListElement>('#samples')!.append(item);
 }
 
-function fillReference(target: Engine): void {
+function fillReference(types: readonly NodeTypeInfo[]): void {
   // Straight from the library's own metadata, so it cannot go out of date.
   fillList(
     'types',
-    target.registry
-      .list()
-      .map((info) => [info.type, info.params.map((param) => param.name).join(', ')]),
+    types.map((info) => [
+      info.type,
+      info.params.map((param) => param.name).join(', '),
+      `${info.type}()`,
+    ]),
   );
 }
 
@@ -297,6 +328,7 @@ function fillHelpers(): void {
         ...group.helpers.map((doc) => {
           const item = document.createElement('li');
           item.textContent = doc.signature;
+          insertOnClick(item, `${doc.name}()`);
           item.title = doc.alias
             ? `${doc.description} Also as ${doc.alias}, its name in Cracked.`
             : doc.description;
@@ -332,47 +364,75 @@ function initialCode(): string {
   }
 }
 
+// --- The editor --------------------------------------------------------------------------------------
+
+/** What the editor is told about an engine: its types and buffers, and the names this page adds. */
+function catalogFor(target: Engine | null): EditorCatalog {
+  const extra: EditorCatalog = {
+    globals: [
+      {
+        name: 'engine',
+        description: 'The engine this page made: engine.buffers, engine.registry.',
+      },
+    ],
+  };
+  if (!target) return { buffers: DEMO_BUFFERS, ...extra };
+  const loaded = catalogFromEngine(target, extra);
+  // Sounds still loading are offered by name too.
+  const known = new Set(
+    (loaded.buffers ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.key)),
+  );
+  return {
+    ...loaded,
+    buffers: [...(loaded.buffers ?? []), ...DEMO_BUFFERS.filter((entry) => !known.has(entry.key))],
+  };
+}
+
+const catalog = createCatalogStore(catalogFor(null));
+// The node types are known before audio starts, from an engine that makes no sound.
+void builtinTypes().then((types) => {
+  if (engine) return;
+  catalog.update({ types });
+  fillReference(types);
+});
+
+const editor = createEditor({
+  parent: document.querySelector<HTMLDivElement>('#editor')!,
+  doc: initialCode(),
+  catalog,
+  // The footer shows the message; the editor only marks the line.
+  errorPanel: false,
+  onChange: () => {
+    if (engine) run(engine);
+    else void start();
+  },
+});
+// For poking at the editor from the browser's console: `editor.value`.
+Object.assign(window, { editor });
+
 fillSamples();
 fillHelpers();
-editor.value = initialCode();
-/** Redraws the coloured code behind the editor. Call it after setting the editor's text from code. */
-const refreshHighlight = attachHighlighter(
-  editor,
-  document.querySelector<HTMLPreElement>('#highlight')!,
-);
 
-editor.addEventListener('keyup', () => {
+/** Puts code from outside (Reset, a docs example) in the editor and runs it. */
+function load(code: string): void {
+  editor.setValue(code);
+  lastTried = null;
   if (engine) run(engine);
-  else void start();
-});
-
-// Tab indents instead of leaving the editor.
-editor.addEventListener('keydown', (event) => {
-  if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) return;
-  event.preventDefault();
-  editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
-  refreshHighlight();
-});
+}
 
 toggle.addEventListener('click', () => {
   void (engine?.context.state === 'running' ? stopAudio() : start());
 });
 
 reset.addEventListener('click', () => {
-  editor.value = DEFAULT_CODE;
-  refreshHighlight();
-  lastTried = null;
-  if (engine) run(engine);
+  load(DEFAULT_CODE);
   editor.focus();
 });
 
 // Opening another example from the docs while this page is already open only changes the address.
 window.addEventListener('hashchange', () => {
   const code = codeFromAddress();
-  if (code === null) return;
-  editor.value = code;
-  refreshHighlight();
-  if (engine) run(engine);
+  if (code !== null) load(code);
 });
 
 updateStatus();

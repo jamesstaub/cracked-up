@@ -1,7 +1,3 @@
-export * from './duration';
-export * from './pattern';
-export * from './transforms';
-export * from './random';
-export * from './curves';
-export * from './music';
-export * from './wav';
+export * from './all';
+export { HELPER_DOCS, HELPER_GROUPS, helpers, wrapUserCode } from './helper-docs';
+export type { HelperDoc, HelperGroup } from './helper-docs';

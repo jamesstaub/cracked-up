@@ -3,3 +3,4 @@ demo-dist
 node_modules
 *.md
 package-lock.json
+src/editor/sources.generated.ts

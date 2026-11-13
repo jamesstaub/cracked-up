@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { exampleFor } from '../../demo/examples';
-import { highlightInto, tokenize } from '../../demo/highlight';
-import type { Token } from '../../demo/highlight';
+import { highlightInto, tokenize } from '../../src/editor/highlight';
+import type { Token } from '../../src/editor/highlight';
 import { offlineEngine } from '../core/setup';
 
 const text = (tokens: readonly Token[]) => tokens.map((token) => token.text).join('');

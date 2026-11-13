@@ -11,6 +11,8 @@ export default defineConfig({
     // Paths here are relative to this folder.
     outDir: '../demo-dist',
     emptyOutDir: true,
+    // The demo and sandbox pages share one chunk that holds CodeMirror (about 525 kB, 176 kB gzipped).
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       input: [
         'index.html',

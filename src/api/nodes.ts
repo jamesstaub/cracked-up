@@ -178,6 +178,8 @@ export interface NodeTypeMap {
   lowshelf: NodeShape<ShelfParams, None, number>;
   highshelf: NodeShape<ShelfParams, None, number>;
   peaking: NodeShape<FilterParams & { gain: number }, None, number>;
+  /** A lowpass for control signals: glides to a new value without overshoot, exact in every browser. */
+  smooth: NodeShape<None, { frequency?: number }>;
   sine: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   saw: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;
   square: NodeShape<OscillatorParams, OscillatorInit, number, GateTrigger>;

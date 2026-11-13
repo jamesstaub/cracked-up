@@ -10,6 +10,7 @@ export {
   lowshelf,
   notch,
   peaking,
+  smooth,
 } from './filters';
 export { saw, sine, square, triangle } from './oscillators';
 export { sampler } from './sampler';

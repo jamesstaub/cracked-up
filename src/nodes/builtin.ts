@@ -9,6 +9,7 @@ import {
   lowshelf,
   notch,
   peaking,
+  smooth,
 } from './filters';
 import { bitcrusher } from './bitcrusher';
 import { comb, delay, delayline } from './delays';
@@ -37,6 +38,7 @@ export const builtinNodes: readonly (NodeDefinition | MacroDefinition)[] = [
   lowshelf,
   highshelf,
   peaking,
+  smooth,
   sine,
   saw,
   square,

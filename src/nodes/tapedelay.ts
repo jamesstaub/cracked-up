@@ -3,8 +3,6 @@ import { defineMacro } from '../define';
 
 /** A lowpass or highpass `q` is in decibels; -3.01 dB (Butterworth) never boosts, so the loop stays tame. */
 const BUTTERWORTH_DB = 20 * Math.log10(Math.SQRT1_2);
-/** The same for the filter that smooths changes of `time`: -6.02 dB settles without overshooting. */
-const NO_OVERSHOOT_DB = 20 * Math.log10(0.5);
 
 /** Speed of the slow pitch drift, in Hz, and how far `wow` at 1 moves the delay time each side, in seconds. */
 const WOW_HZ = 0.6;
@@ -203,7 +201,8 @@ export const tapedelay: MacroDefinition<'tapedelay'> = defineMacro({
         (one) => one.gain({ id: 'timeTarget', gain: time }),
         (one) => one.gain({ id: 'timeStart', gain: -time }),
       )
-      .lowpass({ id: 'glide', frequency: GLIDE_HZ, q: NO_OVERSHOOT_DB })
+      // `smooth`, not a lowpass: at 4 Hz the browser's lowpass is 22% out in Chromium off macOS.
+      .smooth({ id: 'glide', frequency: GLIDE_HZ })
       .modulate('#line', 'time');
     __('#unit').trigger();
   },

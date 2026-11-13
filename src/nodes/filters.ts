@@ -120,3 +120,37 @@ export const peaking = filter('peaking', {
   q: width,
   gain: true,
 });
+
+/**
+ * A lowpass for control signals. The browser's own lowpass (a biquad) is inexact at very low
+ * frequencies in Chromium and WebKit outside macOS: at 4 Hz a steady signal of 1 comes out as 1.22.
+ * This one uses the browser's general filter, which works in double precision, and is exact.
+ */
+export const smooth = defineNode({
+  type: 'smooth',
+  category: 'filter',
+  description:
+    'Smooths a control signal so that it glides to a new value instead of jumping, and never overshoots. Put it between a signal and the parameter it moves, for example before modulate. It settles on exactly the value sent in, in every browser, which a lowpass at a very low frequency does not.',
+  params: {},
+  options: {
+    frequency: {
+      type: 'number',
+      default: '4',
+      description:
+        'How quickly it follows, in Hz, from 0.1 to 1000. Higher is quicker: at 4 a jump takes about a fifth of a second to arrive. It cannot be changed after the node is made.',
+    },
+  },
+  build(context, init) {
+    const asked = init['frequency'];
+    const hz = Math.min(1000, Math.max(0.1, typeof asked === 'number' && asked > 0 ? asked : 4));
+    // A two-pole lowpass with Q 0.5 (critically damped): the fastest that settles without overshoot.
+    const w = (2 * Math.PI * hz) / context.audio.sampleRate;
+    const alpha = Math.sin(w);
+    const cos = Math.cos(w);
+    const node = context.audio.createIIRFilter(
+      [(1 - cos) / 2, 1 - cos, (1 - cos) / 2],
+      [1 + alpha, -2 * cos, 1 - alpha],
+    );
+    return { input: node, output: node, params: {} };
+  },
+});

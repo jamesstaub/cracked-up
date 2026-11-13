@@ -168,3 +168,32 @@ describe('delayline', () => {
     expect(engine.select('#line').param('time').value).toBe(0.25);
   });
 });
+
+describe('smooth', () => {
+  const steady = makeBuffer(2, () => 1);
+
+  it('settles on exactly the value sent in, without overshooting on the way', async () => {
+    const engine = await offlineEngine(2);
+    engine.chain().sampler({ id: 'in', buffer: steady }).smooth({ frequency: 4 }).to('main');
+    engine.select('#in').trigger({ at: 0 });
+    const data = samples(await engine.render());
+    // The browser's own lowpass at 4 Hz gives 1.22 here in Chromium and WebKit off macOS.
+    expect(data[95999]).toBeCloseTo(1, 5);
+    let highest = 0;
+    for (const value of data) highest = Math.max(highest, value);
+    expect(highest).toBeLessThanOrEqual(1.00001);
+    // It glides: nowhere near there after 10 ms, most of the way after 200 ms.
+    expect(data[480]).toBeLessThan(0.05);
+    expect(data[9600]).toBeGreaterThan(0.9);
+  });
+
+  it('follows more quickly at a higher frequency', async () => {
+    const at = async (frequency: number) => {
+      const engine = await offlineEngine(0.1);
+      engine.chain().sampler({ id: 'in', buffer: steady }).smooth({ frequency }).to('main');
+      engine.select('#in').trigger({ at: 0 });
+      return samples(await engine.render())[2400]!;
+    };
+    expect(await at(40)).toBeGreaterThan((await at(4)) * 2);
+  });
+});

@@ -11,19 +11,42 @@ async function tail(init: Record<string, unknown>, seconds = 1.5, seed?: number)
   return engine.render();
 }
 
-describe('reverb', () => {
-  it('fades: less energy in the last quarter of the tail than the first', async () => {
-    const audio = await tail({ seconds: 1, mix: 1 });
-    const q = 12000;
-    const first = rms(audio, 0, 0, q);
-    const last = rms(audio, 0, 3 * q, 4 * q);
-    // Measured: first 1.42e-3, last 5.1e-5 (decay 2).
-    expect(first).toBeGreaterThan(1e-3);
-    expect(last).toBeLessThan(first / 10);
-    expect(last).toBeGreaterThan(0);
-  });
+/**
+ * WebKit as built for Linux (which is not Safari, and is only what the tests run in there) has a
+ * faulty convolver: a click through an impulse of one spike also comes out 128 samples in, and the
+ * tail does not end. The tests that read the convolution exactly are skipped where that is found.
+ */
+async function convolverIsFaulty(): Promise<boolean> {
+  const context = new OfflineAudioContext(1, 2048, 48000);
+  const spike = new AudioBuffer({ length: 2048, sampleRate: 48000 });
+  spike.getChannelData(0)[1000] = 1;
+  const one = new AudioBuffer({ length: 1, sampleRate: 48000 });
+  one.getChannelData(0)[0] = 1;
+  const source = new AudioBufferSourceNode(context, { buffer: one });
+  const convolver = new ConvolverNode(context, { buffer: spike, disableNormalization: true });
+  source.connect(convolver).connect(context.destination);
+  source.start();
+  const data = (await context.startRendering()).getChannelData(0);
+  return Math.abs(data[128]!) > 0.01;
+}
+const faultyConvolver = await convolverIsFaulty();
 
-  it('is silent after `seconds`', async () => {
+describe('reverb', () => {
+  it.skipIf(faultyConvolver)(
+    'fades: less energy in the last quarter of the tail than the first',
+    async () => {
+      const audio = await tail({ seconds: 1, mix: 1 });
+      const q = 12000;
+      const first = rms(audio, 0, 0, q);
+      const last = rms(audio, 0, 3 * q, 4 * q);
+      // Measured: first 1.42e-3, last 5.1e-5 (decay 2).
+      expect(first).toBeGreaterThan(1e-3);
+      expect(last).toBeLessThan(first / 10);
+      expect(last).toBeGreaterThan(0);
+    },
+  );
+
+  it.skipIf(faultyConvolver)('is silent after `seconds`', async () => {
     const audio = await tail({ seconds: 1, mix: 1 });
     // Measured: the largest sample after the tail is 8.7e-12 (rounding in the convolution).
     expect(rms(audio, 0, 48000 + 16)).toBeLessThan(1e-9);
@@ -37,7 +60,7 @@ describe('reverb', () => {
     expect(ratio(fast)).toBeLessThan(ratio(slow) * 0.5);
   });
 
-  it('reverse swells towards the end of the tail', async () => {
+  it.skipIf(faultyConvolver)('reverse swells towards the end of the tail', async () => {
     const audio = await tail({ seconds: 1, reverse: true, mix: 1 });
     expect(rms(audio, 0, 36000, 48000)).toBeGreaterThan(rms(audio, 0, 0, 12000) * 10);
   });
@@ -64,7 +87,7 @@ describe('reverb', () => {
     expect(audio.getChannelData(0)[0]).toBeCloseTo(0.7, 2);
   });
 
-  it('uses a given impulse instead of a generated tail', async () => {
+  it.skipIf(faultyConvolver)('uses a given impulse instead of a generated tail', async () => {
     // An impulse that is a single spike 1000 samples in: the output is the click, 1000 samples late.
     const impulse = makeBuffer(0.1, (i) => (i === 1000 ? 1 : 0));
     const audio = await tail({ impulse, mix: 1 }, 0.2);
@@ -72,7 +95,7 @@ describe('reverb', () => {
     expect(rms(audio, 0, 1002)).toBeLessThan(1e-6);
   });
 
-  it('uses an impulse that is still loading once it arrives', async () => {
+  it.skipIf(faultyConvolver)('uses an impulse that is still loading once it arrives', async () => {
     const engine = await offlineEngine(0.2);
     engine.buffers.add('room', wavSpike(1000, 4800));
     engine

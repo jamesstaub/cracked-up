@@ -10,6 +10,22 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ## [Unreleased]
 
+### Added
+
+- **`cracked-up/inspect`.** A graph view for debugging: `createInspector(engine or scope, { parent })`
+  draws a scope's nodes, buses and connections into an element you supply, and `openInspector` and
+  `toggleInspector` open it in a sidebar or modal of their own. Signal runs left to right in a
+  layered layout that copes with feedback loops and fan-out. Macros and child scopes open in place
+  or on their own. Each output in view has a peak and RMS meter with a peak hold, connections move
+  only while signal passes, and modulators show a value and range instead of decibels. Clicking a
+  node shows its parameters with their metadata, a waveform, a spectrum, a bypass switch and a
+  trigger button. The view follows `build()` and other changes without moving nodes that are kept.
+  Levels are read through analysers that lead nowhere, attached only to what is on screen while
+  audio runs; a test shows a render is sample for sample the same with them attached.
+- **`node.insideScope`**: the private scope of a macro instance, or null for any other node.
+- **Demo**: `demo/inspect.html`, a patch with the inspector beside it, and a docs section,
+  "Inspecting the graph".
+
 ## [0.1.0] - 2026-11-12
 
 The first numbered version. Everything is new; this lists what the library contains.

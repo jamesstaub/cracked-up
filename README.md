@@ -38,6 +38,8 @@ with it: old Cracked code will not run unchanged.
 - **Sandboxed scripts** (`cracked-up/remote`): the same scripting API for code that runs in a
   sandboxed frame or Worker, for apps where people share scripts.
 - **MIDI** (`cracked-up/midi`): notes and controllers in and out, and clock sync both ways.
+- **A graph inspector** (`cracked-up/inspect`): a live drawing of a scope's nodes, buses and
+  connections for debugging, with a level meter on every output and the details of any node.
 - **Composing helpers** (`cracked-up/util`): Euclidean rhythms, pattern transforms, sieves, scales
   and chords, seeded randomness, conversions.
 
@@ -69,6 +71,7 @@ That opens:
   that is generated from the library itself. Every example has a "Try it" link into the demo.
 - **A sandboxed demo** (`demo/sandbox.html`) and a guide to
   [running other people's scripts](demo/collaboration.html), for apps with collaboration.
+- **The graph inspector** (`demo/inspect.html`): one patch with the inspector beside it.
 
 ## Entry points
 
@@ -78,6 +81,7 @@ That opens:
 | `cracked-up/util` | Pure helpers: patterns, scales, randomness, conversions, `encodeWav` |
 | `cracked-up/remote` | `createRemote` and `linkRemote`, for sandboxed scripts |
 | `cracked-up/midi` | `requestMidi` and `createMidi` |
+| `cracked-up/inspect` | `createInspector`, `openInspector` and `toggleInspector`: the graph view for debugging |
 | `cracked-up/nodes` | The built-in node definitions |
 | `cracked-up/worklets` | The AudioWorklet source, for hosts that must serve it themselves |
 | `cracked-up/global` | A ready-made engine and `__` for quick experiments |

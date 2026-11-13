@@ -18,6 +18,7 @@ export default defineConfig({
         'sandbox.html',
         'sandbox-frame.html',
         'collaboration.html',
+        'inspect.html',
       ],
     },
   },

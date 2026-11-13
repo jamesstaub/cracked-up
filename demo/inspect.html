@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cracked-up graph inspector</title>
+    <link rel="stylesheet" href="./style.css" />
+    <style>
+      body.inspect main {
+        grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+      }
+      body.inspect.narrow main {
+        grid-template-columns: minmax(0, 1fr) 420px;
+      }
+      .about {
+        padding: 14px 16px;
+        overflow: auto;
+        border-right: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .about p {
+        margin: 0 0 10px;
+      }
+      .about .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      .about ul {
+        margin: 0 0 10px;
+        padding-left: 18px;
+      }
+      .about code {
+        font:
+          12px ui-monospace,
+          'SF Mono',
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      #inspector {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+      }
+      @media (max-width: 720px) {
+        body.inspect main,
+        body.inspect.narrow main {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto minmax(320px, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body class="demo inspect">
+    <header>
+      <h1>cracked-up graph inspector</h1>
+      <button id="toggle" type="button">Start audio</button>
+      <a class="nav" href="./index.html">Live demo</a>
+      <a class="nav" href="./docs.html#inspecting" target="cracked-up-docs">Docs</a>
+      <span id="status">Audio is off. The graph is drawn; the meters wait for Start.</span>
+    </header>
+    <main>
+      <div class="about">
+        <p>
+          The graph on the right is drawn by <code>cracked-up/inspect</code> from the scope this
+          page builds. Each box has a meter on its output, and a connection moves only while signal
+          is going through it. Click a box for its parameters, a scope and a spectrum.
+        </p>
+        <div class="row">
+          <button id="voice" type="button">Add a voice</button>
+          <button id="drive" type="button">Switch the drive on</button>
+          <button id="modal" type="button">Open as a modal</button>
+        </div>
+        <p>
+          "Add a voice" re-runs the page's patch with one more chain, through the same
+          <code>build()</code> the live demo uses. Nodes that were already there stay where they
+          are. The drive starts bypassed; its button switches it in.
+        </p>
+        <p>What the patch contains:</p>
+        <ul>
+          <li>three drum samplers mixed on a bus called <code>drums</code>;</li>
+          <li>
+            a saw bass through a filter that an lfo sweeps, a drive, and a
+            <code>tapedelay</code>, which is a macro: open it to see the feedback loop inside;
+          </li>
+          <li>a <code>monosynth</code> lead that splits into a dry and a delayed branch;</li>
+          <li>a sine that nothing ever triggers, so its chain stays still;</li>
+          <li>five sequences that trigger the drums, the bass and the lead.</li>
+        </ul>
+        <p>
+          Drag to pan. Pinch, or hold Ctrl or Cmd and scroll, to zoom. Double-click a macro or a
+          scope to show only its inside; the trail at the top leads back out.
+        </p>
+      </div>
+      <div id="inspector"></div>
+    </main>
+    <div id="message" role="status"></div>
+    <script type="module" src="./inspect.ts"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ export default defineConfig({
     'global/index': 'src/global/index.ts',
     'remote/index': 'src/remote/index.ts',
     'midi/index': 'src/midi/index.ts',
+    'inspect/index': 'src/inspect/index.ts',
   },
   format: ['esm'],
   dts: true,

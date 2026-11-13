@@ -10,6 +10,36 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ## [Unreleased]
 
+### Added
+
+- **`cracked-up/editor`**: a code editor for an app to embed, built on CodeMirror 6.
+  `createEditor({ parent, doc, catalog, onChange })` mounts into an element and returns `value`,
+  `setValue`, `insert`, `setCatalog`, `setReadOnly`, `setTheme`, `showError`, `clearError`,
+  `goToDefinition`, `focus` and `destroy`. Any number can be on one page.
+- **Completion, hover and signature help** from a catalog of plain data, so the editor needs no
+  engine and works the same beside a sandbox: node types and chain methods after a dot, parameter
+  setters on selections, the keys and values of options objects (`.lowpass({`, `.trigger({`,
+  `.set({`, sequence options), ids, classes and types inside selector strings, buffer, bus and
+  sequence names, the members of `__` and the transport, and the helpers. `catalogFromEngine` and
+  `catalogFromRemoteState` build a catalog; `createCatalogStore` shares one between editors.
+- **Go to definition**: Cmd/Ctrl-click or F12 on a node type or helper. A type defined in the script
+  is jumped to; otherwise a source panel shows its description, parameters and TypeScript source,
+  with a link to MDN for wrappers of Web Audio nodes. `createSourcePanel` makes the panel on its
+  own, and `onDefinition` hands the result to the host instead.
+- `scripts/extract-sources.mjs` (`npm run sources`, run by `npm run build`) copies the source of
+  every built-in node type and helper into `src/editor/sources.generated.ts`, which the editor
+  loads on first use.
+- `cracked-up/util` exports `HELPER_GROUPS`, `HELPER_DOCS`, `helpers` and `wrapUserCode`: every
+  helper with its documentation, and by name for putting in scope of scripts. This list was in the
+  demo before.
+- The CodeMirror packages are optional peer dependencies. No other entry point imports them.
+
+### Changed
+
+- The live demo and the sandboxed demo use `cracked-up/editor` in place of a text box. Clicking a
+  sample, node type or helper in the demo's side column inserts it at the cursor.
+- `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
+
 ## [0.1.0] - 2026-11-12
 
 The first numbered version. Everything is new; this lists what the library contains.

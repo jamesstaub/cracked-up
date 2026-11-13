@@ -1251,6 +1251,250 @@ remote.build((__) =&gt; {
           this, how to set it up safely, and what to share between collaborators.
         </p>
 
+        <h2 id="editor">The editor</h2>
+        <p>
+          <code>cracked-up/editor</code> is a code editor for cracked-up scripts, for an app to
+          embed. It is the editor in the <a href="./index.html">live demo</a>. It completes node
+          types, parameters, selectors, buffer and bus names and helpers as you type, shows what
+          each is when you hover, and shows the source of a node type or helper when you Cmd-click
+          it (Ctrl-click outside macOS), or press F12 on it.
+        </p>
+        <p>
+          It is built on <a href="https://codemirror.net/">CodeMirror 6</a>, which is not bundled
+          with the library and not installed with it. The other entry points do not import it. An
+          app that uses the editor installs the CodeMirror packages itself:
+        </p>
+        <pre
+          data-static
+          data-lang="text"
+        ><code>npm install @codemirror/state @codemirror/view @codemirror/commands @codemirror/language \
+  @codemirror/autocomplete @codemirror/lang-javascript @lezer/highlight @lezer/common</code></pre>
+        <p>
+          The editor is plain DOM: give it an element and it fills it. It keeps nothing global, so a
+          page can hold any number of them, and <code>destroy()</code> removes everything one added.
+          A minimal host:
+        </p>
+        <pre data-static><code>import { createEngine } from 'cracked-up';
+import { helpers, wrapUserCode } from 'cracked-up/util';
+import { createEditor, catalogFromEngine } from 'cracked-up/editor';
+
+const engine = await createEngine({ context: new AudioContext() });
+const scope = engine.scope('script');
+
+const editor = createEditor({
+  parent: document.querySelector('#code'),
+  doc: "__().sine(220).gain(0.2).to('main');",
+  catalog: catalogFromEngine(engine),
+  // Cmd-Enter runs the script. onChange is there too, for running on every edit.
+  keymap: [{ key: 'Mod-Enter', run: () =&gt; (run(), true) }],
+});
+
+async function run() {
+  try {
+    const program = new Function('__', ...Object.keys(helpers), wrapUserCode(editor.value));
+    const result = await scope.build((__) =&gt; program(__, ...Object.values(helpers)));
+    editor.showError(result.errors[0] ?? null);
+  } catch (error) {
+    editor.showError(error);
+  }
+}</code></pre>
+
+        <h3>The catalog</h3>
+        <p>
+          The editor needs no engine. Everything it knows comes from a catalog, which is plain data:
+          the node types (as <code>engine.registry.list()</code> gives them), the helpers, the
+          buffers with their slice counts, and names that exist outside the document, such as the
+          ids, classes, buses and sequences of another track's script. It adds what it finds in its
+          own document: every <code>id</code> and <code>class</code>, every
+          <code>bus('name')</code> and named sequence, and node types the script defines itself.
+        </p>
+        <pre data-static><code>editor.setCatalog({
+  types: engine.registry.list(),
+  buffers: [{ key: 'kick' }, { key: 'break', slices: 128 }],
+  ids: ['lead', 'pad'],          // nodes other scripts made
+  classes: ['drums'],
+  buses: ['reverb-send'],
+  sequences: ['intro'],
+  globals: [{ name: 'engine', description: 'The engine.' }],
+  // helpers: left out, the library's own are used
+});</code></pre>
+        <p>
+          The catalog changes while people type: samples load, macros get defined. Call
+          <code>setCatalog</code> again whenever it does. When several editors show scripts of one
+          project, give them all one store and change that:
+        </p>
+        <pre
+          data-static
+        ><code>import { createCatalogStore, catalogFromEngine } from 'cracked-up/editor';
+
+const catalog = createCatalogStore(catalogFromEngine(engine));
+const drums = createEditor({ parent: drumsElement, doc: drumsCode, catalog });
+const bass = createEditor({ parent: bassElement, doc: bassCode, catalog });
+
+engine.buffers.on('ready', () =&gt; catalog.set(catalogFromEngine(engine)));
+catalog.update({ ids: idsOfEveryTrack() });   // both editors follow</code></pre>
+
+        <h3>With sandboxed scripts</h3>
+        <p>
+          When scripts run in a <a href="#sandbox">sandbox</a>, the editor still lives in the page,
+          and it behaves the same, because it only ever reads the catalog.
+          <code>catalogFromRemoteState</code> makes one from what the link tells the sandbox, which
+          includes node types that a script defined in the sandbox:
+        </p>
+        <pre data-static><code>import { catalogFromRemoteState } from 'cracked-up/editor';
+
+editor.setCatalog(catalogFromRemoteState(link.state()));</code></pre>
+        <p>
+          A page with no engine at all, such as a collaborator's read-only view, can be sent the
+          same data and build its catalog from that.
+        </p>
+
+        <h3>Text the host controls</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Call</th>
+                <th>What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>editor.value</code></td>
+                <td>The current text.</td>
+              </tr>
+              <tr>
+                <td><code>onChange(value)</code></td>
+                <td>
+                  Called after every edit the user makes, and not for <code>setValue</code>. It is
+                  not delayed; a host that wants to wait for a pause in typing does that itself.
+                </td>
+              </tr>
+              <tr>
+                <td><code>setValue(text)</code></td>
+                <td>
+                  Replaces the text. Only the part that differs is replaced, so the cursor stays
+                  where it was in the rest. It is one step the user can undo.
+                  <code>{ history: 'skip' }</code> keeps it out of the undo history (a
+                  collaborator's edit); <code>{ history: 'reset' }</code> starts the history again
+                  (a different document).
+                </td>
+              </tr>
+              <tr>
+                <td><code>insert(text)</code></td>
+                <td>Types text at the cursor, as the user would.</td>
+              </tr>
+              <tr>
+                <td><code>setReadOnly(true)</code></td>
+                <td>Stops the user editing. <code>setValue</code> still works.</td>
+              </tr>
+              <tr>
+                <td><code>showError(error, place?)</code></td>
+                <td>
+                  Shows a message under the code and marks a line. The line comes from
+                  <code>{ line }</code> or <code>{ pos }</code> if you give one, from the
+                  <code>nodeId</code> of an engine error (the line that gives that id), or for a
+                  <code>SyntaxError</code> from the first place the editor's own parser could not
+                  read. <code>showError(null)</code> clears it. With
+                  <code>errorPanel: false</code> only the line is marked.
+                </td>
+              </tr>
+              <tr>
+                <td><code>focus()</code>, <code>destroy()</code></td>
+                <td>As named.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Other options: <code>readOnly</code>, <code>lineNumbers</code>, <code>lineWrapping</code>,
+          <code>ariaLabel</code>, <code>keymap</code> (key bindings tried before the editor's own)
+          and <code>extensions</code> (any CodeMirror extensions). <code>editor.view</code> is the
+          CodeMirror view, for anything not covered here. Tab indents; press Escape and then Tab to
+          move focus out of the editor with the keyboard.
+        </p>
+
+        <h3>Go to definition and the source panel</h3>
+        <p>
+          Cmd-click or F12 on a node type or a helper asks the editor for its definition. A type the
+          script defines itself (<code>define({ type: 'blip', ... })</code>) is in the document, so
+          the cursor goes there. For anything else a panel opens with its description, its
+          parameters, and its TypeScript source with line numbers and a link to the file. A wrapper
+          round a Web Audio node links to that node's page on MDN. A node type's name inside the
+          source is a link to that type, and there is a back button. A type that came only as
+          catalog data, such as one somebody else defined, shows what is known and says the source
+          is not available.
+        </p>
+        <p>
+          The source of the built-in types and helpers is copied out of the library when it is
+          built, into a file of its own that is loaded the first time the panel opens.
+        </p>
+        <p>
+          By default the panel is docked at the right of the editor. To put it somewhere of your
+          own, pass an element, or make the panel yourself and share it between editors:
+        </p>
+        <pre data-static><code>import { createEditor, createSourcePanel } from 'cracked-up/editor';
+
+const panel = createSourcePanel({ parent: document.querySelector('#sidebar'), catalog });
+const editor = createEditor({ parent, catalog, sourcePanel: panel });
+
+panel.show({ kind: 'type', name: 'tapedelay' });   // from a menu of your own, say</code></pre>
+        <p>
+          To draw the result yourself, take it from <code>onDefinition</code>. It is called first,
+          with the kind, the name, the catalog's data for it, and for a type defined in the script
+          where. Return <code>true</code> and the editor does nothing more:
+        </p>
+        <pre data-static><code>createEditor({
+  parent,
+  catalog,
+  sourcePanel: false,
+  onDefinition(target) {
+    openMyInspector(target.kind, target.name, target.type ?? target.helper);
+    return true;
+  },
+});</code></pre>
+        <p>
+          <code>builtinSources(kind, name)</code> gives the same source text the panel shows, and
+          the <code>sources</code> option replaces where it comes from.
+        </p>
+
+        <h3>Styles and themes</h3>
+        <p>
+          The editor brings its styles with it and does not need this site's stylesheet. It adds one
+          <code>&lt;style&gt;</code> element to the document, or to the shadow root it is in; pass
+          <code>injectStyles: false</code> and use the exported <code>editorStyles</code> text if
+          your page must supply it another way. <code>theme</code> is <code>'auto'</code> (follow
+          the system, the default), <code>'light'</code> or <code>'dark'</code>, and
+          <code>setTheme</code> changes it. Every colour and font is a CSS custom property that you
+          can set on the editor's element or anything above it:
+        </p>
+        <pre data-static data-lang="text"><code>.my-app {
+  --cu-bg: #101418;
+  --cu-text: #e6e6e6;
+  --cu-accent: #7fd3a0;
+  --cu-font-mono: 'JetBrains Mono', monospace;
+  --cu-font-size: 14px;
+}</code></pre>
+        <p>
+          The names are <code>--cu-bg</code>, <code>--cu-text</code>, <code>--cu-muted</code>,
+          <code>--cu-border</code>, <code>--cu-accent</code>, <code>--cu-panel-bg</code>,
+          <code>--cu-hover-bg</code>, <code>--cu-selection</code>, <code>--cu-active-line</code>,
+          <code>--cu-error-bg</code>, <code>--cu-error-text</code>, <code>--cu-shadow</code>,
+          <code>--cu-code-comment</code>, <code>--cu-code-string</code>,
+          <code>--cu-code-number</code>, <code>--cu-code-keyword</code>,
+          <code>--cu-code-dunder</code>, <code>--cu-code-property</code>,
+          <code>--cu-font-mono</code>, <code>--cu-font-ui</code>, <code>--cu-font-size</code> and
+          <code>--cu-line-height</code>. They are also exported as <code>THEME_PROPERTIES</code>.
+        </p>
+        <p>
+          Sizes, measured on the built files: the editor's own code is 112 kB unminified (29 kB
+          gzipped), and the source text is a separate 121 kB file (about 27 kB gzipped) loaded on
+          first use. CodeMirror is the larger part: in this site's build the editor with CodeMirror
+          comes to about 525 kB minified, 176 kB gzipped. This page does not load it; the code
+          examples here are coloured by <code>highlightBlocks</code>, a small highlighter with no
+          dependency that the same entry point exports.
+        </p>
+
         <h2 id="helpers">Helpers</h2>
         <p>
           Helpers are small functions for composing: rhythms, scales, random choices and number

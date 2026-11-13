@@ -38,6 +38,10 @@ with it: old Cracked code will not run unchanged.
 - **Sandboxed scripts** (`cracked-up/remote`): the same scripting API for code that runs in a
   sandboxed frame or Worker, for apps where people share scripts.
 - **MIDI** (`cracked-up/midi`): notes and controllers in and out, and clock sync both ways.
+- **An editor** (`cracked-up/editor`): a code editor for an app to embed, built on CodeMirror 6.
+  Completion and hover documentation for node types, parameters, selectors, buffers and helpers,
+  and the source of any node type or helper on Cmd-click. It works from plain data, so it needs no
+  engine and behaves the same beside a sandbox.
 - **Composing helpers** (`cracked-up/util`): Euclidean rhythms, pattern transforms, sieves, scales
   and chords, seeded randomness, conversions.
 
@@ -64,7 +68,7 @@ npm run demo
 
 That opens:
 
-- **A live demo** (`demo/index.html`): a code box that re-runs on every key up.
+- **A live demo** (`demo/index.html`): the editor, with code that re-runs as you type.
 - **The docs** (`demo/docs.html`): a guide, a helper reference, and a reference for every node type
   that is generated from the library itself. Every example has a "Try it" link into the demo.
 - **A sandboxed demo** (`demo/sandbox.html`) and a guide to
@@ -75,12 +79,13 @@ That opens:
 | Import | What it is |
 |---|---|
 | `cracked-up` | `createEngine`, `defineNode`, `defineMacro`, and all the types |
-| `cracked-up/util` | Pure helpers: patterns, scales, randomness, conversions, `encodeWav` |
+| `cracked-up/util` | Pure helpers: patterns, scales, randomness, conversions, `encodeWav`; and `helpers`, every helper by name with its documentation, for putting in scope of scripts |
 | `cracked-up/remote` | `createRemote` and `linkRemote`, for sandboxed scripts |
 | `cracked-up/midi` | `requestMidi` and `createMidi` |
 | `cracked-up/nodes` | The built-in node definitions |
 | `cracked-up/worklets` | The AudioWorklet source, for hosts that must serve it themselves |
 | `cracked-up/global` | A ready-made engine and `__` for quick experiments |
+| `cracked-up/editor` | `createEditor`, `createSourcePanel` and the catalog functions. Needs CodeMirror 6, which you install (see below) |
 
 ```js
 import { createEngine } from 'cracked-up';
@@ -89,6 +94,29 @@ const engine = await createEngine({ context: new AudioContext() });
 const __ = engine.$;
 __().sine(440).gain(0.2).to('main');
 ```
+
+No entry point has a dependency except `cracked-up/editor`, which is built on CodeMirror 6. The
+CodeMirror packages are optional peer dependencies, so they are not installed with the library and
+nothing else imports them. An app that uses the editor installs them:
+
+```sh
+npm install @codemirror/state @codemirror/view @codemirror/commands @codemirror/language \
+  @codemirror/autocomplete @codemirror/lang-javascript @lezer/highlight @lezer/common
+```
+
+```js
+import { createEditor, catalogFromEngine } from 'cracked-up/editor';
+
+const editor = createEditor({
+  parent: document.querySelector('#code'),
+  doc: "__().sine(440).gain(0.2).to('main');",
+  catalog: catalogFromEngine(engine),
+  onChange: (code) => run(code),
+});
+```
+
+The docs page has the rest: the catalog, several editors on a page, sandboxed scripts, the source
+panel, and theming.
 
 ## Development
 
@@ -102,6 +130,12 @@ npm test                    # Chromium, headless
 npm run test:all-browsers   # Chromium, Firefox and WebKit
 npm run check               # all of the above, as CI and releases run it
 ```
+
+`src/editor/sources.generated.ts` holds the source text the editor's source viewer shows. It is
+written by `npm run sources` (which `npm run build` runs first) from `src/nodes` and `src/util`, and
+it is committed, so the demo and the type check work from a fresh clone. `npm run lint` fails if it
+is out of date: after changing a node definition or a helper, run `npm run sources` and commit the
+result.
 
 Tests run in real browsers through Vitest browser mode and Playwright, because they need Web Audio.
 Most render offline and compare exact samples. Two tests need a live sound device and a pretend

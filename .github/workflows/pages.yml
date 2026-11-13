@@ -1,0 +1,42 @@
+# Publishes the demo and docs to GitHub Pages (https://jamesstaub.github.io/cracked-up/) whenever
+# main changes. The built site is committed to the gh-pages branch, which Pages serves.
+name: Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run demo:build
+
+      - name: Commit the site to gh-pages
+        run: |
+          git fetch --depth=1 origin gh-pages
+          git worktree add site FETCH_HEAD
+          cd site
+          git rm -rq --ignore-unmatch .
+          cp -R ../demo-dist/. .
+          # Without this, Pages runs the files through Jekyll.
+          touch .nojekyll
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The site has not changed."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -qm "Site built from $GITHUB_SHA"
+          git push origin HEAD:gh-pages

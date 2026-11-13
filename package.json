@@ -7,7 +7,7 @@
     "type": "git",
     "url": "git+https://github.com/jamesstaub/cracked-up.git"
   },
-  "homepage": "https://github.com/jamesstaub/cracked-up#readme",
+  "homepage": "https://jamesstaub.github.io/cracked-up/",
   "bugs": "https://github.com/jamesstaub/cracked-up/issues",
   "type": "module",
   "sideEffects": [
@@ -56,6 +56,7 @@
   "scripts": {
     "build": "tsup",
     "demo": "vite demo --open",
+    "demo:build": "vite build demo",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project chromium",
     "test:all-browsers": "vitest run --project chromium --project firefox --project webkit",

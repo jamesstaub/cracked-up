@@ -46,7 +46,16 @@ what its limits are.
 
 ## Try it
 
-Requires Node 22.12 or newer (see `.nvmrc`).
+In the browser, with nothing to install:
+
+- [Live demo](https://jamesstaub.github.io/cracked-up/)
+- [Docs](https://jamesstaub.github.io/cracked-up/docs.html)
+- [Sandboxed demo](https://jamesstaub.github.io/cracked-up/sandbox.html) and the guide to
+  [running other people's scripts](https://jamesstaub.github.io/cracked-up/collaboration.html)
+
+That site is rebuilt from `main` on every push (`.github/workflows/pages.yml`).
+
+To run it yourself you need Node 22.12 or newer (see `.nvmrc`).
 
 ```sh
 npm install

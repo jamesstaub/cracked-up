@@ -427,6 +427,26 @@ describe('the inspector on a live context', () => {
     expect(shadow(inspector).querySelector('.status .state')!.textContent).toBe('audio running');
     expect(state()).toBe(before);
 
+    // The meters read what is there: a running saw, an lfo of depth 350, and a sampler with nothing
+    // to play. The saw's filter passes it on; the bus everything ends at was turned down to nothing.
+    const bass = inspector.level(node(engine, 'bass'))!;
+    expect(bass.kind).toBe('audio');
+    if (bass.kind === 'audio') {
+      expect(bass.peakDb).toBeGreaterThan(-3);
+      expect(bass.rmsDb).toBeGreaterThan(-9);
+      expect(bass.rmsDb).toBeLessThan(-3);
+    }
+    const wobble = inspector.level(node(engine, 'wobble'))!;
+    expect(wobble.kind).toBe('control');
+    if (wobble.kind === 'control') {
+      expect(wobble.high).toBeGreaterThan(300);
+      expect(wobble.high).toBeLessThanOrEqual(351);
+      expect(wobble.low).toBeLessThan(-300);
+    }
+    expect(inspector.level(node(engine, 'kick'))).toMatchObject({ kind: 'audio', peakDb: -100 });
+    expect(inspector.level(engine.bus('main'))).toMatchObject({ kind: 'audio', peakDb: -100 });
+    expect(inspector.level(live.bus('drums'))).toMatchObject({ kind: 'audio', peakDb: -100 });
+
     // Opening the macro taps what is inside it too, as far as it is in view.
     inspector.expand(node(engine, 'echo'));
     inspector.fit();
@@ -436,6 +456,7 @@ describe('the inspector on a live context', () => {
 
     inspector.destroy();
     expect(inspector.stats().taps).toBe(0);
+    expect(inspector.level(node(engine, 'bass'))).toBeNull();
     expect(watch.open).toBe(0);
     expect(state()).toBe(before);
   });

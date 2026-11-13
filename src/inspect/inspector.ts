@@ -48,6 +48,25 @@ export interface InspectorStats {
   worstFrameMs: number;
 }
 
+/** What the meter on one output reads at this moment. */
+export type LevelReading =
+  | {
+      readonly kind: 'audio';
+      /** Decibels relative to full scale; -100 stands for silence. */
+      readonly peakDb: number;
+      readonly rmsDb: number;
+      /** The highest peak of the last second or so. */
+      readonly holdDb: number;
+      readonly clipped: boolean;
+    }
+  | {
+      readonly kind: 'control';
+      readonly value: number;
+      /** The lowest and highest values of the last two seconds. */
+      readonly low: number;
+      readonly high: number;
+    };
+
 export interface Inspector {
   /** The inspector's own element, a child of `parent`. */
   readonly element: HTMLElement;
@@ -72,6 +91,11 @@ export interface Inspector {
   readonly selected: Node | null;
   /** What the detail panel is showing, as data. */
   detail(): NodeDetail | null;
+  /**
+   * What the meter on a node's or bus's output reads now. Null when it is not being metered: it is
+   * out of view, inside something closed, or audio is not running.
+   */
+  level(target: Node | Bus): LevelReading | null;
   setTheme(theme: InspectorTheme): void;
   stats(): InspectorStats;
   /** Removes the element, every tap and every listener. */
@@ -375,6 +399,21 @@ class InspectorImpl implements Inspector {
     return this.panel.detail();
   }
 
+  level(target: Node | Bus): LevelReading | null {
+    // A bus can be drawn more than once (in its own scope, and in each child scope that uses it).
+    // Read whichever of them is being listened to.
+    for (const key of this.keysOf(target)) {
+      const meter = this.meters.get(key);
+      if (!meter || !this.taps?.has(key)) continue;
+      if (meter instanceof LevelMeter) {
+        const { peakDb, rmsDb, holdDb, clipped } = meter;
+        return { kind: 'audio', peakDb, rmsDb, holdDb, clipped };
+      }
+      return { kind: 'control', value: meter.value, low: meter.low, high: meter.high };
+    }
+    return null;
+  }
+
   setTheme(theme: InspectorTheme): void {
     if (theme === 'auto') this.element.removeAttribute('data-theme');
     else this.element.setAttribute('data-theme', theme);
@@ -675,14 +714,18 @@ class InspectorImpl implements Inspector {
     }
   }
 
-  private keyOf(target: Node | Bus | Scope): string | null {
+  private *keysOf(target: Node | Bus | Scope): Generator<string> {
     for (const [key, handle] of this.handles) {
-      if (handle.node === target || handle.scope === target) return key;
+      if (handle.node === target || handle.scope === target) yield key;
       // A bus reached from a child scope is a view of the same bus; its output tells them apart.
-      if (handle.bus && 'gain' in target && 'output' in target) {
-        if (handle.bus.output === (target as Bus).output) return key;
+      else if (handle.bus && 'gain' in target && 'output' in target) {
+        if (handle.bus.output === (target as Bus).output) yield key;
       }
     }
+  }
+
+  private keyOf(target: Node | Bus | Scope): string | null {
+    for (const key of this.keysOf(target)) return key;
     return null;
   }
 

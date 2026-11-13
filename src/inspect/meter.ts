@@ -71,7 +71,7 @@ export class LevelMeter {
   peakDb = SILENCE_DB;
   rmsDb = SILENCE_DB;
   holdDb = SILENCE_DB;
-  /** True from a block that reached full scale until the hold mark has fallen again. */
+  /** True from a block that went over full scale until the hold mark has fallen again. */
   clipped = false;
   private meanSquare = 0;
   private held = 0;
@@ -89,7 +89,7 @@ export class LevelMeter {
     if (peak >= this.holdDb) {
       this.holdDb = peak;
       this.held = 0;
-      this.clipped = stats.peak >= 1;
+      this.clipped = stats.peak > 1;
     } else {
       this.held += step;
       if (this.held > PEAK_HOLD_SECONDS) {

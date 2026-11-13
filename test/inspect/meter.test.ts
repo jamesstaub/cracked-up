@@ -105,7 +105,10 @@ describe('LevelMeter', () => {
     expect(meter.activity).toBe(0);
   });
 
-  it('flags a block that reaches full scale until the hold mark falls', () => {
+  it('flags a block that goes over full scale until the hold mark falls', () => {
+    const exact = new LevelMeter();
+    exact.update(measure(new Float32Array(BLOCK).fill(1)), DT);
+    expect(exact.clipped).toBe(false);
     const meter = new LevelMeter();
     meter.update(measure(new Float32Array(BLOCK).fill(1.2)), DT);
     expect(meter.clipped).toBe(true);

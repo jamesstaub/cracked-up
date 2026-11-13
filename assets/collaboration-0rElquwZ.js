@@ -1,0 +1,1 @@
+import"./modulepreload-polyfill-P2Xu9kJm.js";import{n as e}from"./highlight-bPnov08D.js";e(document.querySelector(`article`)??document);

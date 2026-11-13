@@ -1,0 +1,1437 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cracked-up docs</title>
+    <script type="module" crossorigin src="./assets/docs-DWXiFeVP.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
+    <link rel="modulepreload" crossorigin href="./assets/highlight-bPnov08D.js">
+    <link rel="modulepreload" crossorigin href="./assets/pattern-DZPZqFub.js">
+    <link rel="modulepreload" crossorigin href="./assets/engine-B9R-7j5h.js">
+    <link rel="modulepreload" crossorigin href="./assets/helpers-D1IkWwMk.js">
+    <link rel="stylesheet" crossorigin href="./assets/highlight-B3pIfRvP.css">
+  </head>
+  <body class="docs">
+    <header>
+      <h1>cracked-up docs</h1>
+      <a class="nav" href="./index.html" target="cracked-up-demo">Live demo</a>
+      <span id="status">The node reference below is generated from the library.</span>
+    </header>
+    <div class="docs-layout">
+      <nav id="toc" aria-label="Contents"></nav>
+      <article>
+        <h2 id="introduction">Introduction</h2>
+        <p>
+          cracked-up is a JavaScript library for making sound and music in the browser by writing
+          code. You describe a sound as a chain of simple parts, such as an oscillator into a filter
+          into a volume control, and a musical clock plays your patterns in time. It is meant for
+          live coding, and for apps that let people write small music scripts.
+        </p>
+        <pre><code>__().saw({ id: 'bass', gate: 'closed' }).lowpass(700).gain(0.3).to('main');
+
+__.transport.sequence('bass', { steps: [55, 0, 55, 82.4], step: '1/8' }, (ev) => {
+  if (ev.value) __('#bass').set({ frequency: ev.value }).trigger({ duration: 0.15 });
+});</code></pre>
+        <p>
+          Every example on this page has a <em>Try it</em> link that opens it in the
+          <a href="./index.html" target="cracked-up-demo">live demo</a>, where you can change it
+          while it plays.
+        </p>
+
+        <h3>Where it comes from</h3>
+        <p>
+          cracked-up is based on
+          <a href="https://github.com/billorcutt/i_dropped_my_phone_the_screen_cracked"
+            >I Dropped My Phone The Screen Cracked</a
+          >
+          by Bill Orcutt, called Cracked for short on this page. Cracked had the idea this library
+          keeps: one object, <code>__</code>, with which you chain audio nodes together and later
+          find them again with selectors like the ones in CSS, such as <code>__('#bass')</code> or
+          <code>__('lowpass')</code>.
+        </p>
+        <p>
+          cracked-up is a rewrite, not a new version of Cracked. It was written from scratch in
+          TypeScript, and many names and rules changed, so code written for Cracked will not run
+          here without changes. A few of the differences:
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>In Cracked</th>
+                <th>Here</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>__().sine().dac()</code></td>
+                <td>
+                  <code>__().sine().to('main')</code>. Chains end at a named
+                  <a href="#output">bus</a>
+                </td>
+              </tr>
+              <tr>
+                <td>A later line such as <code>__.lowpass()</code> carries on the last chain</td>
+                <td>A chain is a value. You carry on from that value, or select nodes by name</td>
+              </tr>
+              <tr>
+                <td><code>.attr({ frequency: 200 })</code></td>
+                <td>
+                  <code>.set({ frequency: 200 })</code> or <code>.frequency(200)</code>. See
+                  <a href="#parameters">Changing parameters</a>
+                </td>
+              </tr>
+              <tr>
+                <td><code>.start()</code>, <code>.stop()</code></td>
+                <td>
+                  <code>.trigger()</code>, <code>.release()</code>. See
+                  <a href="#triggering">Starting and stopping sounds</a>
+                </td>
+              </tr>
+              <tr>
+                <td><code>__.loop(...)</code> and <code>.bind('step', ...)</code></td>
+                <td>
+                  <code>__.transport.sequence(...)</code>. See
+                  <a href="#sequencing">Sequencing</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Cracked is released under the MIT licence, copyright 2014 Bill Orcutt. cracked-up is
+          released under the MIT licence too. Its licence file keeps Bill Orcutt's copyright line
+          and adds one for the new code (2026, James Staub).
+        </p>
+
+        <h3>Why a rewrite, and what is new</h3>
+        <p>
+          Cracked keeps everything in one shared place: one set of nodes for the whole page, and a
+          memory of "the last node made". That is quick to type, but two pieces of code on the same
+          page can disturb each other, and timing depends on how busy the page is. The rewrite set
+          out to remove those limits and keep the feel. What that gave:
+        </p>
+        <ul>
+          <li>
+            <strong>Nothing shared behind your back.</strong> Sound lives in an <em>engine</em> that
+            you create, and a page can have more than one. An engine can be divided into
+            <em>scopes</em>, for example one for each track. Code given one track's scope cannot
+            find or change the nodes of another track.
+          </li>
+          <li>
+            <strong>Selections that do not get in each other's way.</strong>
+            <code>__('lowpass')</code> gives back a selection you can keep in a variable and use
+            again. Using one selection never changes what another one points at. See
+            <a href="#selecting">Selecting nodes</a>.
+          </li>
+          <li>
+            <strong>Tight timing.</strong> A <em>transport</em> keeps the tempo and schedules each
+            step slightly ahead of time on the audio clock, so notes land on the exact sample even
+            when the page is briefly busy. It runs any number of sequences at once, with different
+            lengths and step sizes (polyrhythm), swing, and tempo changes. See
+            <a href="#sequencing">Sequencing</a>.
+          </li>
+          <li>
+            <strong>Parameters that describe themselves.</strong> Every parameter knows its range,
+            unit, default value and what it does. The <a href="#reference">node reference</a> on
+            this page is made from that information, and an app can use it to draw the right knob
+            for each parameter.
+          </li>
+          <li>
+            <strong>Macros.</strong> Several nodes can be wrapped up as one new node type with its
+            own parameters. The built-in <a href="#node-polysynth"><code>polysynth</code></a> is
+            made this way.
+          </li>
+          <li>
+            <strong>Changing code while it plays.</strong> Run changed code again and only what
+            changed is rebuilt. Everything else keeps sounding, and sequences stay in time. See
+            <a href="#rebuilding">Re-running code</a>.
+          </li>
+          <li>
+            <strong>Offline rendering.</strong> The same code can be rendered to audio without
+            playing it, faster than real time, and it comes out the same on every run. See
+            <a href="#recording">Stems and files</a>. The library's own tests work this way: they
+            render sound in real browsers and check the result.
+          </li>
+          <li>
+            <strong>Modern audio processing.</strong> Where Cracked ran custom sound code with
+            <code>ScriptProcessor</code>, an older browser feature that shares a thread with the
+            page and can glitch, cracked-up uses <code>AudioWorklet</code>, which runs with the rest
+            of the audio. The bitcrusher, recorder and looper are built on it.
+          </li>
+          <li>
+            <strong>Recording and looping.</strong> A recorder and a looper that start and stop on
+            the exact sample, live input, and separate files for each part of a mix (stems). See
+            <a href="#recording">Recording, looping and live input</a>.
+          </li>
+          <li>
+            <strong>MIDI.</strong> Play a synth from a keyboard, map a controller to a parameter,
+            send notes out, and keep time with other gear in either direction. See
+            <a href="#midi">MIDI</a>.
+          </li>
+          <li>
+            <strong>Running other people's scripts safely.</strong> A script can run in a sandbox, a
+            closed-off part of the browser where it cannot read your page, and still play in time.
+            This is what makes sharing scripts between collaborators possible. See
+            <a href="#sandbox">Running scripts in a sandbox</a> and the guide
+            <a href="./collaboration.html">Running other people's scripts</a>.
+          </li>
+          <li>
+            <strong>Types.</strong> The library is written in TypeScript. An editor can complete
+            node names and options as you type, and point out a misspelled one before you run it.
+          </li>
+          <li>
+            <strong>The composing helpers are still here.</strong> Cracked's small functions for
+            scales, random choices and number conversions are listed under
+            <a href="#helpers">Helpers</a>.
+          </li>
+        </ul>
+
+        <h3>Where it stands</h3>
+        <p>
+          cracked-up is pre-alpha. It is not published to npm, and names and behaviour may still
+          change. Releases are numbered by semantic versioning, starting at 0.1.0; while the number
+          starts with 0, a change that breaks existing code raises the middle number. The
+          repository's <code>CHANGELOG.md</code> lists what changed in each. What this page
+          describes is implemented, and the tests run in Chromium, Firefox and WebKit. Known limits:
+        </p>
+        <ul>
+          <li>
+            MIDI is tested with pretend devices only. Its timing has not been measured against real
+            hardware.
+          </li>
+          <li>Safari has no Web MIDI, so MIDI does not work there.</li>
+          <li>Recording from a live microphone is tested in Chromium only.</li>
+          <li>
+            Recordings are kept in memory without compression. There is no mode for very long takes
+            yet.
+          </li>
+          <li>MIDI is not available to scripts running in a sandbox.</li>
+        </ul>
+
+        <h2 id="basics">The basics</h2>
+        <p>
+          You build sound by chaining <em>nodes</em>. A node makes sound (an oscillator, a sampler)
+          or changes it (a filter, a gain). <code>__()</code> starts a chain; each method adds a
+          node and connects the previous one to it.
+        </p>
+        <pre><code>__().saw(110).lowpass(800).gain(0.3).to('main');</code></pre>
+        <p>
+          That is a sawtooth oscillator at 110 Hz, into a low-pass filter at 800 Hz, into a gain of
+          0.3, into the output. A chain you do not send anywhere makes no sound.
+        </p>
+        <p>
+          Give a node an <code>id</code> when you want to reach it later. Pass options as an object;
+          a bare value sets the node's main parameter, so <code>lowpass(800)</code> is short for
+          <code>lowpass({ frequency: 800 })</code>.
+        </p>
+        <pre><code>__().saw({ id: 'bass', frequency: 55 })
+  .lowpass({ id: 'filter', frequency: 400, q: 8 })
+  .gain(0.3)
+  .to('main');</code></pre>
+
+        <h2 id="output">Where sound goes: <code>main</code></h2>
+        <p>
+          <code>main</code> is the engine's output. It is a <em>bus</em>: a named point where any
+          number of chains are mixed together. The engine creates <code>main</code> for you and
+          connects it to your speakers. It is the only bus that exists until you make another. You
+          never define it yourself, and it cannot be removed.
+        </p>
+        <p>
+          <code>main</code> is stereo. A mono sound sent to it is heard equally on both sides; use a
+          <code>panner</code> before it to place a sound left or right.
+        </p>
+        <p>
+          In the original Cracked library every chain ended with its own <code>.dac()</code> node.
+          Here every chain ends at the one shared <code>main</code>, which gives a single place to
+          set the overall level, and later to meter or record everything.
+        </p>
+        <pre><code>__().sine(220).gain(0.2).to('main');
+__.bus('main').gain.set(0.5); // overall level</code></pre>
+        <p>
+          You can make more buses to group sounds, for example a shared effect. A new bus feeds
+          <code>main</code> until you route it somewhere else.
+        </p>
+        <pre><code>__.bus('drums').gain.set(0.8);
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
+__.transport.every('1/4', () => __('sampler').trigger());</code></pre>
+        <p>
+          Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
+        </p>
+
+        <h2 id="connecting"><code>to</code>, <code>connect</code> and <code>modulate</code></h2>
+        <p>
+          All three make a connection from the end of a chain. They differ in what they connect to.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Connects to</th>
+                <th>A string means</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>.to('main')</code></td>
+                <td>A bus</td>
+                <td>The bus's name</td>
+              </tr>
+              <tr>
+                <td><code>.connect('#filter')</code></td>
+                <td>The input of one or more existing nodes</td>
+                <td>A selector that finds the nodes</td>
+              </tr>
+              <tr>
+                <td><code>.modulate('#filter', 'frequency')</code></td>
+                <td>A parameter of existing nodes, so the signal moves that parameter</td>
+                <td>A selector that finds the nodes</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          So <code>.to('main')</code> and <code>.connect(engine.bus('main'))</code> do the same
+          thing. <code>to</code> exists because ending a chain at a bus is the common case, and
+          because a string there is a bus name, while a string given to <code>connect</code> is a
+          selector.
+        </p>
+        <pre><code>// Two oscillators into one filter.
+__().lowpass({ id: 'filter', frequency: 600 }).gain(0.2).to('main');
+__().saw(110).connect('#filter');
+__().square(165).connect('#filter');
+
+// A slow sine moves the filter's cutoff by +/- 300 Hz.
+__().sine(0.5).gain(300).modulate('#filter', 'frequency');</code></pre>
+        <p>
+          When something modulates a parameter, its signal is <em>added</em> to the parameter's own
+          value. An oscillator swings between -1 and 1, so a <code>gain</code> after it sets how far
+          the parameter moves.
+        </p>
+
+        <h2 id="selecting">Selecting nodes</h2>
+        <p>
+          <code>__('selector')</code> finds nodes you have already made and returns them as a
+          <em>selection</em>. Whatever you call on a selection applies to every node in it.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Selector</th>
+                <th>Finds</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>sampler</code></td>
+                <td>Every node of that type</td>
+              </tr>
+              <tr>
+                <td><code>#kick</code></td>
+                <td>The node with that id</td>
+              </tr>
+              <tr>
+                <td><code>.drums</code>, <code>.drums.loud</code></td>
+                <td>Nodes with that class, or with all of several classes</td>
+              </tr>
+              <tr>
+                <td><code>[role=send]</code>, <code>[solo]</code></td>
+                <td>Nodes with a tag of that value, or with that tag at all</td>
+              </tr>
+              <tr>
+                <td><code>sine, saw</code></td>
+                <td>Either</td>
+              </tr>
+              <tr>
+                <td><code>sampler:not(.muted)</code></td>
+                <td>Samplers without the class</td>
+              </tr>
+              <tr>
+                <td><code>gain:nth(1)</code></td>
+                <td>The second gain, counting from 0 in the order they were made</td>
+              </tr>
+              <tr>
+                <td><code>*</code></td>
+                <td>Everything</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick', class: 'drums' }).to('main');
+__().sampler({ id: 'hat', buffer: 'hat', class: 'drums' }).to('main');
+
+__.transport.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
+  __(ev.value === 1 ? '#kick' : '#hat').trigger();
+});</code></pre>
+        <p>
+          Classes and tags are set when a node is made:
+          <code>{ class: 'drums loud', tags: { role: 'send' } }</code>.
+        </p>
+
+        <h2 id="parameters">Changing parameters</h2>
+        <p>
+          Every node has parameters, listed in the reference below. Each one has a
+          <em>base value</em>: the value you set, and the one a slider would show.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Call</th>
+                <th>Does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>.set({ frequency: 800, q: 4 })</code></td>
+                <td>Sets base values</td>
+              </tr>
+              <tr>
+                <td><code>.frequency(800)</code></td>
+                <td>The same, for one parameter. There is a setter for every parameter name</td>
+              </tr>
+              <tr>
+                <td><code>.ramp('frequency', 2000, { duration: 2 })</code></td>
+                <td>Glides the base value to a target over a number of seconds</td>
+              </tr>
+              <tr>
+                <td><code>.offset('frequency', 500, { duration: 0.1 })</code></td>
+                <td>Adds an amount on top of the base value for a while, then returns to it</td>
+              </tr>
+              <tr>
+                <td><code>.param('frequency').value</code></td>
+                <td>Reads the base value</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>__().saw(110).lowpass({ id: 'filter', frequency: 200, q: 6 }).gain(0.2).to('main');
+__('#filter').ramp('frequency', 3000, { duration: 4 });</code></pre>
+        <p>
+          The one exception to the setter rule is a parameter called <code>release</code> (on the
+          compressor): <code>.release()</code> already means "release the note", so that parameter
+          is set with <code>.set({ release: 0.2 })</code>.
+        </p>
+        <p>
+          The minimum and maximum in the reference are the range a control would cover. They are not
+          limits: you can set a gain of 300 when it is scaling a modulation.
+        </p>
+
+        <h2 id="triggering">Starting and stopping sounds</h2>
+        <p>
+          <code>.trigger()</code> starts a sound and <code>.release()</code> ends it. What that
+          means depends on the node.
+        </p>
+        <p>
+          A <strong>sampler</strong> plays its buffer once per trigger. Each trigger is a new voice,
+          so you never need to stop or rewind it before the next hit. Options given to
+          <code>trigger</code> apply to that hit only.
+        </p>
+        <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
+__.transport.sequence('hat', { steps: 4, step: '1/8' }, (ev) => {
+  __('#hat').trigger({ speed: 1 + ev.index * 0.2, velocity: 0.6 });
+});</code></pre>
+        <p>
+          An <strong>oscillator</strong> runs from the moment it is made and is heard straight away,
+          as a drone. <code>release()</code> closes its gate and <code>trigger()</code> opens it. To
+          make one that is silent until triggered, create it with <code>gate: 'closed'</code>.
+        </p>
+        <pre><code>__().square({ id: 'blip', frequency: 660, gate: 'closed' }).gain(0.15).to('main');
+__.transport.every('1/4', () => __('#blip').trigger({ duration: 0.08 }));</code></pre>
+
+        <h2 id="buffers">Samplers and where their audio comes from</h2>
+        <p>
+          A sampler plays a <em>buffer</em>: a piece of recorded sound held in memory. The engine
+          keeps a store of named buffers, <code>engine.buffers</code>, so the same sound is decoded
+          once and shared by every sampler that uses it.
+        </p>
+        <p>A sampler's <code>buffer</code> option accepts three things:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>You pass</th>
+                <th>What happens</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A name already in the store, such as <code>'kick'</code></td>
+                <td>That buffer is used</td>
+              </tr>
+              <tr>
+                <td>Any other string</td>
+                <td>
+                  It is treated as a URL: the file is fetched, decoded, and stored under that URL.
+                  The sampler is silent until loading finishes. The server must allow requests from
+                  this page.
+                </td>
+              </tr>
+              <tr>
+                <td>An <code>AudioBuffer</code> you made or decoded yourself</td>
+                <td>It is used directly</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          In the live demo, <code>'kick'</code>, <code>'snare'</code> and <code>'hat'</code> are not
+          files. The demo page generates them with a few lines of maths when audio starts and adds
+          them to the store by name:
+        </p>
+        <pre data-static><code>engine.buffers.add('kick', audioBuffer);</code></pre>
+        <p>
+          A buffer can be cut into <em>slices</em> by giving it boundaries in seconds. A trigger can
+          then play one slice by number.
+        </p>
+        <pre><code>const kit = engine.buffers.get('snare');
+kit.slices = [0, 0.03, 0.1, 0.25];
+__().sampler({ id: 's', buffer: 'snare' }).to('main');
+__.transport.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
+  __('#s').trigger({ slice: ev.value });
+});</code></pre>
+
+        <h2 id="slicing">Slicing a drum break</h2>
+        <p>
+          A <em>break</em> is a few bars of a drummer playing alone. Cut into slices, it becomes a
+          drum kit that keeps the feel of the original playing: you can play the slices in a new
+          order, repeat them, reverse them and change their pitch. Jungle and breakcore are built on
+          this.
+        </p>
+        <p>
+          The live demo loads one break under the name <code>'break'</code>. It is
+          <a href="https://freesound.org/people/deadrobotmusic/sounds/629052/"
+            >Crunchy Drum Break 2 [128bpm]</a
+          >
+          by deadrobotmusic, shared on Freesound under the
+          <a href="https://creativecommons.org/publicdomain/zero/1.0/">Creative Commons 0</a>
+          licence. The demo page fetches it from Freesound when audio starts. If that fails, the
+          page says so, samplers that play <code>'break'</code> are silent, and everything else
+          works.
+        </p>
+        <p>
+          The break is 8 bars long at 128 beats per minute, which is 15 seconds. The demo page cuts
+          it into 128 slices, one for every sixteenth note: slice 0 is the first sixteenth of bar 1,
+          slice 16 is the first sixteenth of bar 2, and so on. In every bar the kick drum is on
+          sixteenths 0, 7 and 14, the snare is on 4 and 10, and there is a hi-hat on the other even
+          ones. The odd ones mostly hold the tail of the hit before.
+        </p>
+        <h3>Staying in time</h3>
+        <p>
+          <code>trigger({ slice: n })</code> plays slice <code>n</code>. A slice of this break lasts
+          one sixteenth note at 128 bpm. To make it last one sixteenth note at your tempo, play it
+          faster or slower by the ratio of the two tempos: <code>speed = your bpm / 128</code>. Then
+          the break follows the transport at any tempo. Like a record, a sample played faster also
+          sounds higher.
+        </p>
+        <pre><code>__.transport.bpm = 150;
+__().sampler({ id: 'break', buffer: 'break' }).to('main');
+
+// The break was played at 128 bpm. At this speed one slice lasts exactly one step.
+const speed = __.transport.bpm / 128;
+
+// 128 steps, one for each slice: the whole break, in order, at your tempo.
+__.transport.sequence('break', { steps: 128 }, (ev) =&gt; {
+  __('#break').trigger({ slice: ev.index, speed });
+});</code></pre>
+        <p>
+          Change the bpm and the break stays in time. A slice number past the last slice wraps round
+          to the start.
+        </p>
+        <h3>Setting the grid</h3>
+        <p>
+          The slices of a buffer are a list of boundaries in seconds. You can replace the list at
+          any time. This cuts the same break into 64 eighth notes instead. It is not run from here,
+          because it would change the grid for every other example until you reload the demo:
+        </p>
+        <pre data-static><code>const sound = engine.buffers.get('break');
+// 64 slices need 65 boundaries, spread evenly over the 15 seconds.
+sound.slices = fillArray(65, (i) =&gt; (i * 15) / 64);</code></pre>
+        <p>
+          An even grid works for this break because it starts exactly on its first hit, ends exactly
+          on a bar line, and was played to a steady beat. For a break that does not, start the list
+          later than 0, or put each boundary where a hit begins.
+        </p>
+        <h3>A new order</h3>
+        <p>
+          Give the sequence a pattern of slice numbers and the drummer plays a beat that was never
+          recorded:
+        </p>
+        <pre><code>__.transport.bpm = 150;
+__().sampler({ id: 'break', buffer: 'break' }).to('main');
+const speed = __.transport.bpm / 128;
+
+// Which sixteenth of the first bar to play on each step.
+// 0 is a kick, 4 and 10 are snares, 12 is a hat.
+const order = [0, 0, 4, 12, 7, 4, 12, 0, 10, 14, 4, 4, 0, 7, 4, 10];
+
+__.transport.sequence('break', { steps: order }, (ev) =&gt; {
+  __('#break').trigger({ slice: ev.value, speed });
+});</code></pre>
+        <h3>Rolls, reverses and pitch</h3>
+        <p>
+          A <em>roll</em> is one hit repeated very fast. <code>ev.at(0.5)</code> is the moment
+          halfway through a step, so several triggers at different fractions of the step make a
+          roll. <code>duration</code> cuts each hit short, <code>reverse: true</code> plays a slice
+          backwards, and multiplying <code>speed</code> changes the pitch: twice the speed is an
+          octave higher and lasts half as long.
+        </p>
+        <pre><code>__.transport.bpm = 150;
+__().sampler({ id: 'break', buffer: 'break' }).to('main');
+const speed = __.transport.bpm / 128;
+
+__.transport.sequence('break', { steps: 16 }, (ev) =&gt; {
+  const hit = __('#break');
+  if (ev.bar % 2 === 1 &amp;&amp; ev.index &gt;= 12) {
+    // A roll: the snare four times inside each of the last four steps, getting higher.
+    for (let i = 0; i &lt; 4; i++) {
+      hit.trigger({
+        slice: 4,
+        at: ev.at(i / 4),
+        speed: speed * (1 + (ev.index - 12) / 4),
+        duration: ev.duration / 4,
+      });
+    }
+  } else if (ev.index === 6) {
+    // Backwards: the sound swells up to the next step.
+    hit.trigger({ slice: 4, speed, reverse: true });
+  } else if (ev.index === 9) {
+    // Twice as fast: an octave higher and half as long.
+    hit.trigger({ slice: ev.index, speed: speed * 2 });
+  } else {
+    hit.trigger({ slice: ev.index, speed });
+  }
+});</code></pre>
+        <h3>All together: breakcore</h3>
+        <p>
+          Breakcore is fast and restless: the break is cut up, reordered, stuttered and pitched, and
+          it rarely plays the same bar twice. This example has a four-bar phrase. Bar 1 is the break
+          in order with a few tricks. Bar 2 is a new order. Bar 3 is half-time, dark and low. Bar 4
+          is double-time and ends in a snare roll. A sub bass plays under every kick drum, and now
+          and then a snare is thrown into an echo. The random choices come from a seed, so the
+          phrase is the same each time round. Change the seed, the tempo or a pattern and listen.
+        </p>
+        <pre><code>// Breakcore from one drum break: sliced, shuffled, rolled and pitched.
+// The sound is "Crunchy Drum Break 2 [128bpm]" by deadrobotmusic (Creative Commons 0):
+// https://freesound.org/people/deadrobotmusic/sounds/629052/
+
+__.transport.bpm = 172;
+
+// The break is 8 bars at 128 bpm. The demo page has cut it into 128 slices,
+// one for every sixteenth note. Played at this speed a slice lasts exactly one step, so the
+// break stays in time at any tempo. Change the bpm above and listen.
+const speed = __.transport.bpm / 128;
+
+// --- The sounds ---------------------------------------------------------------
+// The drum bus is made gritty and goes through a filter. to(null) means the bus
+// is heard only through this chain.
+__.bus('drums').to(null).chain()
+  .bitcrusher({ bits: 10, rate: 0.6 })
+  .lowpass({ id: 'tone', frequency: 14000 })
+  .to('main');
+__().sampler({ id: 'break', buffer: 'break' }).to('drums');
+
+// A second player of the same break, heard only as echoes: a "delay throw".
+__().sampler({ id: 'throw', buffer: 'break' })
+  .highpass(600)
+  .delay({ time: __.transport.seconds('1/8d'), feedback: 0.6, mix: 1 })
+  .gain(0.5)
+  .to('main');
+
+// A sub bass. It plays under every kick drum, wherever the kick ends up.
+__().sine({ id: 'sub', gate: 'closed' }).overdrive(0.5).gain(0.5).to('main');
+const bassNotes = [43.65, 43.65, 51.91, 38.89]; // one per bar: F, F, G sharp, D sharp
+
+// --- The plan -----------------------------------------------------------------
+// In each bar of the break the kick is on sixteenths 0, 7 and 14, the snare on 4 and 10.
+const kicks = [0, 7, 14];
+const inOrder = fillArray(16, (i) =&gt; i);
+const chopped = [0, 0, 4, 7, 7, 4, 2, 0, 10, 14, 4, 4, 0, 7, 4, 10];
+
+// A seed makes the random choices come out the same on every run. Try another number.
+const random = createRandom(5);
+// The eight eighth notes of a bar, in a random order.
+const jumbled = shuffle([0, 2, 4, 6, 8, 10, 12, 14], random).flatMap((s) =&gt; [s, s + 1]);
+
+// The phrase is four bars long. Each bar has a pattern and a feel:
+// 1 is normal, 0.5 is half-time, 2 is double-time.
+const patterns = [inOrder, chopped, inOrder, jumbled];
+const feels = [1, 1, 0.5, 2];
+// A trick for each step, chosen once, so the phrase has a shape that comes back.
+// The first step of a bar is always left alone.
+const tricks = fillArray(64, (i) =&gt;
+  i % 16 &gt; 0 &amp;&amp; chance(0.3, random) ? pick(['roll', 'reverse', 'high', 'gate', 'rest'], random) : 'plain',
+);
+
+// Plays one slice. If it holds a kick drum, the sub bass plays with it.
+const hit = (slice, at, options) =&gt; {
+  __('#break').trigger({ slice, at, speed, ...options });
+  if (kicks.includes(slice % 16)) __('#sub').trigger({ at, duration: 0.14 });
+};
+
+// --- The break ----------------------------------------------------------------
+__.transport.sequence('break', { steps: 16 }, (ev) =&gt; {
+  const bar = ev.bar % 4;
+  const step = ev.index;
+  const trick = tricks[bar * 16 + step];
+  // Use the matching bar of the break, so the drummer's own changes come through.
+  const from = 16 * (ev.bar % 8);
+  const slice = from + patterns[bar][step];
+
+  if (step === 0) {
+    __('#sub').set({ frequency: bassNotes[bar] });
+    // The half-time bar is darker.
+    __('#tone').set({ frequency: feels[bar] === 0.5 ? 2500 : 14000 });
+  }
+
+  if (bar === 3 &amp;&amp; step &gt;= 8) {
+    // The fill that ends the phrase: a snare roll that gets faster and higher.
+    const count = [2, 2, 3, 3, 4, 4, 6, 8][step - 8];
+    const rollSpeed = speed * (1 + (step - 8) / 8);
+    for (let i = 0; i &lt; count; i++) {
+      hit(from + 4, ev.at(i / count), { speed: rollSpeed, duration: ev.duration / count });
+    }
+  } else if (feels[bar] === 0.5) {
+    // Half-time: on every second step, one slice at half speed. It lasts two steps
+    // and sounds an octave lower.
+    if (step % 2 === 0) hit(from + patterns[bar][step / 2], ev.time, { speed: speed / 2 });
+  } else if (feels[bar] === 2) {
+    // Double-time: two slices in every step, at twice the speed.
+    hit(from + patterns[bar][(step * 2) % 16], ev.time, { speed: speed * 2 });
+    hit(from + patterns[bar][(step * 2 + 1) % 16], ev.at(0.5), { speed: speed * 2 });
+  } else if (trick === 'roll') {
+    // A stutter: the same slice three times inside one step.
+    for (let i = 0; i &lt; 3; i++) hit(slice, ev.at(i / 3), { duration: ev.duration / 3 });
+  } else if (trick === 'reverse') hit(slice, ev.time, { reverse: true });
+  else if (trick === 'high') hit(slice, ev.time, { speed: speed * 2 });
+  else if (trick === 'gate') hit(slice, ev.time, { duration: ev.duration * 0.3 });
+  else if (trick !== 'rest') hit(slice, ev.time, {});
+
+  // Throw the second snare of bars 2 and 4 into the echo.
+  if (bar % 2 === 1 &amp;&amp; step === 10) __('#throw').trigger({ slice: from + 4, speed });
+});</code></pre>
+
+        <h2 id="time">Time</h2>
+        <p>
+          Most calls take an optional <code>at</code>: the moment the change should happen, in
+          seconds on the audio clock (<code>engine.context.currentTime</code>). Leave it out and the
+          change happens now. Scheduled changes land on the exact sample.
+        </p>
+        <pre><code>const now = engine.context.currentTime;
+__().sine({ id: 'tone', frequency: 220 }).gain(0.2).to('main');
+__('#tone').set({ frequency: 330 }, { at: now + 1 });
+__('#tone').set({ frequency: 440 }, { at: now + 2 });</code></pre>
+        <p>
+          Inside a sequence callback you rarely need <code>at</code>: anything you do there happens
+          at the step's own time. See the next section.
+        </p>
+
+        <h2 id="sequencing">Sequencing: the transport</h2>
+        <p>
+          The transport keeps musical time: a tempo and a position in beats. A <em>sequence</em> is
+          a repeating pattern of steps on it. For each step, your function is called with an event
+          describing that step. You reach it as <code>__.transport</code>.
+        </p>
+        <pre><code>__.transport.bpm = 120;
+__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+
+__.transport.sequence('kick', { steps: 'x...x...x..x..x.' }, (ev) => {
+  if (ev.value) __('#kick').trigger();
+});</code></pre>
+        <p>
+          <code>steps</code> is the pattern, as an array of numbers or a string. In a string,
+          <code>x</code> means 1 and <code>.</code> means 0, so <code>'x..x'</code> is the same as
+          <code>[1, 0, 0, 1]</code>. A value of 0 is a rest; your function is still called, which is
+          why the example checks <code>ev.value</code>. Values can be any number, so a step can say
+          which sample to play or what pitch to use.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>steps</code></td>
+                <td>
+                  The pattern. A plain number, such as <code>5</code>, means that many steps, all
+                  with value 1
+                </td>
+              </tr>
+              <tr>
+                <td><code>step</code></td>
+                <td>
+                  How long one step lasts: <code>'1/16'</code> (the default), <code>'1/8'</code>,
+                  <code>'1/8t'</code> for a triplet, <code>'1/8d'</code> for dotted, or a number of
+                  beats
+                </td>
+              </tr>
+              <tr>
+                <td><code>span</code></td>
+                <td>
+                  Use instead of <code>step</code> to spread the steps evenly over a length:
+                  <code>{ steps: 5, span: '1 bar' }</code> is five in a bar
+                </td>
+              </tr>
+              <tr>
+                <td><code>swing</code></td>
+                <td>0.5 is straight. Above 0.5 delays every second step</td>
+              </tr>
+              <tr>
+                <td><code>offset</code></td>
+                <td>Shifts the whole pattern later by a length</td>
+              </tr>
+              <tr>
+                <td><code>probability</code></td>
+                <td>Chance, from 0 to 1, that each hit is played</td>
+              </tr>
+              <tr>
+                <td><code>rests</code></td>
+                <td><code>false</code> stops your function being called for rests</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The event your function receives:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ev.value</code></td>
+                <td>The step's value from the pattern</td>
+              </tr>
+              <tr>
+                <td><code>ev.index</code></td>
+                <td>Which step of the pattern this is, counting from 0</td>
+              </tr>
+              <tr>
+                <td><code>ev.cycle</code></td>
+                <td>How many times the pattern has repeated</td>
+              </tr>
+              <tr>
+                <td><code>ev.time</code></td>
+                <td>The exact moment the step sounds, on the audio clock</td>
+              </tr>
+              <tr>
+                <td><code>ev.duration</code></td>
+                <td>How long the step lasts, in seconds</td>
+              </tr>
+              <tr>
+                <td><code>ev.at(0.5)</code></td>
+                <td>
+                  A moment part-way through the step: 0.5 is halfway. For extra hits between steps
+                </td>
+              </tr>
+              <tr>
+                <td><code>ev.beat</code>, <code>ev.bar</code></td>
+                <td>Where the step is in the music</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Your function runs a fraction of a second <em>before</em> its step is heard, and whatever
+          it does is timed to land exactly on the step. That is why timing stays tight even when the
+          page is busy. It also means a slow function does not make the music late.
+        </p>
+        <p>
+          Every sequence follows the same transport, so sequences with different step lengths stay
+          locked together. That makes polyrhythms a matter of choosing lengths:
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.5).to('main');
+
+// Four against five in the same bar.
+__.transport.sequence('four', { steps: 4, span: '1 bar' }, () => __('#kick').trigger());
+__.transport.sequence('five', { steps: 5, span: '1 bar' }, () => __('#hat').trigger());</code></pre>
+        <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).to('main');
+
+// A swung pattern with a quick double hit on the last step.
+__.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) => {
+  if (!ev.value) return;
+  __('#hat').trigger();
+  if (ev.index === 3) __('#hat').trigger({ at: ev.at(0.5), velocity: 0.5 });
+});</code></pre>
+        <p>
+          Giving a sequence a name lets you change it: calling
+          <code>__.transport.sequence</code> again with the same name replaces the old one without
+          losing its place. <code>__.transport.every('1/4', fn)</code> calls a function at a regular
+          interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
+        </p>
+
+        <h2 id="recording">Recording, looping and live input</h2>
+        <p>
+          A <code>recorder</code> sits in a chain, passes the sound through, and records it when
+          triggered. The recording goes into the buffer store under a key, where a sampler can play
+          it. Starting and stopping are exact to the sample, so recorders started together make
+          recordings that line up.
+        </p>
+        <pre><code>__().sampler({ id: 'hit', buffer: 'snare' }).recorder({ id: 'rec', into: 'take' }).gain(0.5).to('main');
+__().sampler({ id: 'again', buffer: 'take', speed: 0.5 }).to('main');
+__.transport.every('1/4', () =&gt; __('#hit').trigger());
+
+// Every two bars, record half a bar. Every bar, play the latest take at half speed.
+__.transport.every('2 bars', () =&gt; __('#rec').trigger({ duration: __.transport.seconds('1/2') }));
+__.transport.every('1 bar', () =&gt; __('#again').trigger());</code></pre>
+        <p>
+          Make the recorder before the sampler that plays its key, so the key exists. Each new take
+          replaces the last one under that key; give <code>trigger</code> a <code>key</code> to keep
+          takes apart.
+        </p>
+        <p>
+          A <code>looper</code> records a loop of a fixed length and plays it round and round. Each
+          later <code>trigger()</code> adds a layer; <code>call('undo')</code> removes the newest
+          and <code>call('clear')</code> empties it. Start the first layer on a bar line and it
+          stays on the bar: the loop is timed against the audio clock itself, so it does not drift,
+          though it will not follow a later change of tempo.
+        </p>
+        <pre><code>__().sampler({ id: 'hit', buffer: 'kick' }).looper({ id: 'loop', length: '1 bar' }).gain(0.6).to('main');
+
+// The kick plays for one bar in every four. The looper records that bar and repeats it.
+__.transport.sequence('feed', { steps: 'x..x..x.' + '.'.repeat(24), step: '1/8' }, (ev) =&gt; {
+  if (ev.value) __('#hit').trigger();
+});
+__.transport.every('4 bars', () =&gt; {
+  __('#loop').call('clear').trigger();
+});</code></pre>
+        <h3>Recording any part of your sound</h3>
+        <p>
+          Recorders and loopers take whatever is connected to them, not just a microphone. The usual
+          way to choose what gets captured is a bus: send any number of chains to it, and continue
+          from the bus into the recorder or looper. Nothing is captured until you
+          <code>trigger()</code> the recorder or looper, so a complete example needs three things:
+          the routing, something playing, and a trigger.
+        </p>
+        <pre><code>// ROUTING. Anything sent to 'loop-in' can be looped. to(null) stops the bus feeding the
+// output by itself, so its one way out is through the looper. Without it you would hear
+// everything twice.
+__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '1 bar' }).to('main');
+
+// SOMETHING PLAYING. Two different chains feed the bus: a synth, and a sampler through a filter.
+__().polysynth({ id: 'keys', release: 0.2 }).gain(0.5).to('loop-in');
+__().sampler({ id: 'hat', buffer: 'hat' }).highpass(5000).gain(0.4).to('loop-in');
+
+// They are only played in the first bar of every four.
+__.transport.sequence('keys', { steps: [60, 0, 67, 0, 63, 0, 70, 0], step: '1/8' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 === 0) __('#keys').trigger({ pitch: ev.value, duration: 0.15 });
+});
+__.transport.sequence('hats', { steps: 'x.xx', step: '1/8' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 === 0) __('#hat').trigger();
+});
+
+// A TRIGGER. On that first bar, empty the looper and record. For the other three bars
+// nothing is being played: what you hear is the loop.
+__.transport.every('4 bars', () =&gt; __('#loop').call('clear').trigger());</code></pre>
+        <p>
+          A recorder is routed the same way. Chained from a bus without <code>to(null)</code> it
+          listens in while the bus plays on as normal, and from <code>main</code> it hears
+          everything:
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('main');
+__.transport.sequence('kick', { steps: 'x..x..x.', step: '1/8' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 &lt; 2) __('#kick').trigger();
+});
+__.transport.sequence('snare', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
+  if (ev.value &amp;&amp; ev.bar % 4 &lt; 2) __('#snare').trigger();
+});
+
+// A recorder on the whole mix, and a sampler that plays what it recorded.
+__.bus('main').chain().recorder({ id: 'tape', into: 'mix-bar' });
+__().sampler({ id: 'tape-play', buffer: 'mix-bar', speed: 0.5 }).to('main');
+
+// The drums play for two bars in every four. Record the second of them, exactly one bar...
+__.transport.every('4 bars', () =&gt; {
+  __('#tape').trigger({ duration: __.transport.seconds('1 bar') });
+}, { offset: '1 bar' });
+// ...and play it at half speed over the two silent bars.
+__.transport.every('4 bars', () =&gt; __('#tape-play').trigger(), { offset: '2 bars' });</code></pre>
+        <p>
+          Recordings and loops stay in time if you start them on a bar line and measure them in
+          bars: start from a transport callback (<code>every('4 bars', ...)</code>), give a recorder
+          <code>duration: __.transport.seconds('1 bar')</code>, and give a looper a
+          <code>length</code> such as <code>'2 bars'</code>. The starter code in the live demo does
+          both.
+        </p>
+        <p>
+          Layers added to a looper after the first are recorded at its <code>overdub</code> level,
+          0.7 unless you change it, so that layers stacked on each other do not add up to
+          distortion. Set <code>overdub: 1</code> to record every layer at full level.
+        </p>
+        <p>
+          <code>input</code> is a microphone or audio interface. The browser asks for permission the
+          first time. Sound from an input arrives late, by the time it takes to get through the
+          audio hardware and back. Tell a recorder or looper how late with its
+          <code>latency</code> parameter and it shifts what it records to match, so an overdub lines
+          up with what the player heard. A reasonable starting value is
+          <code>engine.context.outputLatency</code> plus the input's own delay; let people adjust it
+          by ear.
+        </p>
+        <pre
+          data-static
+        ><code>__().input().looper({ id: 'loop', length: '2 bars', latency: 0.02 }).to('main');</code></pre>
+        <h3>Stems and files</h3>
+        <p>
+          To render a piece to separate files, build it on an offline engine, put a recorder on each
+          bus you want a stem of, and render. A take still open when the render ends is finished
+          there, so every stem is as long as the mix.
+        </p>
+        <pre data-static><code>import { createEngine } from 'cracked-up';
+import { encodeWav } from 'cracked-up/util';
+
+const context = new OfflineAudioContext(2, 48000 * 60, 48000);
+const engine = await createEngine({ context });
+
+const drums = engine.scope('drums');
+drums.bus('out').chain().recorder({ id: 'stem', into: 'stem:drums' });
+// ...build the drums, sending them to 'out', and the other tracks the same way...
+
+engine.select('recorder').trigger({ at: 0 });
+engine.transport.start();
+const mix = await engine.render();
+const drumStem = await engine.buffers.get('stem:drums').ready;
+
+const file = new Blob([encodeWav(mix, { bitDepth: 24 })], { type: 'audio/wav' });</code></pre>
+        <p>
+          <code>encodeWav</code> writes 16-bit, 24-bit or 32-bit floating-point files from any
+          recording or render.
+        </p>
+
+        <h2 id="midi">MIDI</h2>
+        <p>
+          MIDI lives in its own part of the library, <code>cracked-up/midi</code>, and belongs to
+          the page rather than to a script: the page asks for access once and decides what to do
+          with it. It needs a browser with Web MIDI (Chrome, Edge, Firefox; not Safari), and
+          <code>requestMidi</code> fails with a clear message where there is none. The examples here
+          are for a page's own code, not for the live demo.
+        </p>
+        <pre data-static><code>import { requestMidi } from 'cracked-up/midi';
+
+const midi = await requestMidi(engine);
+midi.inputs;                       // [{ id, name, manufacturer }, ...]
+midi.on('devices', () =&gt; { /* something was plugged in or removed */ });</code></pre>
+        <h3>Playing and controlling</h3>
+        <pre
+          data-static
+        ><code>// Notes from a keyboard play a synth: note-on triggers the pitch, note-off releases it.
+engine.chain().polysynth({ id: 'keys' }).to('main');
+midi.play(() =&gt; engine.select('#keys'));
+
+// Any message, on any channel, with as many listeners as you like.
+midi.on('noteon', (note) =&gt; console.log(note.note, note.velocity, note.channel), { channel: 10 });
+midi.on('pitchbend', (bend) =&gt; engine.select('#keys').set({ detune: bend.value * 200 }));
+
+// Tie a knob to a parameter. The knob's travel covers the parameter's control range.
+midi.bind({ controller: 74 }, () =&gt; engine.select('#filter').param('frequency'));
+
+// Or let the person choose the knob: this waits for the next one they move.
+const binding = await midi.learn(() =&gt; engine.select('#filter').param('frequency'));
+binding.remove();</code></pre>
+        <p>
+          Give <code>bind</code> and <code>learn</code> a function that finds the parameter, as
+          above, rather than the parameter itself. Then the knob keeps working after code is re-run
+          and the node behind it has been replaced.
+        </p>
+        <h3>Sending notes</h3>
+        <pre
+          data-static
+        ><code>const out = midi.output('My Synth');   // by name or id; the first output if you give none
+out.channel = 2;
+
+engine.transport.sequence('bass', { steps: [36, 0, 36, 43], step: '1/8' }, (ev) =&gt; {
+  // No time given: inside a sequence it lands exactly on the step.
+  if (ev.value) out.note(ev.value, { duration: ev.duration * 0.8, velocity: 0.9 });
+});
+out.cc(1, 0.5);
+out.pitchBend(-1);</code></pre>
+        <h3>Keeping time with other gear</h3>
+        <pre
+          data-static
+        ><code>// Other gear follows this page: clock pulses, Start, Stop, and where to continue from.
+const stopSending = midi.sendClock('Drum Machine');
+
+// This page follows other gear: its Start and Stop, its tempo, its position.
+const follow = midi.follow('Drum Machine');
+follow.bpm;      // the tempo measured from the incoming clock
+follow.error;    // how far the transport is from the clock right now, in seconds
+follow.stop();   // go back to the transport's own tempo</code></pre>
+        <p>
+          While following, setting <code>transport.bpm</code> does nothing, so code that sets a
+          tempo can be re-run without fighting the clock. Timing is matched to what is heard, not to
+          what has been computed: notes and clock sent out are delayed by the audio output's
+          latency, so a drum machine and the page's own sound line up at the speakers.
+        </p>
+        <p>
+          How tight is it? With a pretend clock whose pulses each arrive up to 1.5 milliseconds
+          early or late, the transport stays within 2 milliseconds of it at 70, 120 and 174 bpm, and
+          comes back onto the clock after a tempo change. That has been measured with simulated and
+          in-browser clocks only. It has not yet been measured against real hardware, where the MIDI
+          interface and driver add their own delay and unevenness.
+        </p>
+
+        <h2 id="bypass">Bypassing a node</h2>
+        <p>
+          A bypassed effect passes its input straight to its output. A bypassed source, or a
+          modulator, is silent. The node keeps running while bypassed, so a delay keeps its contents
+          and an oscillator keeps its phase. The switch is a 5 millisecond crossfade, so it does not
+          click.
+        </p>
+        <pre><code>__().saw(110).lowpass({ id: 'filter', frequency: 300, q: 8 }).gain(0.2).to('main');
+
+// Take the filter out on every second beat.
+__.transport.sequence('toggle', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
+  __('#filter').bypass(ev.value === 1);
+});</code></pre>
+        <p>
+          <code>.bypass()</code> turns the bypass on, <code>.bypass(false)</code> turns it off, and
+          <code>{ bypass: true }</code> among a node's options makes it bypassed from the start.
+        </p>
+
+        <h2 id="rebuilding">Re-running code: <code>build</code></h2>
+        <p>
+          A scope's <code>build</code> runs a function that makes nodes, connections and sequences,
+          and then makes the scope match what the function asked for. Run it again with changed code
+          and only the difference is applied:
+        </p>
+        <ul>
+          <li>
+            A node that is asked for again is kept and keeps sounding. Changed parameter values are
+            set on it in place.
+          </li>
+          <li>
+            A node is recognised by its <code>id</code>. A node without one is recognised by its
+            position among the nodes of its type: the second <code>lowpass</code> your code makes is
+            the second <code>lowpass</code> it made last time. Give a node an id if you want it to
+            survive being moved around.
+          </li>
+          <li>
+            A node is replaced only if its type or one of its creation options (a sampler's buffer,
+            an oscillator's gate) changed.
+          </li>
+          <li>Nodes, connections and sequences the function no longer asks for are removed.</li>
+          <li>
+            A sequence with a name is replaced in place and stays in time. Give sequences names.
+          </li>
+          <li>
+            If the function throws, everything it did is undone and the scope plays on as it was.
+          </li>
+        </ul>
+        <pre data-static><code>const scope = engine.scope('track-1');
+
+await scope.build((__) =&gt; {
+  __().saw({ id: 'bass' }).lowpass(500).gain(0.25).to('main');
+});
+
+// Later: the saw and the gain are untouched, the filter moves to 900 Hz, a delay is added.
+const result = await scope.build((__) =&gt; {
+  __().saw({ id: 'bass' }).lowpass(900).delay(0.25).gain(0.25).to('main');
+});
+result.added;     // [delay]
+result.updated;   // [lowpass, gain]  (the gain's input changed)
+result.unchanged; // [saw]</code></pre>
+        <p>
+          The live demo runs your code through <code>build</code> on every key up. A rebuild sets
+          every parameter back to what the code says, so a value changed from a sequence callback
+          lasts until the next rebuild.
+        </p>
+        <p>
+          <code>scope.apply(graph)</code> does the same from data instead of code:
+          <code>scope.describe()</code> returns a scope's nodes and connections as plain JSON, and
+          <code>apply</code> makes a scope match such a description. That is how a host saves and
+          restores a graph, or edits one from a user interface.
+        </p>
+
+        <h2 id="sandbox">Running scripts in a sandbox</h2>
+        <p>
+          Code from someone else should not run in your page, where it could read the page, its
+          storage and the signed-in session. <code>cracked-up/remote</code> lets the same code run
+          somewhere it can do no harm, such as a frame with <code>sandbox="allow-scripts"</code>,
+          while the engine stays in the page.
+        </p>
+        <p>
+          Inside the sandbox, <code>createRemote</code> gives the script the same <code>__</code>.
+          It has no audio behind it: reads are answered from a copy of the scope's state, and
+          everything the script does is sent to the page as plain-data commands. In the page,
+          <code>linkRemote</code> applies those commands to one scope and nothing else. Sequence
+          callbacks run in the sandbox: the page sends each step a little ahead of time, and the
+          commands the callback makes land exactly on the step.
+        </p>
+        <pre data-static><code>// In the page
+import { linkRemote } from 'cracked-up/remote';
+
+const link = linkRemote(engine.scope('guest'), {
+  send: (message) =&gt; frame.contentWindow.postMessage(message, '*'),
+  allow: (command) =&gt; command.op !== 'loadBuffer',   // refuse what you do not want
+});
+frame.contentWindow.postMessage({ init: link.state() }, '*');
+window.addEventListener('message', (event) =&gt; {
+  if (event.source === frame.contentWindow) link.receive(event.data);
+});
+
+// In the sandboxed frame
+import { createRemote } from 'cracked-up/remote';
+
+const remote = createRemote({ ...state, send: (message) =&gt; parent.postMessage(message, '*') });
+window.addEventListener('message', (event) =&gt; remote.receive(event.data));
+
+remote.build((__) =&gt; {
+  __().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+  __.transport.sequence('kick', { steps: 'x...' }, (ev) =&gt; {
+    if (ev.value) __('#kick').trigger();
+  });
+});</code></pre>
+        <p>What differs from running next to the engine:</p>
+        <ul>
+          <li>
+            Outside a sequence callback there is no clock, so an operation without a time happens
+            when it reaches the page.
+          </li>
+          <li>
+            A script can send audio to an outer bus such as <code>main</code>, but cannot change
+            that bus, and cannot select or change nodes outside its scope.
+          </li>
+          <li>
+            Nodes inside a macro can be written to (<code>__('polysynth lowpass').set(...)</code>)
+            but not read: the sandbox's copy does not include them.
+          </li>
+          <li>
+            There is no transport position to read, and a script cannot start or stop the transport.
+            Sequence events carry the beat and bar.
+          </li>
+        </ul>
+        <p>
+          A script can define its own node types with <code>remote.define</code>, which takes the
+          same definition as <code>defineMacro</code>. The inner graph is built in the sandbox and
+          sent to the page as data. The macro's <code>trigger</code>, <code>release</code> and
+          methods stay in the sandbox and run there whenever anyone calls them, including a control
+          in the page. One difference: a drive's <code>scale</code> has to be data, because a
+          function cannot be sent to the page.
+        </p>
+        <pre data-static><code>remote.define({
+  type: 'supersaw',
+  params: {
+    frequency: {
+      default: 110, min: 20, max: 5000,
+      drives: [
+        { select: '#a', param: 'frequency' },
+        { select: '#b', param: 'frequency', scale: { multiply: 1.01 } },
+      ],
+    },
+  },
+  build(__) {
+    __().lowpass({ id: 'filter' }).to('out');
+    __().saw({ id: 'a' }).connect('#filter');
+    __().saw({ id: 'b' }).connect('#filter');
+  },
+  methods: {
+    sweep(__, args, at) {
+      __('#filter').ramp('frequency', args.to, { at, duration: 0.5, curve: 'exp' });
+    },
+  },
+});</code></pre>
+        <p>
+          <code>remote.buffers.get(key)</code> gives a loaded buffer's duration and slice
+          boundaries, and <code>remote.buffers.load(url)</code> asks the page to load one, which the
+          page may refuse.
+        </p>
+        <p>
+          The frame keeps a script away from your page, not from the network or the processor. Give
+          the frame a content security policy to stop it making requests, and expect that a script
+          stuck in a loop stops its own sequences. The
+          <a href="./sandbox.html">sandboxed demo</a> shows all of this running, with the measured
+          round-trip time. The guide
+          <a href="./collaboration.html">Running other people's scripts</a> covers when an app needs
+          this, how to set it up safely, and what to share between collaborators.
+        </p>
+
+        <h2 id="helpers">Helpers</h2>
+        <p>
+          Helpers are small functions for composing: rhythms, scales, random choices and number
+          conversions. They make no sound themselves. They give you numbers and lists to use in your
+          patterns and parameters. In the live demo and the sandboxed demo you call them by name. In
+          your own project, import them from <code>cracked-up/util</code> (or from
+          <code>cracked-up/global</code>, next to <code>__</code>).
+        </p>
+        <pre><code>__.transport.bpm = 100;
+__().triangle({ id: 'lead', gate: 'closed' }).lowpass(2400).gain(0.25).to('main');
+__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.3).to('main');
+
+// A seed fixes the random choices: the same tune every time. Try another number.
+const random = createRandom(4);
+
+// A minor as MIDI notes: 57 is the A below middle C.
+const notes = scales('minor').map((step) =&gt; 57 + step);
+// Decide the tune once: eight notes picked from the scale.
+const tune = fillArray(8, () =&gt; pick(notes, random));
+
+// Five notes spread evenly over eight steps.
+__.transport.sequence('lead', { steps: euclid(5, 8), step: '1/8' }, (ev) =&gt; {
+  if (!ev.value) return;
+  // One time in five, play the note an octave higher.
+  const note = tune[ev.index] + (chance(0.2, random) ? 12 : 0);
+  __('#lead').set({ frequency: pitchToFreq(note) }).trigger({ duration: ev.duration * 0.8 });
+});
+
+// A hat on every third sixteenth note, drifting against the tune.
+const third = everyNth(3);
+__.transport.sequence('hat', { steps: 'x', step: '1/16' }, () =&gt; {
+  if (third()) __('#hat').trigger();
+});</code></pre>
+
+        <h3>Random choices that repeat</h3>
+        <p>
+          Every helper that makes a random choice takes an optional last argument: where to get its
+          random numbers. Leave it out and the choice is different on every run. Pass a
+          <em>seeded</em> source and the choices come out the same every time, which is what you
+          want when a piece should sound the same tomorrow, or when you render it to a file.
+          <code>createRandom(seed)</code> makes one, and every engine has one of its own as
+          <code>engine.random</code>.
+        </p>
+        <pre><code>__().sine({ id: 'bell', gate: 'closed' }).gain(0.2).to('main');
+
+// A random note of C minor on every eighth note, from the engine's own source.
+__.transport.every('1/8', () =&gt; {
+  const frequency = randomScale('minor', 5, 6, engine.random);
+  __('#bell').set({ frequency }).trigger({ duration: 0.1 });
+});</code></pre>
+
+        <h3>Every helper</h3>
+        <p>
+          The results shown are what the example gives. Where a helper has a second name, that is
+          the name Cracked used for it, and it works here too.
+        </p>
+        <!-- Filled in by docs.ts from demo/helpers.ts, the same list the demos use. -->
+        <div id="helpers-body"></div>
+        <p>
+          Three things differ from Cracked on purpose. <code>chance</code> takes a probability from
+          0 to 1, not a percentage. <code>shuffle</code> returns a new list and leaves yours alone.
+          <code>pitchToFreq</code> and <code>freqToPitch</code> do not round, so notes between the
+          keys work.
+        </p>
+        <p>
+          <code>euclid</code>'s third argument, <code>rotate</code>, starts the pattern that many
+          steps later, which moves the hits earlier: <code>euclid(3, 8)</code> is
+          <code>[1, 0, 0, 1, 0, 0, 1, 0]</code> and <code>euclid(3, 8, 1)</code> is
+          <code>[0, 0, 1, 0, 0, 1, 0, 1]</code>. A negative number moves them later.
+        </p>
+
+        <h2 id="demo-names">Names available in the live demo</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>What it is</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>__</code></td>
+                <td>
+                  Starts a chain (<code>__()</code>) or selects nodes (<code>__('selector')</code>).
+                  Also
+                  <code>__.bus('name')</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>engine</code></td>
+                <td>The engine itself: <code>engine.buffers</code>, <code>engine.context</code></td>
+              </tr>
+              <tr>
+                <td><code>__.transport</code></td>
+                <td>
+                  The transport: <code>.bpm</code>, <code>.sequence(...)</code>,
+                  <code>.every(...)</code>, <code>.at(...)</code>. If you use it a lot, give it a
+                  short name:
+                  <code>const t = __.transport;</code>
+                </td>
+              </tr>
+              <tr>
+                <td>The <a href="#helpers">helpers</a></td>
+                <td>
+                  Every function listed under Helpers, by its bare name:
+                  <code>euclid(3, 8)</code>, <code>pick(list)</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>'kick'</code>, <code>'snare'</code>, <code>'hat'</code></td>
+                <td>Three short sounds made by the demo page, for samplers to play</td>
+              </tr>
+              <tr>
+                <td><code>'break'</code></td>
+                <td>
+                  A drum break in 128 slices, fetched from Freesound. See
+                  <a href="#slicing">Slicing a drum break</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Each time the demo re-runs your code it rebuilds in place, as described under
+          <a href="#rebuilding">Re-running code</a>: what you did not change keeps sounding, and if
+          the code has an error the previous version keeps playing.
+        </p>
+
+        <h2 id="common-options">Options every node accepts</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>id</code></td>
+                <td>
+                  A name for the node, unique among the nodes made together. Select it with
+                  <code>#id</code>. Nodes without one get a generated id such as <code>gain-0</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>class</code></td>
+                <td>One or more class names separated by spaces. Select with <code>.name</code></td>
+              </tr>
+              <tr>
+                <td><code>tags</code></td>
+                <td>
+                  An object of extra labels, such as <code>{ role: 'send' }</code>. Select with
+                  <code>[role=send]</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>bypass</code></td>
+                <td>
+                  <code>true</code> makes the node bypassed from the start. See
+                  <a href="#bypass">Bypassing a node</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="reference">Node reference</h2>
+        <p>
+          This section is generated from the library's own node definitions when the page loads, so
+          it always matches the code.
+        </p>
+        <div id="reference-body"></div>
+      </article>
+    </div>
+  </body>
+</html>

@@ -51,6 +51,10 @@
       "types": "./dist/editor/index.d.ts",
       "import": "./dist/editor/index.js"
     },
+    "./inspect": {
+      "types": "./dist/inspect/index.d.ts",
+      "import": "./dist/inspect/index.js"
+    },
     "./global": {
       "types": "./dist/global/index.d.ts",
       "import": "./dist/global/index.js"

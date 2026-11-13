@@ -1148,6 +1148,143 @@ result.unchanged; // [saw]</code></pre>
           restores a graph, or edits one from a user interface.
         </p>
 
+        <h2 id="inspecting">Inspecting the graph</h2>
+        <p>
+          <code>cracked-up/inspect</code> draws a scope as a graph, for finding out why something is
+          silent or where a level goes wrong. Every node is a box, every bus a rounded shape, and
+          signal runs from left to right. Each output has a level meter, and a connection moves only
+          while signal is going through it, so a silent path looks still. It is for a page's own
+          code, not for the live demo; the <a href="./inspect.html">inspector page</a> shows it
+          running.
+        </p>
+        <pre data-static><code>import { toggleInspector } from 'cracked-up/inspect';
+
+// A sidebar with a close button. The same call closes it again.
+button.addEventListener('click', () =&gt; toggleInspector(engine, { mode: 'sidebar' }));</code></pre>
+        <p>
+          <code>openInspector(target, { mode })</code> is the same without the toggling, and
+          <code>mode: 'modal'</code> opens a window over the page. For a layout of your own, such as
+          a panel or a popup window, <code>createInspector</code> draws into an element you give it:
+        </p>
+        <pre data-static><code>import { createInspector } from 'cracked-up/inspect';
+
+const inspector = createInspector(engine, { parent: document.querySelector('#graph') });
+
+inspector.setScope(engine.scope('drums'));     // show one scope
+inspector.select(engine.select('#filter').first());  // open a node's details
+inspector.fit();                               // bring the whole graph into view
+inspector.destroy();                           // remove it, and everything it attached</code></pre>
+        <p>
+          Give it an engine and it shows everything, with each child scope opened as a frame inside
+          the root. Give it a scope and it shows only that scope.
+        </p>
+        <h3>What is drawn</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>You see</th>
+                <th>It means</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A box with a type and an id</td>
+                <td>
+                  A node. Classes follow the id. An id the library made up, such as
+                  <code>gain-0</code>, is left out. The stripe on the left is coloured for sources
+                  and for modulators
+                </td>
+              </tr>
+              <tr>
+                <td>A rounded shape</td>
+                <td>
+                  A bus. With a dashed outline it belongs to an outer scope and is shown because
+                  something here sends to it
+                </td>
+              </tr>
+              <tr>
+                <td>A box with a second outline and a small arrow</td>
+                <td>
+                  A macro. The arrow opens it in place, as a frame round the nodes inside it. A
+                  double click shows only its inside, and the trail at the top leads back out
+                </td>
+              </tr>
+              <tr>
+                <td>A hatched box marked "bypassed"</td>
+                <td>A <a href="#bypass">bypassed</a> node</td>
+              </tr>
+              <tr>
+                <td>A dotted line with a name above the node it reaches</td>
+                <td>Modulation: a connection into that parameter</td>
+              </tr>
+              <tr>
+                <td>A line that leaves to the right and comes back round</td>
+                <td>A feedback loop, as inside <code>tapedelay</code></td>
+              </tr>
+              <tr>
+                <td>A dashed line between a scope's frame and a bus</td>
+                <td>
+                  Something in that scope sends to the bus, or carries on from it. It stands for any
+                  number of connections and has no meter
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Drag to pan. Pinch, or scroll with Ctrl or Cmd held, to zoom. The view starts at the left
+          of the graph at a size where the labels can be read; <strong>Fit</strong> shows all of it.
+          Tab reaches every node, Enter opens it, and Escape closes the details and then the window.
+        </p>
+        <h3>Meters</h3>
+        <p>
+          The meter on a node shows the level at its output from -60 dB to full scale: the solid
+          part is the RMS level, the lighter part the peak, and the mark is the highest peak of the
+          last second, which turns red once a peak has gone over full scale. All channels are mixed
+          to one for the reading, so a sound panned hard to one side reads 6 dB low.
+        </p>
+        <p>
+          Modulators, and everything else whose output only ends up in parameters, are not sound,
+          and decibels say little about them: a 2 Hz wave would read as a level that pumps twice a
+          second. Their meter has zero in the middle and shows the range the value has covered in
+          the last two seconds and where it is now. A connection from one of them moves while the
+          value is changing and stays still while it is steady.
+        </p>
+        <p>
+          Levels are read by connecting an <code>AnalyserNode</code> to an output. The analyser
+          leads nowhere, so it adds nothing to what you hear and delays nothing; a test renders the
+          same graph with an analyser on every output and without, and the two renders are the same
+          sample for sample. Only outputs that are on screen are listened to, only while audio is
+          running, and <code>destroy()</code> removes them all. In headless Chromium on a laptop the
+          inspector's script took 0.3 ms per frame with 20 nodes in view and 0.85 ms with 100, at a
+          steady 60 frames a second.
+        </p>
+        <h3>A node's details</h3>
+        <p>
+          Clicking a node opens a panel with its description and parameters from the
+          <a href="#reference">reference</a>, their current values, what is connected to it, a
+          larger meter, a waveform and a spectrum of its output. For a modulator the panel shows the
+          value over the last four seconds instead. There is a bypass switch, and a
+          <strong>Trigger</strong> button on nodes that can be triggered, except recorders and
+          loopers, where a trigger would record.
+        </p>
+        <div class="note">
+          Values shown are the ones that were set. A ramp in flight, an offset, or modulation does
+          not show in the number. A modulated parameter names what moves it and the range that
+          signal is covering.
+        </div>
+        <h3>While the graph changes</h3>
+        <p>
+          The inspector follows the scope. It hears about nodes that come and go, and reads the
+          graph again a few times a second for changes that send no event, such as a new connection
+          or a bypass. After a <a href="#rebuilding"><code>build</code></a
+          >, nodes that were kept stay where they are and new ones are fitted into the gaps; the
+          pan, the zoom and whatever was opened are left alone. <strong>Tidy</strong> lays
+          everything out afresh. It works on a suspended context, with the meters idle, and on an
+          offline engine, where it draws the graph and listens to nothing.
+        </p>
+
         <h2 id="sandbox">Running scripts in a sandbox</h2>
         <p>
           Code from someone else should not run in your page, where it could read the page, its

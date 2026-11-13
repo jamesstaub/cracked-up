@@ -33,6 +33,12 @@ export interface Node<K extends NodeType = NodeType> {
   readonly scope: Scope;
   /** The macro instance this node is inside, if any. */
   readonly parent: Node | null;
+  /**
+   * For a macro instance: the private scope holding its inner nodes, the one its definition built
+   * into. Null for every other node. For hosts that show or inspect what a macro is made of; the
+   * scope's `owner` is this node.
+   */
+  readonly insideScope: Scope | null;
   readonly disposed: boolean;
 
   readonly params: { readonly [P in keyof ParamsOf<K>]: Param<ParamsOf<K>[P] & ParamValue> };

@@ -10,6 +10,7 @@ export default defineConfig({
     'remote/index': 'src/remote/index.ts',
     'midi/index': 'src/midi/index.ts',
     'editor/index': 'src/editor/index.ts',
+    'inspect/index': 'src/inspect/index.ts',
   },
   format: ['esm'],
   dts: true,

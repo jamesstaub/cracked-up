@@ -52,6 +52,8 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   and a `clear()` that removes every listener added through it. Callbacks get `{ key, code }` or
   `{ x, y }` (0 to 1 across the page or an element). Keys typed into a text box or editor are left
   out. The live demo offers them to scripts and replaces a run's listeners on the next run.
+- The live demo offers `midi` to scripts. The browser is asked for MIDI access the first time code
+  uses the name, and each run's listeners and bindings replace the last run's.
 - **Docs**: an "Interaction" section, a reference of every sequencing and MIDI method, and groups
   in the contents list for sequencing, interaction, MIDI and each set of helpers, with a link per
   method.

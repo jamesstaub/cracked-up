@@ -12,6 +12,8 @@ import type { Engine, NodeTypeInfo } from '../src';
 import { builtinHelpers, catalogFromEngine, createCatalogStore, createEditor } from '../src/editor';
 import type { EditorCatalog } from '../src/editor';
 import { toggleInspector } from '../src/inspect';
+import { createMidi } from '../src/midi';
+import type { Midi, MidiAccessLike } from '../src/midi';
 import { INTERACTION_DOCS, createInteraction } from '../src/util';
 import type { Interaction } from '../src/util';
 import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
@@ -108,6 +110,42 @@ const message = document.querySelector<HTMLDivElement>('#message')!;
 let interaction: Interaction | null = null;
 const INTERACTION_NAMES = Object.keys(createInteraction().helpers);
 
+// `midi` is offered to scripts too. The browser is asked for MIDI access the first time code uses the
+// name, not before, so nobody is asked for a permission they do not need. Like the key and mouse
+// listeners, each run gets its own midi object, and the last run's is disposed of when it is replaced.
+let midiAccess: MidiAccessLike | null = null;
+let midiProblem = '';
+let midiAsked: Promise<void> | null = null;
+let midi: Midi | null = null;
+
+/** True when the code uses the name `midi` outside a line comment. */
+const usesMidi = (code: string): boolean => /\bmidi\b/.test(code.replace(/\/\/.*$/gm, ''));
+
+function askForMidi(): Promise<void> {
+  midiAsked ??= (async () => {
+    const request = (navigator as { requestMIDIAccess?: () => Promise<unknown> }).requestMIDIAccess;
+    if (typeof request !== 'function') {
+      midiProblem =
+        'This browser has no Web MIDI, so midi cannot be used here. Chrome, Edge and Firefox have it; Safari does not.';
+      return;
+    }
+    try {
+      midiAccess = (await request.call(navigator)) as MidiAccessLike;
+    } catch (thrown) {
+      midiProblem = `MIDI access was refused or failed (${thrown instanceof Error ? thrown.message : String(thrown)}).`;
+    }
+  })();
+  return midiAsked;
+}
+
+/** Stands in for `midi` where there is none: any use of it fails with the reason. */
+const noMidi = (reason: string): Midi =>
+  new Proxy({} as Midi, {
+    get() {
+      throw new Error(reason);
+    },
+  });
+
 let engine: Engine | null = null;
 let booting: Promise<Engine> | null = null;
 /** The code most recently attempted, so keys that do not change the text (arrows, shift) do nothing. */
@@ -151,6 +189,13 @@ function showError(error: unknown): void {
 function run(target: Engine): void {
   const code = editor.value;
   if (code === lastTried) return;
+  const wantsMidi = usesMidi(code);
+  if (wantsMidi && !midiAccess && !midiProblem) {
+    // Ask once, then come back and run. The browser may show a permission prompt in between.
+    showMessage('Waiting for the browser to allow MIDI…');
+    void askForMidi().then(() => run(target));
+    return;
+  }
   lastTried = code;
   try {
     localStorage.setItem(STORAGE_KEY, code);
@@ -166,6 +211,7 @@ function run(target: Engine): void {
       'engine',
       ...Object.keys(helpers),
       ...INTERACTION_NAMES,
+      'midi',
       wrapUserCode(code),
     ) as (...args: unknown[]) => void;
   } catch (error) {
@@ -177,13 +223,20 @@ function run(target: Engine): void {
   // This run's key and mouse listeners. They replace the last run's only if this run succeeds.
   const listening = createInteraction();
   const names = INTERACTION_NAMES.map((name) => listening.helpers[name]);
+  // The same for MIDI: this run's listeners, bindings and clock replace the last run's.
+  const runMidi = wantsMidi && midiAccess ? createMidi(target, midiAccess) : null;
+  const midiName = runMidi ?? noMidi(midiProblem || 'midi is not set up.');
   scope
-    .build((api) => program(api, target, ...Object.values(helpers), ...names))
+    .build((api) => program(api, target, ...Object.values(helpers), ...names, midiName))
     .then((result) => {
-      if (result.errors[0]) listening.clear();
-      else {
+      if (result.errors[0]) {
+        listening.clear();
+        runMidi?.dispose();
+      } else {
         interaction?.clear();
         interaction = listening;
+        midi?.dispose();
+        midi = runMidi;
       }
       // Something later may have been typed since; its own run reports on it.
       if (code !== lastTried) return;
@@ -198,6 +251,7 @@ function run(target: Engine): void {
     })
     .catch((error: unknown) => {
       listening.clear();
+      runMidi?.dispose();
       showError(error);
     });
 }
@@ -418,6 +472,11 @@ function catalogFor(target: Engine | null): EditorCatalog {
       {
         name: 'engine',
         description: 'The engine this page made: engine.buffers, engine.registry.',
+      },
+      {
+        name: 'midi',
+        description:
+          "MIDI in and out (cracked-up/midi): midi.play(() => __('#keys')), midi.on('noteon', fn), midi.bind({ controller: 74 }, target), midi.output().note(60), midi.sendClock(), midi.follow(). Using the name asks the browser for MIDI access.",
       },
     ],
   };

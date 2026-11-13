@@ -1018,8 +1018,24 @@ const file = new Blob([encodeWav(mix, { bitDepth: 24 })], { type: 'audio/wav' })
           MIDI lives in its own part of the library, <code>cracked-up/midi</code>, and belongs to
           the page rather than to a script: the page asks for access once and decides what to do
           with it. It needs a browser with Web MIDI (Chrome, Edge, Firefox; not Safari), and
-          <code>requestMidi</code> fails with a clear message where there is none. The examples here
-          are for a page's own code, not for the live demo.
+          <code>requestMidi</code> fails with a clear message where there is none.
+        </p>
+        <p>
+          The live demo has done this for you: a <code>midi</code> object is there by that name, and
+          the browser asks you to allow MIDI the first time your code uses it. Each run of the code
+          replaces the listeners and bindings of the run before. With a keyboard plugged in, this
+          plays a synth from it:
+        </p>
+        <pre><code>__().polysynth({ id: 'keys' }).to('main');
+midi.play(() =&gt; __('#keys'));
+
+// Every note that arrives, whatever it is used for.
+midi.on('noteon', (note) =&gt; console.log(note.note, note.velocity));</code></pre>
+        <p>
+          The examples below are written for a page's own code, where <code>midi</code> comes from
+          <code>requestMidi</code>. They work in the demo too with two changes: use
+          <code>__</code> where they say <code>engine</code>, and where one says <code>await</code>,
+          use <code>.then(...)</code>, because a demo script cannot wait.
         </p>
         <pre data-static><code>import { requestMidi } from 'cracked-up/midi';
 
@@ -1819,6 +1835,13 @@ __.transport.every('1/8', () =&gt; {
                 <td>
                   Keys and the mouse, as under <a href="#interaction">Interaction</a>. Not in the
                   sandboxed demo.
+                </td>
+              </tr>
+              <tr>
+                <td><code>midi</code></td>
+                <td>
+                  MIDI in and out, as under <a href="#midi">MIDI</a>. Using the name asks the
+                  browser for access. Not in the sandboxed demo.
                 </td>
               </tr>
               <tr>

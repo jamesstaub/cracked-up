@@ -866,6 +866,15 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
 
+        <h3>Every sequencing method</h3>
+        <p>
+          <code>sequence.</code> below stands for what
+          <code>__.transport.sequence(...)</code> returns, and <code>ev.</code> for the event its
+          callback is given.
+        </p>
+        <!-- Filled in by docs.ts from the same descriptions the editor's completion shows. -->
+        <div id="sequencing-reference"></div>
+
         <h2 id="recording">Recording, looping and live input</h2>
         <p>
           A <code>recorder</code> sits in a chain, passes the sound through, and records it when
@@ -1075,6 +1084,70 @@ follow.stop();   // go back to the transport's own tempo</code></pre>
           in-browser clocks only. It has not yet been measured against real hardware, where the MIDI
           interface and driver add their own delay and unevenness.
         </p>
+
+        <h3>Every MIDI method</h3>
+        <p>
+          <code>midi.</code> below stands for what <code>requestMidi</code> gives, and
+          <code>out.</code> for an output from <code>midi.output()</code>.
+        </p>
+        <div id="midi-reference"></div>
+
+        <h2 id="interaction">Interaction: keys and the mouse</h2>
+        <p>
+          A script can be played from the computer keyboard and the mouse.
+          <code>keyPress</code> and <code>keyRelease</code> call a function when a key goes down or
+          comes up, and <code>mouseMovement</code> calls one as the pointer moves, with its place on
+          the page as two numbers from 0 to 1. Cracked had the first and the last as
+          <code>key_press</code> and <code>mouse_movement</code>; those names work here too.
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().saw({ id: 'lead', gate: 'closed' })
+  .lowpass({ id: 'filter', frequency: 800, q: 8 })
+  .gain(0.2)
+  .to('main');
+
+// Click outside the editor first: keys typed into the editor are left alone.
+// Space plays the kick, and A S D F G hold notes for as long as they are down.
+const notes = { a: 220, s: 247, d: 277, f: 330, g: 370 };
+keyPress(({ key }) => {
+  if (key === ' ') __('#kick').trigger();
+  if (notes[key]) __('#lead').set({ frequency: notes[key] }).trigger();
+});
+keyRelease(({ key }) => {
+  if (notes[key]) __('#lead').release();
+});
+
+// Left to right opens the filter. Towards the top makes it ring.
+mouseMovement(({ x, y }) => {
+  __('#filter').set({ frequency: 200 + x * 5000, q: 1 + (1 - y) * 15 });
+});</code></pre>
+        <p>
+          Three things differ from Cracked. The callback is given an object with the useful parts
+          picked out (<code>key</code>, <code>code</code>, <code>x</code>, <code>y</code>) and the
+          browser's own event as <code>event</code>. Each helper returns a function that stops it.
+          And keys typed into a text box or the editor do not call back, so that typing code does
+          not play the code being typed.
+        </p>
+        <p>
+          In the live demo, each run of the code replaces the listeners of the run before, so
+          re-running does not pile them up. In an app of your own,
+          <code>createInteraction()</code> from <code>cracked-up/util</code> gives the three helpers
+          and a <code>clear()</code> that removes everything added through it; make one for each run
+          of a script and clear the one before. Pass an element to listen to just that element, with
+          <code>x</code> and <code>y</code> measured across it. These helpers listen to the page, so
+          a sandboxed script cannot use them: the sandbox has no page of its own.
+        </p>
+        <pre data-static><code>import { createInteraction } from 'cracked-up/util';
+
+let interaction = null;
+function run(code) {
+  const next = createInteraction();
+  const program = new Function('__', ...Object.keys(next.helpers), code);
+  program(__, ...Object.values(next.helpers));
+  interaction?.clear();
+  interaction = next;
+}</code></pre>
+        <div id="interaction-reference"></div>
 
         <h2 id="bypass">Bypassing a node</h2>
         <p>
@@ -1739,6 +1812,13 @@ __.transport.every('1/8', () =&gt; {
                 <td>
                   Every function listed under Helpers, by its bare name:
                   <code>euclid(3, 8)</code>, <code>pick(list)</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>keyPress</code>, <code>keyRelease</code>, <code>mouseMovement</code></td>
+                <td>
+                  Keys and the mouse, as under <a href="#interaction">Interaction</a>. Not in the
+                  sandboxed demo.
                 </td>
               </tr>
               <tr>

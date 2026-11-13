@@ -261,6 +261,8 @@ body.docs header {
   align-self: start;
   max-height: calc(100vh - 80px);
   overflow: auto;
+  /* Scrolling the list to its end must not carry on into the page behind it. */
+  overscroll-behavior: contain;
   font-size: 13px;
 }
 .docs-layout nav a {
@@ -292,6 +294,9 @@ article h2 {
   font-size: 22px;
   margin: 40px 0 8px;
   scroll-margin-top: 64px;
+}
+article .anchor {
+  scroll-margin-top: 72px;
 }
 article h2:first-child {
   margin-top: 0;
@@ -378,7 +383,7 @@ article h4 {
 #helpers-body td:first-child {
   min-width: 190px;
 }
-#helpers-body .alias,
+article td .alias,
 #helpers-body .gives {
   color: var(--muted);
   font-size: 12px;

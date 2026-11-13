@@ -46,6 +46,8 @@ with it: old Cracked code will not run unchanged.
   connections for debugging, with a level meter on every output and the details of any node.
 - **Composing helpers** (`cracked-up/util`): Euclidean rhythms, pattern transforms, sieves, scales
   and chords, seeded randomness, conversions.
+- **Keys and the mouse** (`createInteraction` in `cracked-up/util`): `keyPress`, `keyRelease` and
+  `mouseMovement` for playing a script from the computer keyboard and pointer.
 
 `design/README.md` records the API decisions and has a table of exactly what is implemented and
 what its limits are.

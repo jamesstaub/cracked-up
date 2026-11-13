@@ -47,11 +47,20 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   The sidebar has a "Full width" button (`wide`, `setWide`) that widens it to the whole page.
 - **Demo**: `demo/inspect.html`, a patch with the inspector beside it, and a docs section,
   "Inspecting the graph".
+- **Interaction helpers**, after Cracked's `key_press` and `mouse_movement`: `createInteraction()`
+  in `cracked-up/util` gives `keyPress`, `keyRelease` and `mouseMovement` (the old names work too)
+  and a `clear()` that removes every listener added through it. Callbacks get `{ key, code }` or
+  `{ x, y }` (0 to 1 across the page or an element). Keys typed into a text box or editor are left
+  out. The live demo offers them to scripts and replaces a run's listeners on the next run.
+- **Docs**: an "Interaction" section, a reference of every sequencing and MIDI method, and groups
+  in the contents list for sequencing, interaction, MIDI and each set of helpers, with a link per
+  method.
 
 ### Changed
 
 - The live demo and the sandboxed demo use `cracked-up/editor` in place of a text box. Clicking a
   sample, node type or helper in the demo's side column inserts it at the cursor.
+- The docs page's contents list keeps its own scroll: reaching its end no longer scrolls the page.
 - `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
 
 ## [0.1.0] - 2026-11-12

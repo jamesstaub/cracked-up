@@ -6,9 +6,13 @@
 import { version } from '../package.json';
 import { createEngine } from '../src';
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
+import { API } from '../src/editor/api-docs';
+import { INTERACTION_DOCS } from '../src/util';
 import { exampleFor } from './examples';
 import { HELPER_GROUPS } from './helpers';
 import { highlightBlocks } from './highlight';
+import { MIDI_FUNCTIONS, MIDI_MEMBERS, MIDI_OUT_MEMBERS } from './midi-reference';
+import type { MemberDoc } from './midi-reference';
 
 const CATEGORY_TITLES: Record<string, string> = {
   source: 'Sources',
@@ -156,8 +160,8 @@ function buildHelpers(): void {
       table(
         ['Helper', 'What it does', 'Example'],
         group.helpers.map((doc) => [
-          element(
-            'div',
+          anchored(
+            `helper-${doc.name}`,
             doc.alias
               ? [code(doc.signature), element('div', ['or ', code(doc.alias)], 'alias')]
               : [code(doc.signature)],
@@ -174,6 +178,116 @@ function buildHelpers(): void {
   }
 }
 
+/** Content with an id the contents list can link to. */
+function anchored(id: string, content: readonly (Node | string)[]): HTMLElement {
+  const node = element('div', content, 'anchor');
+  node.id = id;
+  return node;
+}
+
+/** One group of members in a reference: a heading, how each is written, and where each is linked from. */
+interface MemberSection {
+  title: string;
+  /** What goes before a member's name where it is written: `__.transport.`, `midi.`. */
+  prefix: string;
+  /** The same, short, for the contents list. */
+  short: string;
+  /** Start of each member's id. */
+  id: string;
+  members: readonly MemberDoc[];
+}
+
+const SEQUENCING: readonly MemberSection[] = [
+  {
+    title: 'The transport',
+    prefix: '__.transport.',
+    short: 'transport.',
+    id: 'transport',
+    members: API.transport,
+  },
+  {
+    title: 'A sequence, as sequence() returns it',
+    prefix: 'sequence.',
+    short: 'sequence.',
+    id: 'sequence',
+    members: API.sequence,
+  },
+  {
+    title: 'The event a callback is given',
+    prefix: 'ev.',
+    short: 'ev.',
+    id: 'event',
+    members: API.event,
+  },
+];
+
+const INTERACTION: readonly MemberSection[] = [
+  {
+    title: 'Every interaction helper',
+    prefix: '',
+    short: '',
+    id: 'helper',
+    members: INTERACTION_DOCS.map((doc) => ({
+      name: doc.name,
+      signature: doc.alias ? `${doc.signature}\nor ${doc.alias}` : doc.signature,
+      description: doc.description,
+    })),
+  },
+];
+
+const MIDI: readonly MemberSection[] = [
+  {
+    title: 'Functions of cracked-up/midi',
+    prefix: '',
+    short: '',
+    id: 'midi-fn',
+    members: MIDI_FUNCTIONS,
+  },
+  { title: 'The midi object', prefix: 'midi.', short: 'midi.', id: 'midi', members: MIDI_MEMBERS },
+  {
+    title: 'An output, from midi.output()',
+    prefix: 'out.',
+    short: 'out.',
+    id: 'midi-out',
+    members: MIDI_OUT_MEMBERS,
+  },
+];
+
+/** A reference of members: one table per section, each row with an id. */
+function buildMembers(containerId: string, sections: readonly MemberSection[]): void {
+  const body = document.querySelector<HTMLDivElement>(`#${containerId}`)!;
+  for (const section of sections) {
+    body.append(
+      element('h4', section.title),
+      table(
+        ['Name', 'What it does'],
+        section.members.map((member) => {
+          const [first = member.name, ...rest] = (member.signature ?? member.name).split('\n');
+          return [
+            anchored(`${section.id}-${member.name}`, [
+              code(`${section.prefix}${first}`),
+              ...rest.map((line) => element('div', line, 'alias')),
+            ]),
+            member.description,
+          ];
+        }),
+      ),
+    );
+  }
+}
+
+/** Adds a group to the contents list with one link per member of each section. */
+function listMembers(toc: HTMLElement, title: string, sections: readonly MemberSection[]): void {
+  toc.append(element('div', title, 'group'));
+  for (const section of sections) {
+    for (const member of section.members) {
+      const link = element('a', `${section.short}${member.name}`, 'sub');
+      link.href = `#${section.id}-${member.name}`;
+      toc.append(link);
+    }
+  }
+}
+
 function buildContents(types: readonly NodeTypeInfo[]): void {
   const toc = document.querySelector<HTMLElement>('#toc')!;
   toc.append(element('div', 'Guide', 'group'));
@@ -182,6 +296,18 @@ function buildContents(types: readonly NodeTypeInfo[]): void {
     const link = element('a', heading.textContent ?? '');
     link.href = `#${heading.id}`;
     toc.append(link);
+  }
+  // After the guide: every method of each area by name, then every node type.
+  listMembers(toc, 'Sequencing', SEQUENCING);
+  listMembers(toc, 'Interaction', INTERACTION);
+  listMembers(toc, 'MIDI', MIDI);
+  for (const group of HELPER_GROUPS) {
+    toc.append(element('div', `Helpers: ${group.title.toLowerCase()}`, 'group'));
+    for (const doc of group.helpers) {
+      const link = element('a', doc.name, 'sub');
+      link.href = `#helper-${doc.name}`;
+      toc.append(link);
+    }
   }
   const categories = [...new Set(types.map((info) => info.category))];
   for (const category of categories) {
@@ -216,6 +342,9 @@ async function main(): Promise<void> {
   const types = engine.registry.list();
   buildReference(types);
   buildHelpers();
+  buildMembers('sequencing-reference', SEQUENCING);
+  buildMembers('interaction-reference', INTERACTION);
+  buildMembers('midi-reference', MIDI);
   buildContents(types);
   // Before the links go in: highlighting rewrites each <code>, and a link reads its text.
   highlightBlocks(document.querySelector('article')!);

@@ -9,9 +9,11 @@
 
 import { createEngine } from '../src';
 import type { Engine, NodeTypeInfo } from '../src';
-import { catalogFromEngine, createCatalogStore, createEditor } from '../src/editor';
+import { builtinHelpers, catalogFromEngine, createCatalogStore, createEditor } from '../src/editor';
 import type { EditorCatalog } from '../src/editor';
 import { toggleInspector } from '../src/inspect';
+import { INTERACTION_DOCS, createInteraction } from '../src/util';
+import type { Interaction } from '../src/util';
 import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
 import { BREAK, BREAK_CREDIT, loadBreak } from './break';
 import { DEMO_BUFFERS, builtinTypes } from './catalog';
@@ -99,7 +101,12 @@ const inspect = document.querySelector<HTMLButtonElement>('#inspect')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
 const message = document.querySelector<HTMLDivElement>('#message')!;
 
-// The names user code can use besides `__` and `engine` are `helpers`, shared with the sandboxed demo.
+// The names user code can use besides `__` and `engine` are `helpers`, shared with the sandboxed demo,
+// and keyPress, keyRelease and mouseMovement, which listen to this page.
+
+/** The key and mouse listeners of the run that is playing. Each run gets its own, so they do not pile up. */
+let interaction: Interaction | null = null;
+const INTERACTION_NAMES = Object.keys(createInteraction().helpers);
 
 let engine: Engine | null = null;
 let booting: Promise<Engine> | null = null;
@@ -154,18 +161,30 @@ function run(target: Engine): void {
   // Compile first. A syntax error touches nothing.
   let program: (...args: unknown[]) => void;
   try {
-    program = new Function('__', 'engine', ...Object.keys(helpers), wrapUserCode(code)) as (
-      ...args: unknown[]
-    ) => void;
+    program = new Function(
+      '__',
+      'engine',
+      ...Object.keys(helpers),
+      ...INTERACTION_NAMES,
+      wrapUserCode(code),
+    ) as (...args: unknown[]) => void;
   } catch (error) {
     showError(error);
     return;
   }
 
   const scope = target.scope('live');
+  // This run's key and mouse listeners. They replace the last run's only if this run succeeds.
+  const listening = createInteraction();
+  const names = INTERACTION_NAMES.map((name) => listening.helpers[name]);
   scope
-    .build((api) => program(api, target, ...Object.values(helpers)))
+    .build((api) => program(api, target, ...Object.values(helpers), ...names))
     .then((result) => {
+      if (result.errors[0]) listening.clear();
+      else {
+        interaction?.clear();
+        interaction = listening;
+      }
       // Something later may have been typed since; its own run reports on it.
       if (code !== lastTried) return;
       if (result.errors[0]) return showError(result.errors[0]);
@@ -177,7 +196,10 @@ function run(target: Engine): void {
           `${result.added.length} new, ${result.removed.length} removed.`,
       );
     })
-    .catch((error: unknown) => showError(error));
+    .catch((error: unknown) => {
+      listening.clear();
+      showError(error);
+    });
 }
 
 // --- Starting and stopping audio --------------------------------------------------------------------
@@ -339,6 +361,23 @@ function fillHelpers(): void {
       );
       return [heading, list];
     }),
+    ...(() => {
+      const heading = document.createElement('h3');
+      heading.textContent = 'Interaction';
+      const list = document.createElement('ul');
+      list.append(
+        ...INTERACTION_DOCS.map((doc) => {
+          const item = document.createElement('li');
+          item.textContent = doc.signature;
+          insertOnClick(item, doc.example);
+          item.title = doc.alias
+            ? `${doc.description} Also as ${doc.alias}, its name in Cracked.`
+            : doc.description;
+          return item;
+        }),
+      );
+      return [heading, list];
+    })(),
   );
 }
 
@@ -371,6 +410,10 @@ function initialCode(): string {
 /** What the editor is told about an engine: its types and buffers, and the names this page adds. */
 function catalogFor(target: Engine | null): EditorCatalog {
   const extra: EditorCatalog = {
+    helpers: [
+      ...builtinHelpers(),
+      ...INTERACTION_DOCS.map((doc) => ({ ...doc, group: 'Interaction' })),
+    ],
     globals: [
       {
         name: 'engine',

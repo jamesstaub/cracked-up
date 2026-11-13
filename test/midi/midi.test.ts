@@ -471,6 +471,40 @@ describe('following MIDI clock', () => {
     expect(Math.abs(inPulses - Math.round(inPulses)) * pulseSeconds).toBeLessThan(0.002);
   });
 
+  it('Start moves a transport that is already playing to the beginning', () => {
+    const transport = new SimTransport();
+    const follower = new ClockFollower(transport);
+    transport.bpm = 100;
+    transport.start(0, 0); // started by hand, well before the clock's Start
+    transport.now = 3.21;
+    expect(transport.toBeats(3.21)).toBeGreaterThan(5);
+    follower.start();
+    run(follower, transport, {
+      bpm: 128,
+      beats: 16,
+      jitter: 0.001,
+      from: 3.21,
+      settle: 8,
+    });
+    // The pulse after Start is beat 0, wherever the transport had got to.
+    const spacing = 60 / 128 / 24;
+    const last = 3.21 + (16 * 24 - 1) * spacing;
+    const gap = (16 * 24 - 1) / 24 - transport.toBeats(last);
+    expect((Math.abs(gap) * 60) / 128).toBeLessThan(0.002);
+  });
+
+  it('stopping an earlier follow leaves a later one in charge', async () => {
+    const { engine, midi } = await setup(0.1);
+    const first = midi.follow('Keys');
+    const second = midi.follow('Keys');
+    first.stop();
+    expect(engine.transport.clock.kind).toBe('external');
+    engine.transport.bpm = 200; // still ignored
+    expect(engine.transport.bpm).toBe(120);
+    second.stop();
+    expect(engine.transport.clock.kind).toBe('internal');
+  });
+
   it('drives the real transport, and gives the tempo back when it stops following', async () => {
     const { engine, keys, midi } = await setup(0.1);
     const follow = midi.follow('Keys');

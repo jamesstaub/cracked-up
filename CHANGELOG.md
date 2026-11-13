@@ -65,6 +65,13 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 - The docs page's contents list keeps its own scroll: reaching its end no longer scrolls the page.
 - `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
 
+### Fixed
+
+- Following MIDI clock: a MIDI Start that arrives while the transport is already playing now moves
+  it to the beginning. Before, it was ignored, so a transport started by hand never lined up with
+  the other device's bar.
+- `follow.stop()` on an earlier follow no longer takes the tempo back from a later one.
+
 ## [0.1.0] - 2026-11-12
 
 The first numbered version. Everything is new; this lists what the library contains.

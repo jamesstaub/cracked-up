@@ -1,4 +1,4 @@
-import type { Engine, Node, Param, Selection, Transport, Unsubscribe } from '../api';
+import type { ClockSource, Engine, Node, Param, Selection, Transport, Unsubscribe } from '../api';
 import { CrackedUpError } from '../core/errors';
 import { ClockFollower } from './clock';
 import type { FollowOptions } from './clock';
@@ -555,15 +555,19 @@ export function createMidi(
           filter,
         ),
       ];
-      engine.transport.clock = {
+      const source: ClockSource = {
         kind: 'external',
         get bpm() {
           return follower.bpm;
         },
       };
+      engine.transport.clock = source;
       const stop = (): void => {
         offs.forEach((off) => off());
-        engine.transport.clock = { kind: 'internal', bpm: null };
+        // Only if this is still the clock being followed: a later follow() may have taken over.
+        if (engine.transport.clock === source) {
+          engine.transport.clock = { kind: 'internal', bpm: null };
+        }
         cleanups.delete(stop);
       };
       cleanups.add(stop);

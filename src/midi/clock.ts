@@ -94,8 +94,17 @@ export class ClockFollower {
       const from = this.pending.from;
       this.pending = null;
       if (this.bpm !== null) this.target.drive(this.bpm);
-      this.target.start(time, from);
-      this.origin = this.target.toBeats(time);
+      if (this.target.state !== 'started') {
+        this.target.start(time, from);
+        this.origin = this.target.toBeats(time);
+      } else if (from !== undefined) {
+        // Already playing, started by hand: Start still means "this pulse is the beginning".
+        this.target.seek(from);
+        this.origin = from;
+      } else {
+        // Continue while playing: carry on from here, in step with the pulses.
+        this.origin = this.target.toBeats(time);
+      }
       this.count = 0;
       this.error = 0;
       return;

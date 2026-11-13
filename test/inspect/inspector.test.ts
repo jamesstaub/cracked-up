@@ -512,6 +512,16 @@ describe('openInspector', () => {
     expect(win.inspector.stats().nodes).toBe(13);
     expect(win.closed).toBe(false);
 
+    // Its "Full width" button takes it to the whole page and back.
+    const widen = win.element.shadowRoot!.querySelector<HTMLElement>('.window-width')!;
+    widen.click();
+    expect(win.wide).toBe(true);
+    expect(Math.round(frame.getBoundingClientRect().width)).toBe(window.innerWidth);
+    expect(widen.textContent).toBe('Narrow');
+    widen.click();
+    expect(win.wide).toBe(false);
+    expect(Math.round(frame.getBoundingClientRect().width)).toBe(380);
+
     // Escape somewhere else on the page is not the sidebar's business.
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(win.closed).toBe(false);

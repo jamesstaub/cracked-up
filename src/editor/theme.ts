@@ -213,6 +213,9 @@ const view = EditorView.theme({
     borderRadius: '6px',
     boxShadow: `0 4px 16px ${v('shadow')}`,
   },
+  // A gap between a tooltip and the line it is about, so it never covers the line being typed.
+  '.cm-tooltip.cm-tooltip-above': { transform: 'translateY(-8px)' },
+  '.cm-tooltip.cm-tooltip-below': { transform: 'translateY(8px)' },
   '.cm-tooltip.cm-tooltip-autocomplete > ul': {
     fontFamily: v('font-mono'),
     fontSize: '12px',

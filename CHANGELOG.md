@@ -44,6 +44,7 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   Levels are read through analysers that lead nowhere, attached only to what is on screen while
   audio runs; a test shows a render is sample for sample the same with them attached.
 - **`node.insideScope`**: the private scope of a macro instance, or null for any other node.
+  The sidebar has a "Full width" button (`wide`, `setWide`) that widens it to the whole page.
 - **Demo**: `demo/inspect.html`, a patch with the inspector beside it, and a docs section,
   "Inspecting the graph".
 

@@ -17,6 +17,8 @@ export interface InspectorWindowOptions extends Omit<InspectorOptions, 'parent'>
   title?: string;
   /** Sidebar width in pixels. Default 420. */
   width?: number;
+  /** Start a sidebar at the full width of the page. Its "Full width" button switches this. Default false. */
+  wide?: boolean;
   /** Called after the window has closed, however it was closed. */
   onClose?: () => void;
 }
@@ -26,6 +28,10 @@ export interface InspectorWindow {
   /** The window's element. */
   readonly element: HTMLElement;
   readonly closed: boolean;
+  /** Whether a sidebar is at the full width of the page. */
+  readonly wide: boolean;
+  /** Widens a sidebar to the whole page, or narrows it again. */
+  setWide(wide: boolean): void;
   /** Closes the window and destroys its inspector. */
   close(): void;
 }
@@ -63,7 +69,22 @@ export function openInspector(
   closeButton.type = 'button';
   closeButton.className = 'window-close';
   closeButton.textContent = 'Close';
-  head.append(heading, closeButton);
+  // A sidebar can be widened to the whole page and narrowed again.
+  let wide = false;
+  const setWide = (next: boolean): void => {
+    wide = next;
+    frame.classList.toggle('wide', wide);
+    widthButton.textContent = wide ? 'Narrow' : 'Full width';
+    widthButton.title = wide ? 'Back to a sidebar' : 'Use the whole width of the page';
+    widthButton.setAttribute('aria-pressed', String(wide));
+  };
+  const widthButton = document.createElement('button');
+  widthButton.type = 'button';
+  widthButton.className = 'window-width';
+  widthButton.addEventListener('click', () => setWide(!wide));
+  setWide(options.wide === true);
+  if (mode === 'sidebar') head.append(heading, widthButton, closeButton);
+  else head.append(heading, closeButton);
   const body = document.createElement('div');
   body.className = 'window-body';
   frame.append(head, body);
@@ -84,9 +105,10 @@ export function openInspector(
     title: _title,
     width: _width,
     onClose: _on,
+    wide: _wide,
     ...rest
   } = options;
-  void [_parent, _mode, _title, _width, _on];
+  void [_parent, _mode, _title, _width, _on, _wide];
   const inspector = createInspector(target, { ...rest, parent: body });
 
   let closed = false;
@@ -117,6 +139,10 @@ export function openInspector(
     get closed() {
       return closed;
     },
+    get wide() {
+      return wide;
+    },
+    setWide,
     close,
   };
   return handle;

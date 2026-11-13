@@ -575,6 +575,10 @@ canvas.live {
   width: min(var(--cu-inspect-width, 420px), 100vw);
   border-width: 0 0 0 1px;
 }
+.window.sidebar.wide {
+  width: 100vw;
+  border-left-width: 0;
+}
 .window.modal {
   inset: 5vh 5vw;
   border-radius: 10px;

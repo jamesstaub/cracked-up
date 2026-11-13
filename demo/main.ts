@@ -11,6 +11,7 @@ import { createEngine } from '../src';
 import type { Engine, NodeTypeInfo } from '../src';
 import { catalogFromEngine, createCatalogStore, createEditor } from '../src/editor';
 import type { EditorCatalog } from '../src/editor';
+import { toggleInspector } from '../src/inspect';
 import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
 import { BREAK, BREAK_CREDIT, loadBreak } from './break';
 import { DEMO_BUFFERS, builtinTypes } from './catalog';
@@ -94,6 +95,7 @@ const OLD_STORAGE_KEYS = [
 
 const toggle = document.querySelector<HTMLButtonElement>('#toggle')!;
 const reset = document.querySelector<HTMLButtonElement>('#reset')!;
+const inspect = document.querySelector<HTMLButtonElement>('#inspect')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
 const message = document.querySelector<HTMLDivElement>('#message')!;
 
@@ -436,3 +438,8 @@ window.addEventListener('hashchange', () => {
 });
 
 updateStatus();
+
+// The graph inspector (cracked-up/inspect), in a sidebar. It can be opened before audio starts.
+inspect.addEventListener('click', () => {
+  void boot().then((target) => toggleInspector(target, { mode: 'sidebar' }));
+});

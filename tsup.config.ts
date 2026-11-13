@@ -9,10 +9,13 @@ export default defineConfig({
     'global/index': 'src/global/index.ts',
     'remote/index': 'src/remote/index.ts',
     'midi/index': 'src/midi/index.ts',
+    'editor/index': 'src/editor/index.ts',
   },
   format: ['esm'],
   dts: true,
   clean: true,
   sourcemap: true,
   target: 'es2022',
+  // CodeMirror is a peer dependency of cracked-up/editor only: it is never bundled.
+  external: [/^@codemirror\//, /^@lezer\//],
 });

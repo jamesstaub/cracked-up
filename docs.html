@@ -4,13 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>cracked-up docs</title>
-    <script type="module" crossorigin src="./assets/docs-DWXiFeVP.js"></script>
+    <script type="module" crossorigin src="./assets/docs-Dzr_AvWC.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
-    <link rel="modulepreload" crossorigin href="./assets/highlight-bPnov08D.js">
     <link rel="modulepreload" crossorigin href="./assets/pattern-DZPZqFub.js">
-    <link rel="modulepreload" crossorigin href="./assets/engine-B9R-7j5h.js">
-    <link rel="modulepreload" crossorigin href="./assets/helpers-D1IkWwMk.js">
-    <link rel="stylesheet" crossorigin href="./assets/highlight-B3pIfRvP.css">
+    <link rel="modulepreload" crossorigin href="./assets/engine-DH7QVy3a.js">
+    <link rel="modulepreload" crossorigin href="./assets/api-docs-DUcsJqqE.js">
+    <link rel="modulepreload" crossorigin href="./assets/interaction-CUygnLWq.js">
+    <link rel="modulepreload" crossorigin href="./assets/helper-docs-B_20CegX.js">
+    <link rel="modulepreload" crossorigin href="./assets/highlight-Df64llIk.js">
+    <link rel="stylesheet" crossorigin href="./assets/style-CMCR-r9s.css">
   </head>
   <body class="docs">
     <header>
@@ -872,6 +874,15 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
 
+        <h3>Every sequencing method</h3>
+        <p>
+          <code>sequence.</code> below stands for what
+          <code>__.transport.sequence(...)</code> returns, and <code>ev.</code> for the event its
+          callback is given.
+        </p>
+        <!-- Filled in by docs.ts from the same descriptions the editor's completion shows. -->
+        <div id="sequencing-reference"></div>
+
         <h2 id="recording">Recording, looping and live input</h2>
         <p>
           A <code>recorder</code> sits in a chain, passes the sound through, and records it when
@@ -1015,8 +1026,25 @@ const file = new Blob([encodeWav(mix, { bitDepth: 24 })], { type: 'audio/wav' })
           MIDI lives in its own part of the library, <code>cracked-up/midi</code>, and belongs to
           the page rather than to a script: the page asks for access once and decides what to do
           with it. It needs a browser with Web MIDI (Chrome, Edge, Firefox; not Safari), and
-          <code>requestMidi</code> fails with a clear message where there is none. The examples here
-          are for a page's own code, not for the live demo.
+          <code>requestMidi</code> fails with a clear message where there is none.
+        </p>
+        <p>
+          The live demo has done this for you: a <code>midi</code> object is there by that name, and
+          the browser asks you to allow MIDI the first time your code uses it. Each run of the code
+          replaces the listeners and bindings of the run before, and a <code>follow</code> or
+          <code>sendClock</code> that has not changed is left running, so editing the code does not
+          restart the sync. With a keyboard plugged in, this plays a synth from it:
+        </p>
+        <pre><code>__().polysynth({ id: 'keys' }).to('main');
+midi.play(() =&gt; __('#keys'));
+
+// Every note that arrives, whatever it is used for.
+midi.on('noteon', (note) =&gt; console.log(note.note, note.velocity));</code></pre>
+        <p>
+          The examples below are written for a page's own code, where <code>midi</code> comes from
+          <code>requestMidi</code>. They work in the demo too with two changes: use
+          <code>__</code> where they say <code>engine</code>, and where one says <code>await</code>,
+          use <code>.then(...)</code>, because a demo script cannot wait.
         </p>
         <pre data-static><code>import { requestMidi } from 'cracked-up/midi';
 
@@ -1081,6 +1109,89 @@ follow.stop();   // go back to the transport's own tempo</code></pre>
           in-browser clocks only. It has not yet been measured against real hardware, where the MIDI
           interface and driver add their own delay and unevenness.
         </p>
+
+        <h3>Code that is run again and again</h3>
+        <p>
+          A script that is re-run on every edit would add its listeners again each time, and would
+          start following the clock afresh, which takes about a beat to settle. Run it through
+          <code>midi.build</code> and its calls replace the ones the last run made. Listeners,
+          bindings and <code>play</code> are swapped. A <code>follow</code> or
+          <code>sendClock</code> with the same arguments as one already running is kept, with the
+          tempo it has measured. Calls the new run no longer makes are stopped, and if the run
+          throws, nothing changes. This is what the live demo does.
+        </p>
+        <pre data-static><code>// Each time the script changes:
+midi.build((midi) =&gt; runScript(midi));
+
+// Or in two steps, when you only know later whether the run worked:
+const session = midi.session();
+runScript(session.midi);
+if (ok) session.commit();
+else session.rollback();</code></pre>
+
+        <h3>Every MIDI method</h3>
+        <p>
+          <code>midi.</code> below stands for what <code>requestMidi</code> gives, and
+          <code>out.</code> for an output from <code>midi.output()</code>.
+        </p>
+        <div id="midi-reference"></div>
+
+        <h2 id="interaction">Interaction: keys and the mouse</h2>
+        <p>
+          A script can be played from the computer keyboard and the mouse.
+          <code>keyPress</code> and <code>keyRelease</code> call a function when a key goes down or
+          comes up, and <code>mouseMovement</code> calls one as the pointer moves, with its place on
+          the page as two numbers from 0 to 1. Cracked had the first and the last as
+          <code>key_press</code> and <code>mouse_movement</code>; those names work here too.
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().saw({ id: 'lead', gate: 'closed' })
+  .lowpass({ id: 'filter', frequency: 800, q: 8 })
+  .gain(0.2)
+  .to('main');
+
+// Click outside the editor first: keys typed into the editor are left alone.
+// Space plays the kick, and A S D F G hold notes for as long as they are down.
+const notes = { a: 220, s: 247, d: 277, f: 330, g: 370 };
+keyPress(({ key }) => {
+  if (key === ' ') __('#kick').trigger();
+  if (notes[key]) __('#lead').set({ frequency: notes[key] }).trigger();
+});
+keyRelease(({ key }) => {
+  if (notes[key]) __('#lead').release();
+});
+
+// Left to right opens the filter. Towards the top makes it ring.
+mouseMovement(({ x, y }) => {
+  __('#filter').set({ frequency: 200 + x * 5000, q: 1 + (1 - y) * 15 });
+});</code></pre>
+        <p>
+          Three things differ from Cracked. The callback is given an object with the useful parts
+          picked out (<code>key</code>, <code>code</code>, <code>x</code>, <code>y</code>) and the
+          browser's own event as <code>event</code>. Each helper returns a function that stops it.
+          And keys typed into a text box or the editor do not call back, so that typing code does
+          not play the code being typed.
+        </p>
+        <p>
+          In the live demo, each run of the code replaces the listeners of the run before, so
+          re-running does not pile them up. In an app of your own,
+          <code>createInteraction()</code> from <code>cracked-up/util</code> gives the three helpers
+          and a <code>clear()</code> that removes everything added through it; make one for each run
+          of a script and clear the one before. Pass an element to listen to just that element, with
+          <code>x</code> and <code>y</code> measured across it. These helpers listen to the page, so
+          a sandboxed script cannot use them: the sandbox has no page of its own.
+        </p>
+        <pre data-static><code>import { createInteraction } from 'cracked-up/util';
+
+let interaction = null;
+function run(code) {
+  const next = createInteraction();
+  const program = new Function('__', ...Object.keys(next.helpers), code);
+  program(__, ...Object.values(next.helpers));
+  interaction?.clear();
+  interaction = next;
+}</code></pre>
+        <div id="interaction-reference"></div>
 
         <h2 id="bypass">Bypassing a node</h2>
         <p>
@@ -1152,6 +1263,143 @@ result.unchanged; // [saw]</code></pre>
           <code>scope.describe()</code> returns a scope's nodes and connections as plain JSON, and
           <code>apply</code> makes a scope match such a description. That is how a host saves and
           restores a graph, or edits one from a user interface.
+        </p>
+
+        <h2 id="inspecting">Inspecting the graph</h2>
+        <p>
+          <code>cracked-up/inspect</code> draws a scope as a graph, for finding out why something is
+          silent or where a level goes wrong. Every node is a box, every bus a rounded shape, and
+          signal runs from left to right. Each output has a level meter, and a connection moves only
+          while signal is going through it, so a silent path looks still. It is for a page's own
+          code, not for the live demo; the <a href="./inspect.html">inspector page</a> shows it
+          running.
+        </p>
+        <pre data-static><code>import { toggleInspector } from 'cracked-up/inspect';
+
+// A sidebar with a close button. The same call closes it again.
+button.addEventListener('click', () =&gt; toggleInspector(engine, { mode: 'sidebar' }));</code></pre>
+        <p>
+          <code>openInspector(target, { mode })</code> is the same without the toggling, and
+          <code>mode: 'modal'</code> opens a window over the page. For a layout of your own, such as
+          a panel or a popup window, <code>createInspector</code> draws into an element you give it:
+        </p>
+        <pre data-static><code>import { createInspector } from 'cracked-up/inspect';
+
+const inspector = createInspector(engine, { parent: document.querySelector('#graph') });
+
+inspector.setScope(engine.scope('drums'));     // show one scope
+inspector.select(engine.select('#filter').first());  // open a node's details
+inspector.fit();                               // bring the whole graph into view
+inspector.destroy();                           // remove it, and everything it attached</code></pre>
+        <p>
+          Give it an engine and it shows everything, with each child scope opened as a frame inside
+          the root. Give it a scope and it shows only that scope.
+        </p>
+        <h3>What is drawn</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>You see</th>
+                <th>It means</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A box with a type and an id</td>
+                <td>
+                  A node. Classes follow the id. An id the library made up, such as
+                  <code>gain-0</code>, is left out. The stripe on the left is coloured for sources
+                  and for modulators
+                </td>
+              </tr>
+              <tr>
+                <td>A rounded shape</td>
+                <td>
+                  A bus. With a dashed outline it belongs to an outer scope and is shown because
+                  something here sends to it
+                </td>
+              </tr>
+              <tr>
+                <td>A box with a second outline and a small arrow</td>
+                <td>
+                  A macro. The arrow opens it in place, as a frame round the nodes inside it. A
+                  double click shows only its inside, and the trail at the top leads back out
+                </td>
+              </tr>
+              <tr>
+                <td>A hatched box marked "bypassed"</td>
+                <td>A <a href="#bypass">bypassed</a> node</td>
+              </tr>
+              <tr>
+                <td>A dotted line with a name above the node it reaches</td>
+                <td>Modulation: a connection into that parameter</td>
+              </tr>
+              <tr>
+                <td>A line that leaves to the right and comes back round</td>
+                <td>A feedback loop, as inside <code>tapedelay</code></td>
+              </tr>
+              <tr>
+                <td>A dashed line between a scope's frame and a bus</td>
+                <td>
+                  Something in that scope sends to the bus, or carries on from it. It stands for any
+                  number of connections and has no meter
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Drag to pan. Pinch, or scroll with Ctrl or Cmd held, to zoom. The view starts at the left
+          of the graph at a size where the labels can be read; <strong>Fit</strong> shows all of it.
+          Tab reaches every node, Enter opens it, and Escape closes the details and then the window.
+        </p>
+        <h3>Meters</h3>
+        <p>
+          The meter on a node shows the level at its output from -60 dB to full scale: the solid
+          part is the RMS level, the lighter part the peak, and the mark is the highest peak of the
+          last second, which turns red once a peak has gone over full scale. All channels are mixed
+          to one for the reading, so a sound panned hard to one side reads 6 dB low.
+        </p>
+        <p>
+          Modulators, and everything else whose output only ends up in parameters, are not sound,
+          and decibels say little about them: a 2 Hz wave would read as a level that pumps twice a
+          second. Their meter has zero in the middle and shows the range the value has covered in
+          the last two seconds and where it is now. A connection from one of them moves while the
+          value is changing and stays still while it is steady.
+        </p>
+        <p>
+          Levels are read by connecting an <code>AnalyserNode</code> to an output. The analyser
+          leads nowhere, so it adds nothing to what you hear and delays nothing; a test renders the
+          same graph with an analyser on every output and without, and the two renders are the same
+          sample for sample. Only outputs that are on screen are listened to, only while audio is
+          running, and <code>destroy()</code> removes them all. In headless Chromium on a laptop the
+          inspector's script took 0.3 ms per frame with 20 nodes in view and 0.85 ms with 100, at a
+          steady 60 frames a second.
+        </p>
+        <h3>A node's details</h3>
+        <p>
+          Clicking a node opens a panel with its description and parameters from the
+          <a href="#reference">reference</a>, their current values, what is connected to it, a
+          larger meter, a waveform and a spectrum of its output. For a modulator the panel shows the
+          value over the last four seconds instead. There is a bypass switch, and a
+          <strong>Trigger</strong> button on nodes that can be triggered, except recorders and
+          loopers, where a trigger would record.
+        </p>
+        <div class="note">
+          Values shown are the ones that were set. A ramp in flight, an offset, or modulation does
+          not show in the number. A modulated parameter names what moves it and the range that
+          signal is covering.
+        </div>
+        <h3>While the graph changes</h3>
+        <p>
+          The inspector follows the scope. It hears about nodes that come and go, and reads the
+          graph again a few times a second for changes that send no event, such as a new connection
+          or a bypass. After a <a href="#rebuilding"><code>build</code></a
+          >, nodes that were kept stay where they are and new ones are fitted into the gaps; the
+          pan, the zoom and whatever was opened are left alone. <strong>Tidy</strong> lays
+          everything out afresh. It works on a suspended context, with the meters idle, and on an
+          offline engine, where it draws the graph and listens to nothing.
         </p>
 
         <h2 id="sandbox">Running scripts in a sandbox</h2>
@@ -1255,6 +1503,257 @@ remote.build((__) =&gt; {
           round-trip time. The guide
           <a href="./collaboration.html">Running other people's scripts</a> covers when an app needs
           this, how to set it up safely, and what to share between collaborators.
+        </p>
+
+        <h2 id="editor">The editor</h2>
+        <p>
+          <code>cracked-up/editor</code> is a code editor for cracked-up scripts, for an app to
+          embed. It is the editor in the <a href="./index.html">live demo</a>. It completes node
+          types, parameters, selectors, buffer and bus names and helpers as you type, shows what
+          each is when you hover, and shows the source of a node type or helper when you Cmd-click
+          it (Ctrl-click outside macOS), or press F12 on it.
+        </p>
+        <p>
+          It is built on <a href="https://codemirror.net/">CodeMirror 6</a>, which is not bundled
+          with the library and not installed with it. The other entry points do not import it. An
+          app that uses the editor installs the CodeMirror packages itself:
+        </p>
+        <pre
+          data-static
+          data-lang="text"
+        ><code>npm install @codemirror/state @codemirror/view @codemirror/commands @codemirror/language \
+  @codemirror/autocomplete @codemirror/lang-javascript @lezer/highlight @lezer/common</code></pre>
+        <p>
+          The editor is plain DOM: give it an element and it fills it. It keeps nothing global, so a
+          page can hold any number of them, and <code>destroy()</code> removes everything one added.
+          A minimal host:
+        </p>
+        <pre data-static><code>import { createEngine } from 'cracked-up';
+import { helpers, wrapUserCode } from 'cracked-up/util';
+import { createEditor, catalogFromEngine } from 'cracked-up/editor';
+
+const engine = await createEngine({ context: new AudioContext() });
+const scope = engine.scope('script');
+
+const editor = createEditor({
+  parent: document.querySelector('#code'),
+  doc: "__().sine(220).gain(0.2).to('main');",
+  catalog: catalogFromEngine(engine),
+  // Cmd-Enter runs the script. onChange is there too, for running on every edit.
+  keymap: [{ key: 'Mod-Enter', run: () =&gt; (run(), true) }],
+});
+
+async function run() {
+  try {
+    const program = new Function('__', ...Object.keys(helpers), wrapUserCode(editor.value));
+    const result = await scope.build((__) =&gt; program(__, ...Object.values(helpers)));
+    editor.showError(result.errors[0] ?? null);
+  } catch (error) {
+    editor.showError(error);
+  }
+}</code></pre>
+
+        <h3>The catalog</h3>
+        <p>
+          The editor needs no engine. Everything it knows comes from a catalog, which is plain data:
+          the node types (as <code>engine.registry.list()</code> gives them), the helpers, the
+          buffers with their slice counts, and names that exist outside the document, such as the
+          ids, classes, buses and sequences of another track's script. It adds what it finds in its
+          own document: every <code>id</code> and <code>class</code>, every
+          <code>bus('name')</code> and named sequence, and node types the script defines itself.
+        </p>
+        <pre data-static><code>editor.setCatalog({
+  types: engine.registry.list(),
+  buffers: [{ key: 'kick' }, { key: 'break', slices: 128 }],
+  ids: ['lead', 'pad'],          // nodes other scripts made
+  classes: ['drums'],
+  buses: ['reverb-send'],
+  sequences: ['intro'],
+  globals: [
+    { name: 'engine', description: 'The engine.' },
+    // kind says what a name is, so its members are completed: midi.follow(), midi.output().note()
+    { name: 'midi', kind: 'midi', description: 'MIDI in and out.' },
+  ],
+  midiInputs: midi.inputs.map((port) =&gt; port.name),    // offered where a port is named
+  midiOutputs: midi.outputs.map((port) =&gt; port.name),
+  // helpers: left out, the library's own are used. To offer keyPress and mouseMovement as well:
+  // helpers: [...builtinHelpers(), ...INTERACTION_DOCS]
+});</code></pre>
+        <p>
+          The catalog changes while people type: samples load, macros get defined. Call
+          <code>setCatalog</code> again whenever it does. When several editors show scripts of one
+          project, give them all one store and change that:
+        </p>
+        <pre
+          data-static
+        ><code>import { createCatalogStore, catalogFromEngine } from 'cracked-up/editor';
+
+const catalog = createCatalogStore(catalogFromEngine(engine));
+const drums = createEditor({ parent: drumsElement, doc: drumsCode, catalog });
+const bass = createEditor({ parent: bassElement, doc: bassCode, catalog });
+
+engine.buffers.on('ready', () =&gt; catalog.set(catalogFromEngine(engine)));
+catalog.update({ ids: idsOfEveryTrack() });   // both editors follow</code></pre>
+
+        <h3>With sandboxed scripts</h3>
+        <p>
+          When scripts run in a <a href="#sandbox">sandbox</a>, the editor still lives in the page,
+          and it behaves the same, because it only ever reads the catalog.
+          <code>catalogFromRemoteState</code> makes one from what the link tells the sandbox, which
+          includes node types that a script defined in the sandbox:
+        </p>
+        <pre data-static><code>import { catalogFromRemoteState } from 'cracked-up/editor';
+
+editor.setCatalog(catalogFromRemoteState(link.state()));</code></pre>
+        <p>
+          A page with no engine at all, such as a collaborator's read-only view, can be sent the
+          same data and build its catalog from that.
+        </p>
+
+        <h3>Text the host controls</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Call</th>
+                <th>What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>editor.value</code></td>
+                <td>The current text.</td>
+              </tr>
+              <tr>
+                <td><code>onChange(value)</code></td>
+                <td>
+                  Called after every edit the user makes, and not for <code>setValue</code>. It is
+                  not delayed; a host that wants to wait for a pause in typing does that itself.
+                </td>
+              </tr>
+              <tr>
+                <td><code>setValue(text)</code></td>
+                <td>
+                  Replaces the text. Only the part that differs is replaced, so the cursor stays
+                  where it was in the rest. It is one step the user can undo.
+                  <code>{ history: 'skip' }</code> keeps it out of the undo history (a
+                  collaborator's edit); <code>{ history: 'reset' }</code> starts the history again
+                  (a different document).
+                </td>
+              </tr>
+              <tr>
+                <td><code>insert(text)</code></td>
+                <td>Types text at the cursor, as the user would.</td>
+              </tr>
+              <tr>
+                <td><code>setReadOnly(true)</code></td>
+                <td>Stops the user editing. <code>setValue</code> still works.</td>
+              </tr>
+              <tr>
+                <td><code>showError(error, place?)</code></td>
+                <td>
+                  Shows a message under the code and marks a line. The line comes from
+                  <code>{ line }</code> or <code>{ pos }</code> if you give one, from the
+                  <code>nodeId</code> of an engine error (the line that gives that id), or for a
+                  <code>SyntaxError</code> from the first place the editor's own parser could not
+                  read. <code>showError(null)</code> clears it. With
+                  <code>errorPanel: false</code> only the line is marked.
+                </td>
+              </tr>
+              <tr>
+                <td><code>focus()</code>, <code>destroy()</code></td>
+                <td>As named.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Other options: <code>readOnly</code>, <code>lineNumbers</code>, <code>lineWrapping</code>,
+          <code>ariaLabel</code>, <code>keymap</code> (key bindings tried before the editor's own)
+          and <code>extensions</code> (any CodeMirror extensions). <code>editor.view</code> is the
+          CodeMirror view, for anything not covered here. Tab indents; press Escape and then Tab to
+          move focus out of the editor with the keyboard.
+        </p>
+
+        <h3>Go to definition and the source panel</h3>
+        <p>
+          Cmd-click or F12 on a node type or a helper asks the editor for its definition. A type the
+          script defines itself (<code>define({ type: 'blip', ... })</code>) is in the document, so
+          the cursor goes there. For anything else a panel opens with its description, its
+          parameters, and its TypeScript source with line numbers and a link to the file. A wrapper
+          round a Web Audio node links to that node's page on MDN. A node type's name inside the
+          source is a link to that type, and there is a back button. A type that came only as
+          catalog data, such as one somebody else defined, shows what is known and says the source
+          is not available.
+        </p>
+        <p>
+          The source of the built-in types and helpers is copied out of the library when it is
+          built, into a file of its own that is loaded the first time the panel opens.
+        </p>
+        <p>
+          By default the panel is docked at the right of the editor. To put it somewhere of your
+          own, pass an element, or make the panel yourself and share it between editors:
+        </p>
+        <pre data-static><code>import { createEditor, createSourcePanel } from 'cracked-up/editor';
+
+const panel = createSourcePanel({ parent: document.querySelector('#sidebar'), catalog });
+const editor = createEditor({ parent, catalog, sourcePanel: panel });
+
+panel.show({ kind: 'type', name: 'tapedelay' });   // from a menu of your own, say</code></pre>
+        <p>
+          To draw the result yourself, take it from <code>onDefinition</code>. It is called first,
+          with the kind, the name, the catalog's data for it, and for a type defined in the script
+          where. Return <code>true</code> and the editor does nothing more:
+        </p>
+        <pre data-static><code>createEditor({
+  parent,
+  catalog,
+  sourcePanel: false,
+  onDefinition(target) {
+    openMyInspector(target.kind, target.name, target.type ?? target.helper);
+    return true;
+  },
+});</code></pre>
+        <p>
+          <code>builtinSources(kind, name)</code> gives the same source text the panel shows, and
+          the <code>sources</code> option replaces where it comes from.
+        </p>
+
+        <h3>Styles and themes</h3>
+        <p>
+          The editor brings its styles with it and does not need this site's stylesheet. It adds one
+          <code>&lt;style&gt;</code> element to the document, or to the shadow root it is in; pass
+          <code>injectStyles: false</code> and use the exported <code>editorStyles</code> text if
+          your page must supply it another way. <code>theme</code> is <code>'auto'</code> (follow
+          the system, the default), <code>'light'</code> or <code>'dark'</code>, and
+          <code>setTheme</code> changes it. Every colour and font is a CSS custom property that you
+          can set on the editor's element or anything above it:
+        </p>
+        <pre data-static data-lang="text"><code>.my-app {
+  --cu-bg: #101418;
+  --cu-text: #e6e6e6;
+  --cu-accent: #7fd3a0;
+  --cu-font-mono: 'JetBrains Mono', monospace;
+  --cu-font-size: 14px;
+}</code></pre>
+        <p>
+          The names are <code>--cu-bg</code>, <code>--cu-text</code>, <code>--cu-muted</code>,
+          <code>--cu-border</code>, <code>--cu-accent</code>, <code>--cu-panel-bg</code>,
+          <code>--cu-hover-bg</code>, <code>--cu-selection</code>, <code>--cu-active-line</code>,
+          <code>--cu-error-bg</code>, <code>--cu-error-text</code>, <code>--cu-shadow</code>,
+          <code>--cu-code-comment</code>, <code>--cu-code-string</code>,
+          <code>--cu-code-number</code>, <code>--cu-code-keyword</code>,
+          <code>--cu-code-dunder</code>, <code>--cu-code-property</code>,
+          <code>--cu-font-mono</code>, <code>--cu-font-ui</code>, <code>--cu-font-size</code> and
+          <code>--cu-line-height</code>. They are also exported as <code>THEME_PROPERTIES</code>.
+        </p>
+        <p>
+          Sizes, measured on the built files: the editor's own code is 112 kB unminified (29 kB
+          gzipped), and the source text is a separate 121 kB file (about 27 kB gzipped) loaded on
+          first use. CodeMirror is the larger part: in this site's build the editor with CodeMirror
+          comes to about 525 kB minified, 176 kB gzipped. This page does not load it; the code
+          examples here are coloured by <code>highlightBlocks</code>, a small highlighter with no
+          dependency that the same entry point exports.
         </p>
 
         <h2 id="helpers">Helpers</h2>
@@ -1364,6 +1863,20 @@ __.transport.every('1/8', () =&gt; {
                 <td>
                   Every function listed under Helpers, by its bare name:
                   <code>euclid(3, 8)</code>, <code>pick(list)</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>keyPress</code>, <code>keyRelease</code>, <code>mouseMovement</code></td>
+                <td>
+                  Keys and the mouse, as under <a href="#interaction">Interaction</a>. Not in the
+                  sandboxed demo.
+                </td>
+              </tr>
+              <tr>
+                <td><code>midi</code></td>
+                <td>
+                  MIDI in and out, as under <a href="#midi">MIDI</a>. Using the name asks the
+                  browser for access. Not in the sandboxed demo.
                 </td>
               </tr>
               <tr>

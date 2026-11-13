@@ -5,10 +5,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked.git"
+    "url": "git+https://github.com/jamesstaub/cracked-up.git"
   },
-  "homepage": "https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked#readme",
-  "bugs": "https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked/issues",
+  "homepage": "https://github.com/jamesstaub/cracked-up#readme",
+  "bugs": "https://github.com/jamesstaub/cracked-up/issues",
   "type": "module",
   "sideEffects": [
     "./dist/global/*"

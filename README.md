@@ -165,7 +165,7 @@ git push origin main --follow-tags
 Until the library is on npm, install the package attached to a release, or a tag straight from git:
 
 ```sh
-npm install https://github.com/jamesstaub/i_dropped_my_phone_the_screen_cracked/releases/download/v0.1.0/cracked-up-0.1.0.tgz
+npm install https://github.com/jamesstaub/cracked-up/releases/download/v0.1.0/cracked-up-0.1.0.tgz
 ```
 
 The repository is a fork of the original library on GitHub. The rewrite lives on the `main` branch;

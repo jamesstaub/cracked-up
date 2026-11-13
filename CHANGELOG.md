@@ -71,6 +71,8 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 - The live demo and the sandboxed demo use `cracked-up/editor` in place of a text box. Clicking a
   sample, node type or helper in the demo's side column inserts it at the cursor.
 - The docs page's contents list keeps its own scroll: reaching its end no longer scrolls the page.
+- The sequencing guide shows how to change a playing pattern with `update`, `setStep` and
+  `ev.sequence`, without giving the callback again.
 - `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
 
 ### Fixed

@@ -874,6 +874,40 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
 
+        <h3 id="sequence-update">Changing a pattern while it plays</h3>
+        <p>
+          <code>__.transport.sequence</code> returns the sequence. Its <code>update</code> changes
+          the pattern, or any other option, and leaves your function as it is. The sequence keeps
+          its place, and the change is heard from the next step.
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+
+const seq = __.transport.sequence('kick', { steps: 'x...x...x...x...' }, (ev) => {
+  if (ev.value) __('#kick').trigger();
+});
+
+// Every two bars, change to the other pattern. The function above is not touched.
+const patterns = ['x...x...x...x...', 'x..x..x...x.x...'];
+let turn = 0;
+__.transport.every('2 bars', () => {
+  turn += 1;
+  seq.update({ steps: patterns[turn % 2] });
+});</code></pre>
+        <p>
+          <code>seq.setStep(3, 1)</code> changes a single step. Where you do not have the sequence
+          in a variable, <code>__.transport.get('kick')</code> finds it by name, and inside its own
+          function it is <code>ev.sequence</code>, so a pattern can rewrite itself:
+        </p>
+        <pre><code>__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.5).to('main');
+
+// A new random pattern each time round.
+__.transport.sequence('hat', { steps: 'x.x.x.x.', step: '1/8' }, (ev) => {
+  if (ev.value) __('#hat').trigger();
+  if (ev.index === 7) {
+    ev.sequence.update({ steps: ev.steps.map(() => (Math.random() < 0.6 ? 1 : 0)) });
+  }
+});</code></pre>
+
         <h3>Every sequencing method</h3>
         <p>
           <code>sequence.</code> below stands for what

@@ -103,6 +103,8 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   was scheduled in, its `kind` (`'sequence'`, `'every'` or `'at'`), the `sequence` and its `name`
   (null unless it is a sequence), and `cancel()`, which removes it from the transport. The error
   message names the sequence and the scope.
+- `node.autoId` is in the public types: true when the node was made without an `id` and the
+  library gave it one from its type and position.
 
 ### Changed
 
@@ -111,7 +113,6 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   documented: the callback is called again at its next step. A host that wants it quiet sets
   `error.origin.sequence.muted = true` (a rebuild keeps a named sequence and its mute) or calls
   `error.origin.cancel()`.
-
 - `bus.chain()` taps the bus's output, which is now after its inserts as well as its level.
   `bus.input` is a mix node of its own in front of the inserts; `bus.output` is the same node as
   before.

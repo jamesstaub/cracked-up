@@ -1514,7 +1514,8 @@ __.transport.sequence('toggle', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
             A node is recognised by its <code>id</code>. A node without one is recognised by its
             position among the nodes of its type: the second <code>lowpass</code> your code makes is
             the second <code>lowpass</code> it made last time. Give a node an id if you want it to
-            survive being moved around.
+            survive being moved around. <code>node.autoId</code> is true for a node that was given
+            no id, so an app can tell which nodes are known only by their position.
           </li>
           <li>
             A node is replaced only if its type or one of its creation options (a sampler's buffer,

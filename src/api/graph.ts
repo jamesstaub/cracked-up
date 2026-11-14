@@ -27,6 +27,13 @@ export type Tags = Readonly<Record<string, string | number | boolean>>;
 export interface Node<K extends NodeType = NodeType> {
   /** Unique within `scope`. Stable for the node's life; the key used by graph descriptions. */
   readonly id: string;
+  /**
+   * True when no id was given where the node was made, so the library made one from its type and
+   * position (`lowpass-0`). Such a node is matched across rebuilds by its place among the nodes of
+   * its type, not by a name. A node made from a graph description always has the id it was
+   * described with, so this is false there.
+   */
+  readonly autoId: boolean;
   readonly type: K;
   readonly classes: ReadonlySet<string>;
   readonly tags: Tags;

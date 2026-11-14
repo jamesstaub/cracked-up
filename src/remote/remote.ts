@@ -352,6 +352,15 @@ class RemoteBus {
     return this.remote.makeChain([this], []);
   }
 
+  /** The bus's inserts, in order. */
+  get inserts(): RemoteSelection {
+    return this.remote.makeSelection(this.remote.insertsOf(this.name));
+  }
+
+  insert(): RemoteInserts {
+    return this.remote.makeInserts(this, []);
+  }
+
   get input(): never {
     throw new CrackedUpError('unsupported', 'A remote bus has no audio node.');
   }
@@ -639,6 +648,39 @@ class RemoteChain {
   }
 }
 
+/** What adding an insert to a bus returns: the place to add the next one. */
+class RemoteInserts {
+  constructor(
+    readonly remote: RemoteImpl,
+    readonly bus: RemoteBus,
+    private readonly added: readonly RemoteNode[],
+  ) {}
+
+  get nodes(): RemoteSelection {
+    return this.remote.makeSelection(this.added);
+  }
+
+  add(type: string, init: unknown): RemoteInserts {
+    const node = this.remote.insertNode(this.bus, type, init);
+    return this.remote.makeInserts(this.bus, [...this.added, node]);
+  }
+
+  to(target: string | RemoteBus | null): this {
+    this.bus.to(target);
+    return this;
+  }
+
+  chain(): RemoteChain {
+    return this.bus.chain();
+  }
+}
+
+/** Names a bus has for itself, which a node type of the same name does not replace. */
+const BUS_MEMBERS = new Set([
+  ...Object.getOwnPropertyNames(RemoteBus.prototype),
+  ...['gain', 'remote', 'name', 'destination'],
+]);
+
 // ---------------------------------------------------------------------------------------------------
 // Sequences
 // ---------------------------------------------------------------------------------------------------
@@ -709,6 +751,8 @@ class RemoteImpl {
   private nodes = new Map<string, RemoteNode>();
   private edges = new Map<string, EdgeData>();
   private buses = new Map<string, RemoteBus>();
+  /** The ids of each bus's inserts, in order. Buses with none are not listed. */
+  private inserts = new Map<string, string[]>();
   private autoIds = new Map<string, number>();
   private sequences = new Map<string, RemoteSequence>();
   private transportState: TransportSnapshot;
@@ -729,6 +773,8 @@ class RemoteImpl {
 
   private readonly Selection: typeof RemoteSelection;
   private readonly Chain: typeof RemoteChain;
+  private readonly Bus: typeof RemoteBus;
+  private readonly Inserts: typeof RemoteInserts;
   readonly buffers: RemoteBuffers;
   private readonly tree: SelectableTree<RemoteNode> = {
     children: (parent) => (parent === null ? [...this.nodes.values()] : []),
@@ -748,12 +794,16 @@ class RemoteImpl {
       this.macros = outer.macros;
       this.Selection = outer.Selection;
       this.Chain = outer.Chain;
+      this.Bus = outer.Bus;
+      this.Inserts = outer.Inserts;
       this.bufferInfo = outer.bufferInfo;
     } else {
       this.types = new Map();
       this.macros = new Map();
       this.Selection = class extends RemoteSelection {};
       this.Chain = class extends RemoteChain {};
+      this.Bus = class extends RemoteBus {};
+      this.Inserts = class extends RemoteInserts {};
       for (const info of options.types) this.addType(info);
       for (const info of options.buffers ?? []) this.bufferInfo.set(info.key, info);
     }
@@ -804,6 +854,23 @@ class RemoteImpl {
         return this.add(type, init);
       },
     });
+    Object.defineProperty(this.Inserts.prototype, type, {
+      configurable: true,
+      writable: true,
+      value(this: RemoteInserts, init: unknown) {
+        return this.add(type, init);
+      },
+    });
+    // A type whose name a bus already uses (`gain`, the bus's level) is added through `insert()`.
+    if (!BUS_MEMBERS.has(type)) {
+      Object.defineProperty(this.Bus.prototype, type, {
+        configurable: true,
+        writable: true,
+        value(this: RemoteBus, init: unknown) {
+          return this.insert().add(type, init);
+        },
+      });
+    }
     for (const meta of info.params) {
       const name = meta.name;
       if (name in this.Selection.prototype) continue;
@@ -840,8 +907,11 @@ class RemoteImpl {
       );
     }
     for (const edge of snapshot.graph.edges) this.edges.set(JSON.stringify(edge), edge);
+    this.inserts = new Map(
+      Object.entries(snapshot.graph.inserts ?? {}).map(([name, ids]) => [name, [...ids]]),
+    );
     this.buses = new Map(
-      snapshot.buses.map((bus) => [bus.name, new RemoteBus(this, bus.name, bus.to, bus.gain)]),
+      snapshot.buses.map((bus) => [bus.name, new this.Bus(this, bus.name, bus.to, bus.gain)]),
     );
   }
 
@@ -902,6 +972,34 @@ class RemoteImpl {
 
   makeChain(tail: readonly Source[], all: readonly RemoteNode[]): RemoteChain {
     return new this.Chain(this, tail, all);
+  }
+
+  makeInserts(bus: RemoteBus, added: readonly RemoteNode[]): RemoteInserts {
+    return new this.Inserts(this, bus, added);
+  }
+
+  insertsOf(bus: string): RemoteNode[] {
+    return (this.inserts.get(bus) ?? []).flatMap((id) => this.nodes.get(id) ?? []);
+  }
+
+  /**
+   * Creates a node and lists it as the bus's last insert. Whether the node can be one (it needs an
+   * input and an output, and the bus must be this scope's own) is for the host to say: it reports an
+   * error if not.
+   */
+  insertNode(bus: RemoteBus, type: string, init: unknown): RemoteNode {
+    const node = this.createNode(type, init);
+    if (node.modulates !== null) {
+      this.removeNodes([node]);
+      throw new CrackedUpError(
+        'missing-target',
+        `${type} "${node.id}" cannot be an insert on bus "${bus.name}": an insert needs an input and an output.`,
+        { nodeId: node.id },
+      );
+    }
+    this.inserts.set(bus.name, [...(this.inserts.get(bus.name) ?? []), node.id]);
+    this.markDirty();
+    return node;
   }
 
   createNode(type: string, rawInit: unknown): RemoteNode {
@@ -984,7 +1082,7 @@ class RemoteImpl {
         `"${type}" is already a node type on the host and cannot be redefined here.`,
       );
     }
-    if (type in RemoteChain.prototype) {
+    if (type in RemoteChain.prototype || type in RemoteInserts.prototype) {
       throw new CrackedUpError('unknown-type', `"${type}" is the name of a chain method.`);
     }
     const params: Record<string, RemoteMacroData['params'][string]> = {};
@@ -1174,6 +1272,12 @@ class RemoteImpl {
           this.edges.delete(key);
         }
       }
+      for (const [bus, ids] of this.inserts) {
+        if (!ids.includes(node.id)) continue;
+        const rest = ids.filter((id) => id !== node.id);
+        if (rest.length > 0) this.inserts.set(bus, rest);
+        else this.inserts.delete(bus);
+      }
     }
     this.markDirty();
   }
@@ -1254,7 +1358,7 @@ class RemoteImpl {
   bus(name: string): RemoteBus {
     let bus = this.buses.get(name);
     if (!bus) {
-      bus = new RemoteBus(this, name, 'main', 1);
+      bus = new this.Bus(this, name, 'main', 1);
       this.buses.set(name, bus);
     }
     // Sent every time: the host returns the bus if it exists, and a rebuild must ask for it again.
@@ -1266,6 +1370,7 @@ class RemoteImpl {
     return {
       nodes: [...this.nodes.values()].map((node) => node.toData()),
       edges: [...this.edges.values()],
+      ...(this.inserts.size > 0 ? { inserts: Object.fromEntries(this.inserts) } : {}),
     };
   }
 
@@ -1279,6 +1384,7 @@ class RemoteImpl {
     const saved = {
       nodes: this.nodes,
       edges: this.edges,
+      inserts: this.inserts,
       autoIds: this.autoIds,
       sequences: new Map(this.sequences),
       onces: new Map(this.onces),
@@ -1291,6 +1397,7 @@ class RemoteImpl {
     };
     this.nodes = new Map();
     this.edges = new Map();
+    this.inserts = new Map();
     this.autoIds = new Map();
     this.autoNames = new Map();
     this.instances = new Map();
@@ -1302,6 +1409,7 @@ class RemoteImpl {
       Object.assign(this, {
         nodes: saved.nodes,
         edges: saved.edges,
+        inserts: saved.inserts,
         autoIds: saved.autoIds,
         sequences: saved.sequences,
         onces: saved.onces,

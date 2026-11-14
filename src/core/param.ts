@@ -112,6 +112,14 @@ export class ParamImpl {
 
   applySet(value: ParamValue, at: number): void {
     this.node.scope.paramSet(this.node, this.name);
+    if (
+      this.later(
+        at,
+        () => this.check(value),
+        () => this.applySet(value, at),
+      )
+    )
+      return;
     const next = this.coerce(value);
     const previous = this.base;
     this.base = next;
@@ -157,6 +165,9 @@ export class ParamImpl {
 
   applyRamp(target: number, at: number, options: Omit<RampOptions, 'at'>): void {
     this.node.scope.paramSet(this.node, this.name);
+    const check = (): void => this.checkRamp(target, options);
+    if (this.later(at, check, () => this.applyRamp(target, at, options))) return;
+    check();
     const audio = this.audioParam;
     if (this.meta.kind === 'number' && !audio && this.links) {
       // A macro's exposed parameter: ramp each inner parameter it drives.
@@ -178,11 +189,8 @@ export class ParamImpl {
       }
       return;
     }
-    if (this.meta.kind !== 'number' || !audio) {
-      throw this.error(`cannot be ramped: only audio-rate number parameters can`);
-    }
-    if (!(options.duration >= 0)) throw this.error(`ramp needs a duration of 0 or more seconds`);
-    const to = this.coerce(target) as number;
+    if (!audio) return;
+    const to = target;
     const from = options.from === undefined ? (this.base as number) : options.from;
     const end = at + options.duration;
     audio.setValueAtTime(from, at);
@@ -212,8 +220,15 @@ export class ParamImpl {
   }
 
   applyOffset(amount: number, at: number, duration?: number): void {
-    if (this.meta.kind !== 'number') throw this.error(`cannot be offset: it is not a number`);
-    if (!Number.isFinite(amount)) throw this.error(`offset must be a finite number`);
+    const check = (): void => {
+      if (this.meta.kind !== 'number') throw this.error(`cannot be offset: it is not a number`);
+      if (!Number.isFinite(amount)) throw this.error(`offset must be a finite number`);
+      if (duration !== undefined && !(duration >= 0 && Number.isFinite(duration))) {
+        throw this.error(`offset needs a duration of 0 or more seconds`);
+      }
+    };
+    if (this.later(at, check, () => this.applyOffset(amount, at, duration))) return;
+    check();
     const end = duration === undefined ? undefined : at + duration;
     this.offsetLine.prune(this.node.engine.now());
     this.offsetLine.set(at, amount);
@@ -241,6 +256,14 @@ export class ParamImpl {
   }
 
   applyCancel(at: number): void {
+    if (
+      this.later(
+        at,
+        () => undefined,
+        () => this.applyCancel(at),
+      )
+    )
+      return;
     this.audioParam?.cancelScheduledValues(at);
     this.offsetSource?.offset.cancelScheduledValues(at);
     this.baseLine.truncate(at);
@@ -307,6 +330,60 @@ export class ParamImpl {
     this.mods = [];
     this.events.clear();
     this.target = undefined;
+  }
+
+  /**
+   * Throws what setting this value would throw, and sets nothing. For a macro's exposed parameter
+   * that includes what the inner parameters it drives would say.
+   */
+  check(value: ParamValue): void {
+    const next = this.coerce(value);
+    for (const link of this.links?.() ?? []) {
+      link.param.check(link.scale && typeof next === 'number' ? link.scale(next) : next);
+    }
+  }
+
+  /** Throws what this ramp would throw, and schedules nothing. */
+  private checkRamp(target: number, options: Omit<RampOptions, 'at'>): void {
+    const { duration, from } = options;
+    if (!(duration >= 0 && Number.isFinite(duration))) {
+      throw this.error(`ramp needs a duration of 0 or more seconds`);
+    }
+    if (from !== undefined && !Number.isFinite(from)) {
+      throw this.error(`ramp needs a finite number to start from, got ${JSON.stringify(from)}`);
+    }
+    if (this.meta.kind === 'number' && !this.audioParam && this.links) {
+      const to = this.coerce(target) as number;
+      for (const link of this.links()) {
+        const scale = link.scale ?? ((value: number) => value);
+        link.param.checkRamp(scale(to), {
+          ...options,
+          ...(from === undefined ? {} : { from: scale(from) }),
+        });
+      }
+      return;
+    }
+    if (this.meta.kind !== 'number' || !this.audioParam) {
+      throw this.error(`cannot be ramped: only audio-rate number parameters can`);
+    }
+    this.coerce(target);
+  }
+
+  /**
+   * During a build, something asked of a parameter that was there before the build is checked at
+   * once and done only when the build succeeds. Returns whether that is the case here.
+   */
+  private later(at: number, check: () => void, run: () => void): boolean {
+    const tx = this.node.engine.holding(this.node);
+    if (!tx) return false;
+    check();
+    if (!(at >= 0 && Number.isFinite(at))) {
+      throw this.error(`needs a time of 0 or more seconds, got ${String(at)}`);
+    }
+    tx.defer(() => {
+      if (!this.node.disposed) run();
+    });
+    return true;
   }
 
   /** Checks a value against the parameter's kind. */

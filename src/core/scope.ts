@@ -24,6 +24,7 @@ import { NodeImpl, connect, disconnectEdge } from './node';
 import type { EdgeEnd, EdgeImpl } from './node';
 import { ParamImpl } from './param';
 import type { SelectionImpl } from './selection';
+import { Transaction } from './transaction';
 import type { TransportView } from './transport';
 
 const COMMON_KEYS = new Set(['id', 'class', 'tags', 'bypass', 'modulates']);
@@ -274,6 +275,8 @@ export class ScopeImpl {
       previous.modulates === modulates &&
       sameJson(this.comparableInit(previous.init), this.comparableInit(init))
     ) {
+      // Checked now, while the rebuild can still be refused whole. They are set when it succeeds.
+      for (const [name, value] of Object.entries(values)) previous.params[name]!.check(value);
       build.claimed.add(previous);
       build.order.push(previous);
       build.pending.set(previous, { values, classes, tags, bypass });
@@ -289,6 +292,7 @@ export class ScopeImpl {
       init,
       modulates,
     });
+    this.engine.tx?.created.add(node);
     if (bypass) node.applyBypass(true, this.engine.now(), 0);
     this.nodeList.push(node);
     this.byId.set(id, node);
@@ -409,7 +413,7 @@ export class ScopeImpl {
 
   /** A node that belongs to the scope's internals (a bus's gain) and is not listed or selectable. */
   createHiddenNode(type: string, id: string): NodeImpl {
-    return new NodeImpl(this, this.engine.registryImpl.entry(type), {
+    const node = new NodeImpl(this, this.engine.registryImpl.entry(type), {
       id,
       autoId: false,
       classes: [],
@@ -418,6 +422,8 @@ export class ScopeImpl {
       init: {},
       modulates: null,
     });
+    this.engine.tx?.created.add(node);
+    return node;
   }
 
   /** Called by a node when it is disposed. */
@@ -454,6 +460,7 @@ export class ScopeImpl {
       this.buses.set(name, bus);
       // The engine's own `main` feeds the output. Every other bus feeds that one until rerouted,
       // except inside a macro, whose buses are its ports and are wired up by whoever uses the macro.
+      this.engine.tx?.buses.add(bus);
       if (!this.owner) bus.route(this.engine.mainBus ?? null);
       this.building?.newBuses.push(bus);
     }
@@ -687,10 +694,55 @@ export class ScopeImpl {
 
   build(fn: (api: ScopeApi) => void): Promise<ApplyResult> {
     try {
-      return Promise.resolve(this.reconcile(() => fn(this.$), { full: true }));
+      const errors: CrackedUpError[] = [];
+      const result = this.atomically(
+        () => this.reconcile(() => fn(this.$), { full: true }),
+        (error) => errors.push(error),
+      );
+      return Promise.resolve({ ...result, errors: [...result.errors, ...errors] });
     } catch (thrown) {
       return Promise.reject(toGraphError(thrown, 'build-failed'));
     }
+  }
+
+  /**
+   * Runs `fn` as one change that happens whole or not at all. If it throws, everything it did to
+   * this engine is undone: what it made is removed, what it asked of things already there was never
+   * done (see `Transaction`), and the transport's sequences and settings are put back.
+   *
+   * `late` is given what a node's own code threw while the change was being carried out, after the
+   * point of no return. Inside a change already in progress this only runs `fn`: it is part of that one.
+   */
+  atomically<T>(fn: () => T, late: (error: CrackedUpError) => void): T {
+    const engine = this.engine;
+    if (engine.tx) return fn();
+    const tx = new Transaction();
+    const restoreTransport = engine.transportImpl.save();
+    engine.tx = tx;
+    let result: T;
+    try {
+      result = fn();
+    } catch (thrown) {
+      engine.tx = null;
+      restoreTransport();
+      for (const bus of tx.buses) {
+        bus.dispose();
+        bus.scope.dropBus(bus);
+      }
+      for (const node of tx.created) node.dispose();
+      tx.rollback();
+      for (const edge of tx.edges) disconnectEdge(edge);
+      throw thrown;
+    }
+    engine.tx = null;
+    for (const thrown of tx.commit()) late(toGraphError(thrown, 'build-failed'));
+    return result;
+  }
+
+  /** Forgets a bus that has been disposed. */
+  dropBus(bus: BusImpl): void {
+    if (this.buses.get(bus.name) === bus) this.buses.delete(bus.name);
+    this.builtBuses.delete(bus);
   }
 
   /** Whether a connection is one `describe()` reports: it stays inside this scope or ends at a bus. */
@@ -745,6 +797,9 @@ export class ScopeImpl {
       }
     }
     const schedule = options.full ? this.engine.transportImpl.collect(this.transportOwner) : null;
+    // Inside an all-or-nothing change, making the scope match waits until the whole change succeeds.
+    const tx = this.engine.tx;
+    const mark = tx?.mark ?? 0;
 
     this.building = build;
     try {
@@ -752,6 +807,7 @@ export class ScopeImpl {
     } catch (thrown) {
       this.building = null;
       schedule?.rollback();
+      tx?.forget(mark);
       for (const node of build.created) node.dispose();
       for (const old of build.superseded) this.byId.set(old.id, old);
       for (const edge of build.newEdges) disconnectEdge(edge);
@@ -764,6 +820,37 @@ export class ScopeImpl {
     this.building = null;
     schedule?.commit();
 
+    const result = {
+      added: [] as NodeImpl[],
+      removed: [] as string[],
+      updated: [] as NodeImpl[],
+      unchanged: [] as NodeImpl[],
+      errors: [] as CrackedUpError[],
+    };
+    const commit = (): void => this.commit(build, before, options, result);
+    if (tx) {
+      tx.undo(() => {
+        for (const old of build.superseded) this.byId.set(old.id, old);
+      });
+      // Before what `run` itself asked of nodes that were already there: its calls have the last word.
+      tx.insert(mark, commit);
+    } else commit();
+    return result as unknown as ApplyResult;
+  }
+
+  /** The second half of `reconcile`: nothing in here can be refused any more. */
+  private commit(
+    build: BuildState,
+    before: readonly NodeImpl[],
+    options: ReconcileOptions,
+    result: {
+      added: NodeImpl[];
+      removed: string[];
+      updated: NodeImpl[];
+      unchanged: NodeImpl[];
+      errors: CrackedUpError[];
+    },
+  ): void {
     const changed = new Set<NodeImpl>();
     const touch = (edge: EdgeImpl): void => {
       changed.add(edge.from);
@@ -778,7 +865,7 @@ export class ScopeImpl {
       if (bus.setInserts(wanted)) for (const node of [...old, ...wanted]) changed.add(node);
     }
 
-    const removed: string[] = [];
+    const { removed, errors } = result;
     for (const node of before) {
       if (build.claimed.has(node)) continue;
       for (const edge of [...node.inputs, ...node.outputs]) touch(edge);
@@ -792,7 +879,7 @@ export class ScopeImpl {
     }
     for (const edge of build.newEdges) touch(edge);
 
-    const errors: CrackedUpError[] = [];
+    // The values were checked when the run asked for them, so only a node's own code can throw here.
     const now = this.engine.now();
     for (const [node, update] of build.pending) {
       try {
@@ -823,13 +910,9 @@ export class ScopeImpl {
     const added = this.nodeList.filter((node) => build.created.has(node));
     for (const node of added) this.announce(node);
     const kept = this.nodeList.filter((node) => !build.created.has(node));
-    return {
-      added,
-      removed,
-      updated: kept.filter((node) => changed.has(node)),
-      unchanged: kept.filter((node) => !changed.has(node)),
-      errors,
-    } as unknown as ApplyResult;
+    result.added.push(...added);
+    result.updated.push(...kept.filter((node) => changed.has(node)));
+    result.unchanged.push(...kept.filter((node) => !changed.has(node)));
   }
 
   /** Brings a kept node to what the rebuild asked for. Returns whether anything changed. */
@@ -881,7 +964,11 @@ export class ScopeImpl {
   }
 
   paramChanged(change: ParamChange): void {
-    this.events.emit('param:changed', change);
+    const node = (change.param as unknown as ParamImpl).node;
+    const tx = this.engine.tx;
+    // A node made by a build in progress is not there yet as far as listeners know.
+    if (tx?.created.has(node)) tx.announce(node, () => this.events.emit('param:changed', change));
+    else this.events.emit('param:changed', change);
   }
 
   report(error: CrackedUpError): void {

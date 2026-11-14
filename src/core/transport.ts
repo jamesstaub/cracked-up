@@ -53,6 +53,8 @@ interface Source {
   fire(time: number, position: number, secondsPerBeat: number): void;
   /** Moves on without delivering (the event was too late to play). */
   skip(): void;
+  /** Notes everything about it that can change, and returns the function that puts it back. */
+  save(): () => void;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -152,6 +154,26 @@ class SequenceImpl implements Source {
       throw error;
     }
     this.callback = callback;
+  }
+
+  save(): () => void {
+    const { raw, callback, values, stepBeats, offsetBeats, next, originBeats } = this;
+    const { restartPending, lastFired, muted } = this;
+    const steps = [...values];
+    return () => {
+      this.raw = raw;
+      this.callback = callback;
+      // The same array as before, with what it held: an event's `steps` is this array.
+      values.splice(0, values.length, ...steps);
+      this.values = values;
+      this.stepBeats = stepBeats;
+      this.offsetBeats = offsetBeats;
+      this.next = next;
+      this.originBeats = originBeats;
+      this.restartPending = restartPending;
+      this.lastFired = lastFired;
+      this.muted = muted;
+    };
   }
 
   private swing(): number {
@@ -277,6 +299,14 @@ class OneShot implements Source {
     this.transport.remove(this);
   }
 
+  save(): () => void {
+    const { armed, fired } = this;
+    return () => {
+      this.armed = armed;
+      this.fired = fired;
+    };
+  }
+
   fire(time: number, position: number): void {
     this.fired = true;
     this.transport.remove(this);
@@ -313,6 +343,13 @@ class Repeater implements Source {
 
   skip(): void {
     this.next++;
+  }
+
+  save(): () => void {
+    const next = this.next;
+    return () => {
+      this.next = next;
+    };
   }
 
   fire(time: number, position: number): void {
@@ -891,6 +928,44 @@ export class TransportImpl {
           sequence.rearm(this.armPosition());
         }
       },
+    };
+  }
+
+  /**
+   * Notes everything a rebuild can change here: what is scheduled, by anyone, with each sequence's
+   * pattern, options, callback and place in its cycle, and the tempo, swing, time signature, step
+   * length and loop. Returns the function that puts all of it back, for a rebuild that fails.
+   *
+   * Whether the transport is running is not put back: a builder that starts or stops it has done so.
+   */
+  save(): () => void {
+    const sources = [...this.sources];
+    const states = sources.map((source) => source.save());
+    const named = [...this.named].map(([owner, names]) => [owner, new Map(names)] as const);
+    const { tempo, swingAmount, signature, defaultStep, loopRegion } = this;
+    const { playState, restPosition, processed } = this;
+    const segments = [...this.segments];
+    return () => {
+      this.collecting = null;
+      this.sources = sources;
+      this.named = new Map(named);
+      this.swingAmount = swingAmount;
+      this.signature = signature;
+      this.defaultStep = defaultStep;
+      this.loopRegion = loopRegion;
+      for (const restore of states) restore();
+      if (this.playState !== playState) {
+        this.driveTempo(tempo);
+        return;
+      }
+      this.segments = segments;
+      this.restPosition = restPosition;
+      this.processed = processed;
+      if (this.tempo !== tempo) {
+        this.tempo = tempo;
+        // Listeners were told of the tempo the failed rebuild set.
+        this.events.emit('tempo', tempo);
+      }
     };
   }
 

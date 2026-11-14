@@ -241,6 +241,7 @@ export class NodeImpl {
    * bypass off brings it back mid-flight. The switch is a short crossfade starting at `at`.
    */
   applyBypass(value: boolean, at: number, fade = BYPASS_FADE): void {
+    if (this.later(() => this.applyBypass(value, at, fade))) return;
     const next = Boolean(value);
     if (this.disposed || next === this.bypassed) return;
     this.bypassed = next;
@@ -298,9 +299,21 @@ export class NodeImpl {
 
   disconnect(target?: Node | Bus | Param<number>): this {
     for (const edge of [...this.outputs]) {
-      if (target === undefined || edge.to === (target as unknown as EdgeEnd)) disconnectEdge(edge);
+      if (target === undefined || edge.to === (target as unknown as EdgeEnd)) cutEdge(edge);
     }
     return this;
+  }
+
+  /**
+   * During a build, something asked of a node that was there before the build is done only when the
+   * build succeeds. Returns whether that is the case here.
+   */
+  private later(run: () => void): boolean {
+    const tx = this.engine.holding(this);
+    tx?.defer(() => {
+      if (!this.disposed) run();
+    });
+    return tx !== null;
   }
 
   // --- Triggering ---------------------------------------------------------------------------------
@@ -312,6 +325,7 @@ export class NodeImpl {
   }
 
   applyTrigger(options: Readonly<Record<string, unknown>>, at: number): void {
+    if (this.later(() => this.applyTrigger(options, at))) return;
     this.built.trigger?.(options, at);
   }
 
@@ -322,6 +336,7 @@ export class NodeImpl {
   }
 
   applyRelease(options: ReleaseOptions, at: number): void {
+    if (this.later(() => this.applyRelease(options, at))) return;
     this.built.release?.(options, at);
   }
 
@@ -339,13 +354,14 @@ export class NodeImpl {
         { nodeId: this.id },
       );
     }
+    if (this.later(() => fn(args, at))) return;
     fn(args, at);
   }
 
   // --- Lifetime -----------------------------------------------------------------------------------
 
   dispose(): void {
-    if (this.disposed) return;
+    if (this.disposed || this.later(() => this.dispose())) return;
     this.disposed = true;
     this.insertOf?.removeInsert(this);
     for (const edge of [...this.outputs, ...this.inputs]) disconnectEdge(edge);
@@ -424,8 +440,11 @@ function unwire(edge: EdgeImpl): void {
 /** Connects a node's output to another node's input, a bus, or a parameter, and records the edge. */
 export function connect(from: NodeImpl, to: EdgeEnd): void {
   if (from.disposed) return;
+  const tx = from.engine.tx;
   const existing = from.outputs.find((edge) => edge.to === to);
   if (existing) {
+    // Asked for again after being removed earlier in the same build: it stays.
+    tx?.cut.delete(existing);
     from.scope.noteEdge(existing, false);
     if (to instanceof NodeImpl && to.scope !== from.scope) to.scope.noteEdge(existing, false);
     return;
@@ -458,12 +477,13 @@ export function connect(from: NodeImpl, to: EdgeEnd): void {
       );
     }
     wire(edge);
-    to.addModulation(from, () => disconnectEdge(edge));
+    to.addModulation(from, () => cutEdge(edge));
   } else {
     wire(edge);
     to.sources.add(edge);
   }
   from.outputs.push(edge);
+  tx?.edges.add(edge);
   from.scope.noteEdge(edge, true);
   if (to instanceof NodeImpl && to.scope !== from.scope) to.scope.noteEdge(edge, true);
 }
@@ -477,6 +497,23 @@ export function disconnectEdge(edge: EdgeImpl): void {
   if (to instanceof NodeImpl) to.inputs = to.inputs.filter((other) => other !== edge);
   else if (to instanceof ParamImpl) to.removeModulation(from);
   else to.sources.delete(edge);
+}
+
+/**
+ * Removes a connection because someone asked for that. During a build a connection that was there
+ * before it goes only when the build succeeds, and not at all if the build asks for it again.
+ */
+export function cutEdge(edge: EdgeImpl): void {
+  const tx = edge.from.engine.tx;
+  if (!tx || tx.edges.has(edge)) {
+    disconnectEdge(edge);
+    return;
+  }
+  if (tx.cut.has(edge) || !edge.from.outputs.includes(edge)) return;
+  tx.cut.add(edge);
+  tx.defer(() => {
+    if (tx.cut.has(edge)) disconnectEdge(edge);
+  });
 }
 
 /** The public Edge view of an internal edge. */

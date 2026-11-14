@@ -6,6 +6,7 @@ import type { EdgeImpl, NodeImpl } from './node';
 import { disconnectEdge } from './node';
 import type { ScopeImpl } from './scope';
 import type { SelectionImpl } from './selection';
+import type { Transaction } from './transaction';
 
 /**
  * A named mix point. Inside it the signal runs
@@ -85,7 +86,14 @@ export class BusImpl {
       throw error;
     }
     if (!this.scope.noteInsert(this, node)) {
-      this.setInserts([...this.insertList.filter((other) => other !== node), node]);
+      // The list is read when the insert is placed: during a build of another scope that is later.
+      const place = (): void => {
+        if (node.disposed || this.node.disposed) return;
+        this.setInserts([...this.insertList.filter((other) => other !== node), node]);
+      };
+      const tx = this.held();
+      if (tx) tx.defer(place);
+      else place();
     }
     return node;
   }
@@ -114,6 +122,13 @@ export class BusImpl {
    * a rebuild that asks for the same inserts leaves the signal alone. Returns whether anything changed.
    */
   setInserts(nodes: readonly NodeImpl[]): boolean {
+    const tx = this.held();
+    if (tx) {
+      tx.defer(() => {
+        if (!this.node.disposed) this.setInserts(nodes);
+      });
+      return false;
+    }
     const next = [...new Set(nodes)].filter((node) => !node.disposed);
     const same =
       next.length === this.insertList.length &&
@@ -127,6 +142,12 @@ export class BusImpl {
     this.insertList = next;
     this.patch();
     return true;
+  }
+
+  /** The build in progress, if this bus was there before it: what is asked of the bus then waits. */
+  private held(): Transaction | null {
+    const tx = this.scope.engine.tx;
+    return tx && !tx.buses.has(this) ? tx : null;
   }
 
   /** Takes a node out of the path and joins its neighbours. Called when an insert is disposed. */
@@ -178,18 +199,27 @@ export class BusImpl {
   }
 
   to(target: string | Bus | null): this {
+    let bus: BusImpl | null = null;
+    if (target !== null) {
+      bus = typeof target === 'string' ? this.scope.resolveBus(target) : busOf(target);
+      if (!bus) throw new CrackedUpError('missing-target', 'A bus can only be sent to a bus.');
+      if (bus === this) {
+        throw new CrackedUpError(
+          'missing-target',
+          `Bus "${this.name}" cannot be routed to itself.`,
+        );
+      }
+    }
     this.scope.noteRoute(this);
-    if (target === null) {
-      // Nowhere: the mix is heard only through chains that continue from this bus.
-      this.unroute();
-      return this;
-    }
-    const bus = typeof target === 'string' ? this.scope.resolveBus(target) : busOf(target);
-    if (!bus) throw new CrackedUpError('missing-target', 'A bus can only be sent to a bus.');
-    if (bus === this) {
-      throw new CrackedUpError('missing-target', `Bus "${this.name}" cannot be routed to itself.`);
-    }
-    this.route(bus);
+    const apply = (): void => {
+      if (this.node.disposed) return;
+      // To nowhere: the mix is heard only through chains that continue from this bus.
+      if (bus) this.route(bus);
+      else this.unroute();
+    };
+    const tx = this.held();
+    if (tx) tx.defer(apply);
+    else apply();
     return this;
   }
 

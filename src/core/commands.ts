@@ -1,6 +1,6 @@
 import type { Command, CommandTarget, EdgeTarget } from '../api';
 import { CrackedUpError } from './errors';
-import { connect, disconnectEdge } from './node';
+import { connect, cutEdge } from './node';
 import type { EdgeEnd, NodeImpl } from './node';
 import type { ScopeImpl } from './scope';
 
@@ -109,7 +109,7 @@ export function execute(scope: ScopeImpl, command: Command): void {
       const end = command.to === undefined ? undefined : resolveEdgeTarget(scope, command.to);
       for (const node of resolve(scope, command.target)) {
         for (const edge of [...node.outputs]) {
-          if (end === undefined || edge.to === end) disconnectEdge(edge);
+          if (end === undefined || edge.to === end) cutEdge(edge);
         }
       }
       return;

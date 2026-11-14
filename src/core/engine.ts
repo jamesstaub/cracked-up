@@ -22,6 +22,7 @@ import { RegistryImpl } from './registry';
 import type { RegistryEntry } from './registry';
 import { ScopeImpl } from './scope';
 import { SelectionImpl } from './selection';
+import type { Transaction } from './transaction';
 import { TransportImpl } from './transport';
 import type { TransportView } from './transport';
 
@@ -61,6 +62,9 @@ export class EngineImpl {
    * explicit time use it, so code in a callback lands on the event without passing `at` around.
    */
   eventTime: number | null = null;
+
+  /** The all-or-nothing change in progress (a `build()`), or null. See `Transaction`. */
+  tx: Transaction | null = null;
 
   private events = new Emitter<EngineEvents>();
   private disposed = false;
@@ -190,6 +194,14 @@ export class EngineImpl {
   /** The audio time an operation applies at: the given one, else the current event's, else now. */
   resolveAt(at: number | undefined): number {
     return at ?? this.eventTime ?? this.context.currentTime;
+  }
+
+  /**
+   * The change in progress, if what is asked of this node must wait for it to succeed: that is, if
+   * the node was there before the change began. Null when the request can be carried out at once.
+   */
+  holding(node: NodeImpl): Transaction | null {
+    return this.tx && !this.tx.created.has(node) ? this.tx : null;
   }
 
   // --- Internal factories -------------------------------------------------------------------------

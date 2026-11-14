@@ -254,6 +254,67 @@ __.transport.every('1/4', () => __('sampler').trigger());</code></pre>
         <p>
           Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
         </p>
+        <p>
+          <code>__.bus('drums')</code> makes the bus the first time it is called and returns the
+          same bus every time after, so it is also how you get hold of a bus to change it. These are
+          the things a bus can do; the sections below take them in turn.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Call</th>
+                <th>What it does</th>
+                <th>Use it for</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>__.bus('drums')</code></td>
+                <td>Makes or finds the bus. Chains reach it with <code>.to('drums')</code></td>
+                <td>Grouping sounds so they can be treated as one</td>
+              </tr>
+              <tr>
+                <td><code>bus.gain</code></td>
+                <td>The level of the whole bus, a parameter</td>
+                <td>A group fader: <code>bus.gain.set(0.8)</code>, or a ramp for a fade</td>
+              </tr>
+              <tr>
+                <td><code>bus.compressor(...)</code>, or any effect type</td>
+                <td>
+                  Adds an <a href="#inserts">insert</a>: the effect goes inside the bus and all of
+                  its sound passes through
+                </td>
+                <td>Processing the group: compression, a filter, distortion</td>
+              </tr>
+              <tr>
+                <td><code>bus.insert()</code></td>
+                <td>Starts a run of inserts without adding one</td>
+                <td>
+                  Inserting a <code>gain</code> node first, since <code>bus.gain</code> is the level
+                </td>
+              </tr>
+              <tr>
+                <td><code>bus.chain()</code></td>
+                <td>
+                  Starts a chain from the bus's output, a <a href="#bus-chain">tap</a>. The bus is
+                  still heard as before
+                </td>
+                <td>Something beside the bus: parallel effects, a recorder</td>
+              </tr>
+              <tr>
+                <td><code>bus.to('other')</code></td>
+                <td>Sends the bus's output to another bus in place of <code>main</code></td>
+                <td>Groups inside groups</td>
+              </tr>
+              <tr>
+                <td><code>bus.to(null)</code></td>
+                <td>Sends the bus's output nowhere; only its taps are heard</td>
+                <td>A bus that exists to feed a looper, or to be split into separate paths</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <h3 id="inserts">Effects on a bus: inserts</h3>
         <p>
@@ -346,6 +407,80 @@ __.transport.every('1/2', () => __('#snare').trigger());</code></pre>
           to put an effect on a bus. It still works and sounds the same; an insert says it in one
           line.
         </p>
+
+        <h3 id="bus-recipes">Buses in practice</h3>
+        <p>
+          <strong>One reverb shared by several sounds.</strong> Make a bus whose only job is the
+          effect: a reverb insert with <code>mix: 1</code>, so the bus carries reverb and nothing
+          else. Each sound goes to <code>main</code> as usual and also sends some of itself to the
+          reverb bus, at its own level. One reverb is cheaper than one per sound, and puts
+          everything in the same room.
+        </p>
+        <pre><code>__.bus('room').reverb({ id: 'space', seconds: 2, mix: 1 });
+
+__().sampler({ id: 'snare', buffer: 'snare' }).split(
+  (dry) => dry.to('main'),
+  (send) => send.gain({ id: 'snare-send', gain: 0.4 }).to('room'),
+);
+__().sampler({ id: 'hat', buffer: 'hat' }).split(
+  (dry) => dry.gain(0.5).to('main'),
+  (send) => send.gain({ id: 'hat-send', gain: 0.1 }).to('room'),
+);
+
+__.transport.steps('..x.', () => __('#snare').trigger());
+__.transport.steps('xxxx', () => __('#hat').trigger());</code></pre>
+        <p>
+          <strong>Parallel compression.</strong> The drums are heard untouched, and a heavily
+          compressed copy is mixed in under them. This needs a tap, not an insert, because the
+          uncompressed sound must stay.
+        </p>
+        <pre><code>__.bus('drums')
+  .chain()
+  .compressor({ id: 'smash', threshold: -30, ratio: 12 })
+  .gain({ id: 'smash-level', gain: 0.5 })
+  .to('main');
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
+__.transport.steps('x.x.', () => __('#kick').trigger());
+__.transport.steps('..x.', () => __('#snare').trigger());</code></pre>
+        <p>
+          <strong>Groups inside groups.</strong> <code>bus.to('other')</code> sends one bus into
+          another. Here the hats have their own filter and level, and still pass through the drum
+          bus's compressor with everything else.
+        </p>
+        <pre><code>__.bus('drums').compressor({ id: 'glue', threshold: -18, ratio: 3 });
+__.bus('hats').highpass({ id: 'hat-tone', frequency: 6000 }).to('drums');
+__.bus('hats').gain.set(0.6);
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'hat', buffer: 'hat' }).to('hats');
+__.transport.steps('x...', () => __('#kick').trigger());
+__.transport.steps('xxxx', () => __('#hat').trigger());</code></pre>
+        <p>
+          <strong>Recording a group.</strong> A recorder on a tap captures exactly what the bus puts
+          out, inserts and level included, without changing what is heard. Two recorders triggered
+          together give stems that line up. See
+          <a href="#recording">Recording, looping and live input</a>.
+        </p>
+        <pre
+          data-static
+        ><code>__.bus('drums').chain().recorder({ id: 'stem', into: 'stem:drums' });</code></pre>
+        <p>Choosing between the three:</p>
+        <ul>
+          <li>
+            Everything on the bus should be changed: an <strong>insert</strong>
+            (<code>bus.compressor()</code>).
+          </li>
+          <li>
+            Something should be added beside the bus, or should listen to it: a
+            <strong>tap</strong> (<code>bus.chain()</code>).
+          </li>
+          <li>
+            The bus should be heard only through what follows it:
+            <code>bus.to(null)</code> and a tap.
+          </li>
+        </ul>
 
         <h2 id="connecting"><code>to</code>, <code>connect</code> and <code>modulate</code></h2>
         <p>

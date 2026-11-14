@@ -59,6 +59,40 @@ const drawn = (inspector: Inspector, label: string): HTMLElement | undefined =>
 const node = (engine: Engine, id: string): Node => engine.scope('live').select(`#${id}`).first()!;
 
 describe('the inspector', () => {
+  it('draws the inserts of a bus in front of it, and follows a change of order', async () => {
+    const engine = await offlineEngine(0.1);
+    const live = engine.scope('live');
+    await live.build((__) => {
+      __().sampler({ id: 'kick' }).to(__.bus('drums'));
+      __.bus('drums').compressor({ id: 'glue' }).overdrive({ id: 'grit' });
+    });
+    const inspector = inspect(engine);
+    await frames(3);
+    const glue = drawn(inspector, 'compressor glue')!;
+    const grit = drawn(inspector, 'overdrive grit')!;
+    const drums = drawn(inspector, 'bus drums')!;
+    expect(glue.getAttribute('aria-label')).toContain('insert on bus drums');
+    expect(glue.classList.contains('insert')).toBe(true);
+    expect(drums.classList.contains('insert')).toBe(false);
+    // Left to right: the source, the inserts in order, then the bus.
+    const left = (element: HTMLElement): number => element.getBoundingClientRect().left;
+    expect(left(drawn(inspector, 'sampler kick')!)).toBeLessThan(left(glue));
+    expect(left(glue)).toBeLessThan(left(grit));
+    expect(left(grit)).toBeLessThan(left(drums));
+
+    live.dispatch([{ op: 'bus', name: 'drums', inserts: ['grit', 'glue'] }]);
+    inspector.refresh();
+    await frames(3);
+    expect(left(drawn(inspector, 'overdrive grit')!)).toBeLessThan(
+      left(drawn(inspector, 'compressor glue')!),
+    );
+    live.select('#grit, #glue').dispose();
+    inspector.refresh();
+    await frames(3);
+    expect(drawn(inspector, 'compressor glue')).toBeUndefined();
+    expect(drawn(inspector, 'bus drums')).toBeDefined();
+  });
+
   it('draws an offline engine: every node, bus and connection, with no taps', async () => {
     const engine = await offline();
     const inspector = inspect(engine);

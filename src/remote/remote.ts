@@ -47,7 +47,7 @@ import type {
   Duration,
 } from '../api';
 import { CrackedUpError } from '../core/errors';
-import { normalizeParamMeta } from '../core/registry';
+import { describeNodeType } from '../core/registry';
 import { SelectorError, matchesCompound, select } from '../selector';
 import type { Selectable, SelectableTree } from '../selector';
 import { fromNormalized, toNormalized } from '../util/curves';
@@ -1012,19 +1012,12 @@ class RemoteImpl {
       ...(definition.trigger ? ['trigger'] : []),
       ...(definition.release ? ['release'] : []),
     ];
+    // The definition may not have come through `defineMacro` here, so say what it is.
     const info: NodeTypeInfo = {
-      type,
-      category: definition.category ?? 'utility',
-      description: definition.description ?? '',
+      ...describeNodeType(definition),
       isMacro: true,
       triggerable: definition.trigger !== undefined,
-      shorthand: definition.shorthand ?? null,
       modulates: null,
-      params: Object.entries(definition.params).map(([name, spec]) =>
-        normalizeParamMeta(name, spec),
-      ),
-      options: definition.options ?? {},
-      triggerOptions: definition.triggerOptions ?? {},
     };
     this.addType(info);
     // The signature changes when the host's side of the definition must, which replaces old instances.

@@ -4,7 +4,15 @@
  * (`RemoteState`); a page with an engine builds it from the engine.
  */
 
-import type { BufferInfo, Engine, NodeTypeInfo, RemoteState } from '../api';
+import type {
+  BufferInfo,
+  Engine,
+  MacroDefinition,
+  NodeDefinition,
+  NodeTypeInfo,
+  RemoteState,
+} from '../api';
+import { describeNodeTypes } from '../describe';
 import { HELPER_GROUPS } from '../util/helper-docs';
 import type { ReceiverKind } from './api-docs';
 
@@ -102,6 +110,21 @@ export function catalogFromEngine(engine: Engine, extra: EditorCatalog = {}): Ed
     buffers: engine.buffers.list().map(bufferEntry),
     ...extra,
   };
+}
+
+/**
+ * A catalog from node definitions alone, for a page that has an editor before it has an engine. With
+ * no definitions: the built-in node types. The types are exactly what `catalogFromEngine` would list
+ * for an engine with those definitions; it creates no audio context.
+ *
+ *   catalogFromNodes()                                  // the built-ins
+ *   catalogFromNodes([...builtinNodes, myMacro], { buses: ['drums'] })
+ */
+export function catalogFromNodes(
+  definitions?: readonly (NodeDefinition | MacroDefinition)[],
+  extra: EditorCatalog = {},
+): EditorCatalog {
+  return { types: describeNodeTypes(definitions), ...extra };
 }
 
 /** A catalog from what a host sends a sandbox (`link.state()`), for pages that have no engine. */

@@ -55,6 +55,31 @@ export function normalizeParamMeta(name: string, input: ParamMetaInput): ParamMe
   };
 }
 
+/**
+ * What the registry reports about a definition: `engine.registry.describe(type)` for a type made from
+ * it. Reads only the definition, so it needs no engine and no audio context.
+ */
+export function describeNodeType(definition: NodeDefinition | MacroDefinition): NodeTypeInfo {
+  const isMacro = isMacroDefinition(definition);
+  const triggerable = isMacro
+    ? (definition as MacroDefinition).trigger !== undefined
+    : ((definition as NodeDefinition).triggerable ?? false);
+  return {
+    type: definition.type,
+    category: definition.category ?? 'utility',
+    description: definition.description ?? '',
+    isMacro,
+    triggerable,
+    shorthand: definition.shorthand ?? null,
+    modulates: (definition as { modulates?: string }).modulates ?? null,
+    params: Object.entries(definition.params).map(([name, input]) =>
+      normalizeParamMeta(name, input),
+    ),
+    options: definition.options ?? {},
+    triggerOptions: definition.triggerOptions ?? {},
+  };
+}
+
 export class RegistryImpl implements Registry {
   private entries = new Map<string, RegistryEntry>();
 
@@ -81,38 +106,21 @@ export class RegistryImpl implements Registry {
         `"${type}" cannot be a node type name because chains already have a method called "${type}".`,
       );
     }
-    const params = new Map<string, ParamMeta>();
-    for (const [name, input] of Object.entries(definition.params)) {
-      params.set(name, normalizeParamMeta(name, input));
-    }
+    const info = describeNodeType(definition);
+    const params = new Map<string, ParamMeta>(info.params.map((meta) => [meta.name, meta]));
     if (definition.shorthand !== undefined && !params.has(definition.shorthand)) {
       throw new CrackedUpError(
         'invalid-param',
         `Node type "${type}" names "${definition.shorthand}" as its shorthand, but has no such parameter.`,
       );
     }
-    const isMacro = isMacroDefinition(definition);
-    const triggerable = isMacro
-      ? (definition as MacroDefinition).trigger !== undefined
-      : ((definition as NodeDefinition).triggerable ?? false);
     const entry: RegistryEntry = {
       type,
-      isMacro,
+      isMacro: info.isMacro,
       definition,
       params,
-      shorthand: definition.shorthand ?? null,
-      info: {
-        type,
-        category: definition.category ?? 'utility',
-        description: definition.description ?? '',
-        isMacro,
-        triggerable,
-        shorthand: definition.shorthand ?? null,
-        modulates: (definition as { modulates?: string }).modulates ?? null,
-        params: [...params.values()],
-        options: definition.options ?? {},
-        triggerOptions: definition.triggerOptions ?? {},
-      },
+      shorthand: info.shorthand,
+      info,
     };
     this.entries.set(type, entry);
     this.onRegister(entry);

@@ -13,6 +13,7 @@ export type { DefinitionTarget, SourcePanel, SourcePanelOptions } from './panel'
 export {
   builtinHelpers,
   catalogFromEngine,
+  catalogFromNodes,
   catalogFromRemoteState,
   createCatalogStore,
 } from './catalog';

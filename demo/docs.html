@@ -1621,6 +1621,27 @@ const bass = createEditor({ parent: bassElement, doc: bassCode, catalog });
 engine.buffers.on('ready', () =&gt; catalog.set(catalogFromEngine(engine)));
 catalog.update({ ids: idsOfEveryTrack() });   // both editors follow</code></pre>
 
+        <h3>Before there is an engine</h3>
+        <p>
+          An audio context cannot start until someone clicks, and an editor is often on screen
+          before that. <code>catalogFromNodes</code> makes the catalog from node definitions alone:
+          the built-in types when called with nothing, or the list you give it. It creates no audio
+          context, and its types are exactly what <code>catalogFromEngine</code> lists once the
+          engine exists.
+        </p>
+        <pre data-static><code>import { catalogFromNodes } from 'cracked-up/editor';
+import { builtinNodes } from 'cracked-up/nodes';
+
+const catalog = createCatalogStore(catalogFromNodes());
+// With your own types, and anything else a catalog holds:
+catalog.set(catalogFromNodes([...builtinNodes, myMacro], { buses: ['drums'] }));</code></pre>
+        <p>
+          The same data without the editor is <code>describeNodeTypes(definitions?)</code> and
+          <code>describeNodeType(definition)</code> from <code>cracked-up</code>: what
+          <code>engine.registry.list()</code> and <code>describe(type)</code> report, read from the
+          definitions.
+        </p>
+
         <h3>With sandboxed scripts</h3>
         <p>
           When scripts run in a <a href="#sandbox">sandbox</a>, the editor still lives in the page,

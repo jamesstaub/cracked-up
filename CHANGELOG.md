@@ -12,6 +12,12 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Node types can be described without an engine.** `describeNodeTypes(definitions?)` and
+  `describeNodeType(definition)` from `cracked-up` return what `engine.registry.list()` and
+  `describe(type)` report, read from the definitions alone (the built-ins when given nothing). No
+  audio context is made. `catalogFromNodes(definitions?, extra?)` in `cracked-up/editor` builds an
+  editor catalog from them, for a page that shows an editor before any audio exists. The registry,
+  `catalogFromEngine` and `remote.define` use the same function.
 - **`cracked-up/editor`**: a code editor for an app to embed, built on CodeMirror 6.
   `createEditor({ parent, doc, catalog, onChange })` mounts into an element and returns `value`,
   `setValue`, `insert`, `setCatalog`, `setReadOnly`, `setTheme`, `showError`, `clearError`,

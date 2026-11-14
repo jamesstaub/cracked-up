@@ -64,6 +64,8 @@ export class NodeImpl {
   announced = false;
   inputs: EdgeImpl[] = [];
   outputs: EdgeImpl[] = [];
+  /** The bus this node is an insert on, if it is one. The bus connects it; no edge records that. */
+  insertOf: BusImpl | null = null;
 
   private built: BuiltNode;
   private bypassed = false;
@@ -274,6 +276,7 @@ export class NodeImpl {
     }
     this.wrap = { entry, exit, wet, dry };
     for (const edge of edges) wire(edge);
+    this.insertOf?.patch();
     return this.wrap;
   }
 
@@ -344,6 +347,7 @@ export class NodeImpl {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.insertOf?.removeInsert(this);
     for (const edge of [...this.outputs, ...this.inputs]) disconnectEdge(edge);
     try {
       this.built.dispose?.();

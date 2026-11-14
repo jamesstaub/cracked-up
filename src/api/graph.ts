@@ -217,22 +217,75 @@ export type Chain = ChainBase & {
  * A named mix point: several chains go in, one signal comes out. The library attaches no meaning to
  * the names. The only bus that exists by default is the engine's `main`, which feeds the context
  * destination. Every other bus is created by the caller and feeds `main` until told otherwise.
+ *
+ * Inside a bus the signal runs: mix of everything sent to it, then its inserts in order, then its
+ * level (`gain`), then its output. The output goes to the bus's target (`to`) and to every chain
+ * continued from it (`chain()`).
  */
-export interface Bus {
+interface BusBase {
   readonly name: string;
   readonly scope: Scope;
+  /** The bus's level, applied after its inserts. To add a gain node as an insert: `insert().gain()`. */
   readonly gain: Param<number>;
   /**
-   * Where this bus sends its mix. Default: the engine's `main` bus. `null` sends it nowhere, so it is
-   * heard only through what continues from it with `chain()`: use that when the chain is the bus's
+   * Where this bus sends its output. Default: the engine's `main` bus. `null` sends it nowhere, so it
+   * is heard only through what continues from it with `chain()`: use that when the chain is the bus's
    * one way out, such as a bus that feeds a looper.
    */
   to(target: string | Bus | null): this;
-  /** Starts a chain fed by this bus's mix, for processing everything sent to it. */
+  /**
+   * Starts a chain fed by this bus's output, after its inserts and level. A tap: the bus still goes
+   * to its target as well. For processing in series, add an insert instead.
+   */
   chain(): Chain;
+  /**
+   * The place to add inserts, with a method for every node type. `bus.compressor()` is short for
+   * `bus.insert().compressor()`; this is the way to the types whose name a bus already uses for
+   * something of its own (`gain`, `input`).
+   */
+  insert(): BusInserts;
+  /** The bus's inserts, in the order the signal passes through them. */
+  readonly inserts: Selection;
   readonly input: AudioNode;
   readonly output: AudioNode;
 }
+
+type InsertInit<K extends NodeType> = NodeInit<K> | NodeTypeMap[K]['shorthand'];
+
+/**
+ * One method per registered node type, except the names a bus already has (`gain` is its level).
+ * Each creates a node of the scope and puts it inside the bus as its last insert: in series between
+ * the bus's mix and its output, so nothing goes round it. The bus stays routed where it was.
+ *
+ *   __.bus('drums').compressor({ id: 'glue', threshold: -18 }).overdrive(0.2);
+ *
+ * An insert is an ordinary node: it has an id, is found by selectors, and can be set, bypassed and
+ * disposed. It needs an input and an output, and it can only be added from the scope that owns the
+ * bus. Outside `build()` each call adds another insert; inside, the bus ends up with exactly the
+ * inserts the build asked for, in the order it asked.
+ */
+export type Bus = BusBase & {
+  readonly [K in Exclude<NodeType, keyof BusBase>]: (init?: InsertInit<K>) => BusInserts;
+};
+
+interface BusInsertsBase {
+  /** The bus the inserts are on. */
+  readonly bus: Bus;
+  /** The inserts this run of calls added, in order. `bus.inserts` has all of them. */
+  readonly nodes: Selection;
+  /** Routes the bus, as `bus.to()` does. */
+  to(target: string | Bus | null): BusInserts;
+  /** Starts a chain fed by the bus's output, as `bus.chain()` does. */
+  chain(): Chain;
+}
+
+/**
+ * What adding an insert returns: the place to add the next one. It has a method for every node type
+ * (here `gain` is the node type), and `to` and `chain`, which act on the bus.
+ */
+export type BusInserts = BusInsertsBase & {
+  readonly [K in NodeType]: (init?: InsertInit<K>) => BusInserts;
+};
 
 // ---------------------------------------------------------------------------------------------------
 // The graph as data
@@ -265,6 +318,13 @@ export interface EdgeData {
 export interface GraphData {
   nodes: readonly NodeData[];
   edges: readonly EdgeData[];
+  /**
+   * The inserts of the scope's own buses: for each bus that has any, the ids of its insert nodes in
+   * the order the signal passes through them. The nodes themselves are in `nodes`. No edge describes
+   * an insert's place in the bus. Left out when no bus has inserts; applying a description without
+   * it leaves every bus of the scope with none.
+   */
+  inserts?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface ApplyResult {
@@ -354,7 +414,8 @@ export type Command =
   | { op: 'connect'; target: CommandTarget; to: EdgeTarget }
   | { op: 'disconnect'; target: CommandTarget; to?: EdgeTarget }
   | { op: 'dispose'; target: CommandTarget }
-  | { op: 'bus'; name: string; to?: string | null; gain?: number }
+  /** `inserts`: the ids of existing nodes of the scope to have as the bus's inserts, in order. */
+  | { op: 'bus'; name: string; to?: string | null; gain?: number; inserts?: readonly string[] }
   // Sequences (the callback stays with whoever created the sequence; see remote.ts)
   | { op: 'sequence'; name: string; options: import('./transport').SequenceOptions }
   /** A single callback at a position, for `transport.at`. Like `sequence`, the callback stays with its creator. */
@@ -444,7 +505,8 @@ export interface Scope {
    * updated in place, missing ones are created, extra ones are disposed. A node is kept only if its
    * type and creation options are unchanged; otherwise it is replaced, and appears in both `removed`
    * and `added`. Connections the description does not list are removed, except those that leave the
-   * scope, which a description cannot name. Sequences and buses are not touched.
+   * scope, which a description cannot name. Each bus of the scope gets the inserts the description
+   * lists for it. Sequences are not touched, and nor are buses otherwise.
    *
    * The work is done before this returns; the promise is already settled.
    */

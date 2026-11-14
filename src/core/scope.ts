@@ -62,6 +62,8 @@ interface BuildState {
   newBuses: BusImpl[];
   /** Buses whose destination this run set. */
   routed: Set<BusImpl>;
+  /** The inserts this run asked for, per bus, in the order it asked. */
+  inserts: Map<BusImpl, NodeImpl[]>;
 }
 
 interface ReconcileOptions {
@@ -343,6 +345,48 @@ export class ScopeImpl {
     if (bus.scope === this) this.building?.routed.add(bus);
   }
 
+  /**
+   * Called when a bus of this scope is given an insert. During a rebuild the insert is noted, to be
+   * put in place when the rebuild succeeds, and this returns true. Otherwise the caller places it.
+   */
+  noteInsert(bus: BusImpl, node: NodeImpl): boolean {
+    const build = this.building;
+    if (!build) return false;
+    build.buses.add(bus);
+    const list = build.inserts.get(bus) ?? [];
+    if (!list.includes(node)) list.push(node);
+    build.inserts.set(bus, list);
+    return true;
+  }
+
+  /**
+   * Makes the nodes with these ids, in this order, a bus's inserts. What the `bus` command and a
+   * graph description's `inserts` do. The bus must be this scope's own.
+   */
+  setInserts(name: string, ids: readonly string[]): void {
+    const bus = this.ownBus(name, 'to put inserts on');
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
+      throw new CrackedUpError('invalid-command', 'A bus\'s "inserts" must be a list of node ids.');
+    }
+    const build = this.building;
+    const nodes = ids.map((id) => {
+      const node = this.byId.get(id);
+      if (!node || (build && !build.claimed.has(node))) {
+        throw new CrackedUpError(
+          'missing-target',
+          `Bus "${name}" names the node "${id}" as an insert, which scope "${this.name}" does not contain.`,
+          { nodeId: id },
+        );
+      }
+      bus.checkInsert(node);
+      return node;
+    });
+    if (build) {
+      build.buses.add(bus);
+      build.inserts.set(bus, [...new Set(nodes)]);
+    } else bus.setInserts(nodes);
+  }
+
   /** Called for every connection asked for from one of this scope's nodes, new or already there. */
   noteEdge(edge: EdgeImpl, isNew: boolean): void {
     if (!this.building) return;
@@ -396,7 +440,7 @@ export class ScopeImpl {
 
   bus(name: string): BusImpl | BusView {
     const bus = this.busImpl(name);
-    return bus.scope === this ? bus : new BusView(bus, this);
+    return bus.scope === this ? bus : this.engine.createBusView(bus, this);
   }
 
   /** The bus itself, whichever scope it belongs to. */
@@ -406,7 +450,7 @@ export class ScopeImpl {
       .map((scope) => scope.buses.get(name))
       .find((found) => found !== undefined);
     if (!bus) {
-      bus = new BusImpl(this, name);
+      bus = this.engine.createBus(this, name);
       this.buses.set(name, bus);
       // The engine's own `main` feeds the output. Every other bus feeds that one until rerouted,
       // except inside a macro, whose buses are its ports and are wired up by whoever uses the macro.
@@ -418,12 +462,12 @@ export class ScopeImpl {
   }
 
   /** A bus of this scope itself. Taking a bus's mix is only allowed from the scope that owns it. */
-  private ownBus(name: string): BusImpl {
+  private ownBus(name: string, purpose = 'to continue from'): BusImpl {
     const bus = this.buses.get(name);
     if (!bus) {
       throw new CrackedUpError(
         'missing-target',
-        `Scope "${this.name}" has no bus of its own called "${name}" to continue from.`,
+        `Scope "${this.name}" has no bus of its own called "${name}" ${purpose}.`,
       );
     }
     return bus;
@@ -504,7 +548,12 @@ export class ScopeImpl {
         } else edges.push({ from: { bus: bus.name }, to: { bus: to.name } });
       }
     }
-    return { nodes, edges };
+    // What sits inside a bus, between its mix and its output. No edge describes these.
+    const inserts: Record<string, string[]> = {};
+    for (const bus of this.buses.values()) {
+      if (bus.insertNodes.length > 0) inserts[bus.name] = bus.insertNodes.map((node) => node.id);
+    }
+    return { nodes, edges, ...(Object.keys(inserts).length > 0 ? { inserts } : {}) };
   }
 
   /** Creation options as JSON. Buffers become their key in the engine's store. */
@@ -604,6 +653,32 @@ export class ScopeImpl {
             errors.push(toGraphError(thrown, 'missing-target'));
           }
         }
+        const inserts = graph.inserts ?? {};
+        if (typeof inserts !== 'object' || Array.isArray(inserts)) {
+          throw new CrackedUpError(
+            'invalid-command',
+            'A graph\'s "inserts" must be an object of bus names and lists of node ids.',
+          );
+        }
+        for (const [name, ids] of Object.entries(inserts)) {
+          try {
+            // A node that could not be made as described is left out, and its old self stays if it had one.
+            const made = Array.isArray(ids)
+              ? ids.filter((id) => !failed.has(id) || build.claimed.has(this.byId.get(id)!))
+              : ids;
+            this.setInserts(name, made);
+          } catch (thrown) {
+            errors.push(toGraphError(thrown, 'missing-target'));
+            // A bus whose inserts cannot be read keeps the ones it has that are still wanted.
+            const bus = this.buses.get(name);
+            if (bus) {
+              build.inserts.set(
+                bus,
+                bus.insertNodes.filter((node) => build.claimed.has(node)),
+              );
+            }
+          }
+        }
       },
       { full: false },
     );
@@ -654,6 +729,7 @@ export class ScopeImpl {
       buses: new Set(),
       newBuses: [],
       routed: new Set(),
+      inserts: new Map(),
     };
     if (options.full) {
       // Chains continued from an outer scope's bus are this scope's to keep or drop too.
@@ -694,6 +770,13 @@ export class ScopeImpl {
       if (edge.to instanceof NodeImpl) changed.add(edge.to);
       else if (edge.to instanceof ParamImpl) changed.add(edge.to.node);
     };
+
+    // Each bus takes the inserts this run asked for. One that asked for the same ones is not touched.
+    for (const bus of this.buses.values()) {
+      const old = bus.insertNodes;
+      const wanted = build.inserts.get(bus) ?? [];
+      if (bus.setInserts(wanted)) for (const node of [...old, ...wanted]) changed.add(node);
+    }
 
     const removed: string[] = [];
     for (const node of before) {

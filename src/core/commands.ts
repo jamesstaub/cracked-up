@@ -121,7 +121,9 @@ export function execute(scope: ScopeImpl, command: Command): void {
     case 'bus': {
       const bus = scope.busImpl(command.name);
       // A command cannot reach outside its scope: an outer bus can be sent to, but not changed.
-      if (bus.scope !== scope && (command.to !== undefined || command.gain !== undefined)) {
+      const changes =
+        command.to !== undefined || command.gain !== undefined || command.inserts !== undefined;
+      if (bus.scope !== scope && changes) {
         throw new CrackedUpError(
           'invalid-command',
           `Bus "${command.name}" belongs to an outer scope and cannot be changed from "${scope.name}".`,
@@ -129,6 +131,7 @@ export function execute(scope: ScopeImpl, command: Command): void {
       }
       if (command.to !== undefined) bus.to(command.to);
       if (command.gain !== undefined) bus.gain.set(command.gain);
+      if (command.inserts !== undefined) scope.setInserts(command.name, command.inserts);
       return;
     }
     case 'loadBuffer': {

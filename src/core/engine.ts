@@ -14,7 +14,7 @@ import { builtinNodes } from '../nodes/builtin';
 import { createRandom } from '../util/random';
 import { processorSource } from '../worklets/processors';
 import { BufferStoreImpl } from './buffers';
-import type { BusImpl } from './bus';
+import { BusImpl, BusView, InsertChainImpl } from './bus';
 import { ChainImpl } from './chain';
 import { CrackedUpError, Emitter } from './errors';
 import type { NodeImpl } from './node';
@@ -30,6 +30,15 @@ const OFFLINE_SEED = 0x5eed;
 
 /** One load of the processor module per audio context, shared by every engine built on it. */
 const workletLoads = new WeakMap<BaseAudioContext, Promise<void>>();
+
+/** Names a bus has for itself, which a node type of the same name does not replace. */
+const BUS_MEMBERS = new Set([
+  ...Object.getOwnPropertyNames(BusImpl.prototype),
+  ...Object.getOwnPropertyNames(BusView.prototype),
+  // Fields, which are not on the prototypes.
+  ...['name', 'scope', 'sources', 'node', 'entry', 'insertList', 'patched', 'destination'],
+  ...['connected', 'bus', 'from'],
+]);
 
 function isOffline(context: BaseAudioContext): context is OfflineAudioContext {
   return typeof (context as OfflineAudioContext).startRendering === 'function';
@@ -63,6 +72,10 @@ export class EngineImpl {
   // per parameter name, one chain method per node type) depend on what is registered with that engine.
   private readonly Selection: typeof SelectionImpl;
   private readonly Chain: typeof ChainImpl;
+  // Likewise buses, which have one method per node type for adding an insert.
+  private readonly Bus: typeof BusImpl;
+  private readonly BusView: typeof BusView;
+  private readonly Inserts: typeof InsertChainImpl;
 
   constructor(options: EngineOptions) {
     this.context = options.context;
@@ -72,8 +85,11 @@ export class EngineImpl {
 
     this.Selection = class EngineSelection extends SelectionImpl {};
     this.Chain = class EngineChain extends ChainImpl {};
+    this.Bus = class EngineBus extends BusImpl {};
+    this.BusView = class EngineBusView extends BusView {};
+    this.Inserts = class EngineInserts extends InsertChainImpl {};
     this.registryImpl = new RegistryImpl(
-      (name) => name in ChainImpl.prototype,
+      (name) => name in ChainImpl.prototype || name in InsertChainImpl.prototype,
       (entry) => this.addGeneratedMethods(entry),
     );
     for (const definition of builtinNodes) this.registryImpl.register(definition);
@@ -99,6 +115,25 @@ export class EngineImpl {
         return this.add(type, init);
       },
     });
+    Object.defineProperty(this.Inserts.prototype, type, {
+      configurable: true,
+      writable: true,
+      value(this: InsertChainImpl, init: unknown) {
+        return this.add(type, init);
+      },
+    });
+    const insert = {
+      configurable: true,
+      writable: true,
+      value(this: BusImpl | BusView, init: unknown) {
+        return this.insert().add(type, init);
+      },
+    };
+    // A type whose name a bus already uses (`gain`, the bus's level) is added through `insert()`.
+    if (!BUS_MEMBERS.has(type)) {
+      Object.defineProperty(this.Bus.prototype, type, insert);
+      Object.defineProperty(this.BusView.prototype, type, insert);
+    }
     for (const name of entry.params.keys()) {
       // A parameter that shares its name with a selection method (`release`) gets no setter.
       if (name in this.Selection.prototype) continue;
@@ -165,6 +200,18 @@ export class EngineImpl {
 
   createChain(scope: ScopeImpl, tail: readonly NodeImpl[], all: readonly NodeImpl[]): ChainImpl {
     return new this.Chain(this, scope, tail, all);
+  }
+
+  createBus(scope: ScopeImpl, name: string): BusImpl {
+    return new this.Bus(scope, name);
+  }
+
+  createBusView(bus: BusImpl, from: ScopeImpl): BusView {
+    return new this.BusView(bus, from);
+  }
+
+  createInserts(bus: BusImpl | BusView, added: readonly NodeImpl[]): InsertChainImpl {
+    return new this.Inserts(this, bus, added);
   }
 
   buildContext(node: NodeImpl): BuildContext {

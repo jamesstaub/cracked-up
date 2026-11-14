@@ -1125,6 +1125,14 @@ __.transport.sequence('hat', { steps: 'x.x.x.x.', step: '1/8' }, (ev) => {
     ev.sequence.update({ steps: ev.steps.map(() => (Math.random() < 0.6 ? 1 : 0)) });
   }
 });</code></pre>
+        <p>
+          <code>__.transport.sequences</code> is every named sequence of the scope, in the order
+          they were first made. An app uses it to show a grid for each one after running a script:
+        </p>
+        <pre data-static><code>await scope.build(script);
+for (const sequence of scope.transport.sequences) {
+  drawGrid(sequence.name, sequence.steps, sequence.options);
+}</code></pre>
 
         <h3>Every sequencing method</h3>
         <p>

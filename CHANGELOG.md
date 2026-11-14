@@ -95,6 +95,10 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 - **Docs**: an "Interaction" section, a reference of every sequencing and MIDI method, and groups
   in the contents list for sequencing, interaction, MIDI and each set of helpers, with a link per
   method.
+- `transport.sequences`: the named sequences of the scope whose view of the transport it is, in
+  the order they were first made (`scope.transport.sequences`, `__.transport.sequences`). A host
+  reads it after a `build()` to learn which sequences a script declares. Sequences made without a
+  name, `every` and `at` are not listed.
 
 ### Changed
 

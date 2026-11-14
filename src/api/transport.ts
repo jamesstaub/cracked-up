@@ -175,6 +175,12 @@ export interface Transport {
     options?: { offset?: Duration; order?: number },
   ): Unsubscribe;
 
+  /**
+   * The named sequences of the scope whose view this is, in the order they were first made. A
+   * sequence replaced in place by a later `sequence()` call or a rebuild keeps its place; one that
+   * is stopped or cleared leaves the list. Sequences made without a name are not listed.
+   */
+  readonly sequences: readonly Sequence[];
   /** Looks up a named sequence. Names belong to the scope whose view this is. */
   get(name: string): Sequence | undefined;
   /**

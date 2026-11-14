@@ -863,6 +863,11 @@ export class TransportImpl {
     };
   }
 
+  /** An owner's named sequences, in the order they were first made. */
+  namedSequences(owner: Owner): readonly Sequence[] {
+    return [...(this.named.get(owner)?.values() ?? [])] as unknown as Sequence[];
+  }
+
   getSequence(owner: Owner, name: string): Sequence | undefined {
     return this.named.get(owner)?.get(name) as unknown as Sequence | undefined;
   }
@@ -1105,6 +1110,10 @@ export class TransportView {
     options?: { offset?: Duration; order?: number },
   ): Unsubscribe {
     return this.impl.addRepeater(this.owner, interval, callback, options);
+  }
+
+  get sequences(): readonly Sequence[] {
+    return this.impl.namedSequences(this.owner);
   }
 
   get(name: string): Sequence | undefined {

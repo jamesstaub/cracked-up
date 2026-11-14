@@ -122,6 +122,11 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       description: 'Calls back once at a position.',
     },
     {
+      name: 'sequences',
+      description:
+        'The named sequences of this scope, in the order they were first made. Read their name, steps and options, or mute one.',
+    },
+    {
       name: 'get',
       signature: 'get(name)',
       description: 'A named sequence of this scope, or undefined.',

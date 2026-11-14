@@ -91,6 +91,14 @@ export function typeDoc(info: NodeTypeInfo): Doc {
   };
 }
 
+/** A node type as it is described where calling it adds an insert to a bus. */
+export function insertDoc(info: NodeTypeInfo): Doc {
+  const doc = typeDoc({ ...info, modulates: null });
+  const note =
+    'On a bus this adds it as an insert: in series inside the bus, after the inserts already there.';
+  return { ...doc, note: doc.note ? `${note} ${doc.note}` : note };
+}
+
 export function paramDoc(param: ParamMeta, owner?: string): Doc {
   return {
     signature: `${param.name}: ${paramDetail(param)}`,

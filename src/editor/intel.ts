@@ -9,13 +9,22 @@ import { StateEffect, StateField } from '@codemirror/state';
 import type { EditorState, Extension } from '@codemirror/state';
 import { hoverTooltip, showTooltip } from '@codemirror/view';
 import type { Tooltip } from '@codemirror/view';
-import { callAround, entityAt, sceneOf, typeInfo } from './analysis';
+import { callAround, entityAt, makesNode, sceneOf, typeInfo } from './analysis';
 import type { CallSite, Entity, Scene } from './analysis';
 import { DUNDER_CALL, apiMember } from './api-docs';
 import { resolveCatalog } from './catalog';
 import type { ResolvedCatalog } from './catalog';
 import { keyOptions } from './completion';
-import { bufferDoc, globalDoc, helperDoc, memberDoc, renderDoc, setterDoc, typeDoc } from './docs';
+import {
+  bufferDoc,
+  globalDoc,
+  helperDoc,
+  insertDoc,
+  memberDoc,
+  renderDoc,
+  setterDoc,
+  typeDoc,
+} from './docs';
 import type { Doc } from './docs';
 import type { DefinitionTarget } from './panel';
 
@@ -51,7 +60,7 @@ function setterDocFor(scene: Scene, name: string, types: readonly string[] | nul
 function docFor(scene: Scene, entity: Entity): Doc | null {
   switch (entity.kind) {
     case 'type':
-      return typeDoc(entity.info);
+      return entity.insert ? insertDoc(entity.info) : typeDoc(entity.info);
     case 'helper': {
       const helper = scene.catalog.helpers.get(entity.name);
       return helper ? helperDoc(helper, entity.name) : null;
@@ -132,9 +141,12 @@ function signatureDoc(scene: Scene, call: CallSite): Doc | null {
     const global = scene.catalog.globals.get(name);
     return global?.signature ? withActive(globalDoc(global), index) : null;
   }
-  if (receiver.kind === 'chain' || receiver.kind === 'unknown') {
+  if (receiver.kind === 'unknown' || makesNode(scene, receiver, name)) {
     const info = typeInfo(scene, name);
-    if (info) return typeDoc(info);
+    if (info)
+      return receiver.kind === 'bus' || receiver.kind === 'inserts'
+        ? insertDoc(info)
+        : typeDoc(info);
   }
   if (receiver.kind === 'unknown') return null;
   const member = apiMember(receiver.kind, name);

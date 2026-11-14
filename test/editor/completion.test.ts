@@ -77,7 +77,14 @@ describe('completion after a dot', () => {
     for (const name of ['bpm', 'swing', 'sequence', 'steps', 'every', 'at', 'seconds', 'clear']) {
       expect(transport, name).toContain(name);
     }
-    expect(labels("__.bus('drums').|")).toEqual(['name', 'gain', 'to', 'chain']);
+    expect(labels("__.bus('drums').|").slice(0, 6)).toEqual([
+      'name',
+      'gain',
+      'to',
+      'chain',
+      'insert',
+      'inserts',
+    ]);
     expect(labels("__.transport.sequence('a', { steps: 4 }, () => {}).|")).toContain('setStep');
     expect(labels("__.transport.get('a').|")).toContain('restart');
     expect(labels('__.transport.position.|')).toContain('beatInBar');
@@ -396,6 +403,76 @@ const s = \`a\${__('x').length}b\`; /* c */ // d
   });
 });
 
+describe('completion on a bus and its inserts', () => {
+  it('offers the node types that can be inserts after the bus members', async () => {
+    const found = labels("__.bus('drums').|");
+    for (const name of ['compressor', 'lowpass', 'overdrive', 'reverb', 'tapedelay', 'multiband']) {
+      expect(found, name).toContain(name);
+    }
+    // `gain` is there once, as the bus's level; sources, synths and modulators cannot be inserts.
+    expect(found.filter((name) => name === 'gain')).toHaveLength(1);
+    for (const name of ['sine', 'sampler', 'noise', 'polysynth', 'lfo', 'stepper']) {
+      expect(found, name).not.toContain(name);
+    }
+    const { result } = resultAt("__.bus('drums').|", catalog);
+    const gain = result?.options.find((option) => option.label === 'gain');
+    expect(gain?.type).toBe('property');
+    const compressor = result?.options.find((option) => option.label === 'compressor');
+    expect(compressor?.type).toBe('class');
+    expect((compressor?.section as { name: string }).name).toBe('Add as an insert');
+    const engine = await testEngine();
+    const shown = (compressor?.info as () => Node)().textContent;
+    expect(shown).toContain(engine.registry.describe('compressor').description);
+    expect(shown).toContain('adds it as an insert');
+  });
+
+  it('follows what an insert call returns', () => {
+    const next = labels("__.bus('drums').compressor({ id: 'glue' }).|");
+    expect(next.slice(0, 4)).toEqual(['to', 'chain', 'bus', 'nodes']);
+    // Here `gain` is the node type.
+    for (const name of ['gain', 'lowpass', 'compressor']) expect(next, name).toContain(name);
+    expect(next).not.toContain('sine');
+    const { result } = resultAt("__.bus('drums').compressor().|", catalog);
+    expect(result?.options.find((option) => option.label === 'gain')?.type).toBe('class');
+
+    expect(labels("__.bus('drums').insert().|")).toEqual(next);
+    expect(labels("__.bus('drums')\n  .compressor(-18)\n  .gain(0.5)\n  .ove|")).toContain(
+      'overdrive',
+    );
+    expect(labels("const drums = __.bus('drums');\nconst fx = drums.lowpass(900);\nfx.|")).toEqual(
+      next,
+    );
+  });
+
+  it('follows to(), chain(), bus, nodes and inserts on from there', () => {
+    const inserts = labels("__.bus('drums').insert().|");
+    expect(labels("__.bus('drums').compressor().to('main').|")).toEqual(inserts);
+    expect(labels("__.bus('drums').to(null).|")).toEqual(labels("__.bus('drums').|"));
+    expect(labels("__.bus('drums').compressor().bus.|")).toEqual(labels("__.bus('drums').|"));
+    const chain = labels("__.bus('drums').compressor().chain().|");
+    expect(chain).toContain('looper');
+    expect(chain).toContain('sine');
+    expect(chain).toContain('split');
+    expect(labels("__.bus('drums').compressor().nodes.|")).toContain('threshold');
+    expect(labels("__.bus('drums').inserts.|")).toContain('bypass');
+    // The bus's own level is a parameter, not a node.
+    expect(labels("__.bus('drums').gain.|")).toEqual(API.param.map((member) => member.name));
+  });
+
+  it('offers the type’s parameters and options as keys, and ids it gives to selectors', () => {
+    const keys = labels("__.bus('drums').compressor({ | })");
+    for (const name of ['threshold', 'ratio', 'makeup', 'id', 'class', 'bypass']) {
+      expect(keys, name).toContain(name);
+    }
+    expect(labels("__.bus('drums').insert().gain({ | })")).toContain('gain');
+    expect(labels("__.bus('drums').lowpass(900).overdrive({ | })")).toContain('drive');
+    const code = "__.bus('drums').compressor({ id: 'glue' });\n";
+    expect(labels(`${code}__('|')`)).toContain('#glue');
+    expect(labels(`${code}__('#glue').|`)).toContain('threshold');
+    expect(labels(`${code}__('#glue').|`)).not.toContain('frequency');
+  });
+});
+
 describe('the API table', () => {
   it('names only members that exist on the real objects', async () => {
     const engine = await testEngine();
@@ -411,6 +488,7 @@ describe('the API table', () => {
       selection,
       node,
       bus: __.bus('api-check-bus'),
+      inserts: __.bus('api-check-bus').insert(),
       sequence,
       param: selection.param('frequency'),
       position: __.transport.position,

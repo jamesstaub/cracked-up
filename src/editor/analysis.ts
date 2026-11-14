@@ -303,6 +303,22 @@ export function allTypes(scene: Scene): NodeTypeInfo[] {
   return types;
 }
 
+/**
+ * Whether a type is offered as an insert. A bus keeps its own members (`gain` is its level), and a
+ * type that only makes sound or only moves parameters has no input to sit in a bus with.
+ */
+export function canInsert(info: NodeTypeInfo, on: 'bus' | 'inserts'): boolean {
+  if (on === 'bus' && apiMember('bus', info.type)) return false;
+  return info.modulates === null && info.category !== 'source' && info.category !== 'synth';
+}
+
+/** Whether calling `name` on this receiver makes a node of that type: on a chain, or as a bus's insert. */
+export function makesNode(scene: Scene, receiver: Receiver, name: string): boolean {
+  if (!typeInfo(scene, name)) return false;
+  if (receiver.kind === 'chain' || receiver.kind === 'inserts') return true;
+  return receiver.kind === 'bus' && !apiMember('bus', name);
+}
+
 // --- What an expression is ------------------------------------------------------------------------
 
 /** What the expression before a dot is, as far as can be told. */
@@ -438,8 +454,8 @@ export function classify(scene: Scene, node: SyntaxNode, depth = 0): Receiver {
       }
       const owner = classify(scene, callee.object, depth + 1);
       if (owner.kind === 'unknown') return UNKNOWN;
-      if (owner.kind === 'chain' && typeInfo(scene, callee.name)) {
-        return of('chain', [callee.name]);
+      if (makesNode(scene, owner, callee.name)) {
+        return of(owner.kind === 'chain' ? 'chain' : 'inserts', [callee.name]);
       }
       if (owner.kind === 'selection' && callee.name === 'select') {
         return of(
@@ -680,6 +696,8 @@ export type Entity =
       readonly local: LocalType | null;
       readonly from: number;
       readonly to: number;
+      /** True where calling it adds the type to a bus as an insert. */
+      readonly insert?: boolean;
     }
   | { readonly kind: 'helper'; readonly name: string; readonly from: number; readonly to: number }
   | { readonly kind: 'global'; readonly name: string; readonly from: number; readonly to: number }
@@ -715,10 +733,17 @@ export type Entity =
       readonly to: number;
     };
 
-function typeEntity(scene: Scene, name: string, from: number, to: number): Entity | null {
+function typeEntity(
+  scene: Scene,
+  name: string,
+  from: number,
+  to: number,
+  insert = false,
+): Entity | null {
   const info = typeInfo(scene, name);
   if (!info) return null;
-  return { kind: 'type', name, info, local: scene.doc.localTypes.get(name) ?? null, from, to };
+  const local = scene.doc.localTypes.get(name) ?? null;
+  return { kind: 'type', name, info, local, from, to, ...(insert ? { insert } : {}) };
 }
 
 export function entityAt(scene: Scene, pos: number): Entity | null {
@@ -742,8 +767,8 @@ export function entityAt(scene: Scene, pos: number): Entity | null {
       // most likely that type.
       return isCalled ? typeEntity(scene, name, from, to) : null;
     }
-    if (receiver.kind === 'chain') {
-      const type = typeEntity(scene, name, from, to);
+    if (makesNode(scene, receiver, name)) {
+      const type = typeEntity(scene, name, from, to, receiver.kind !== 'chain');
       if (type) return type;
     }
     if (apiMember(receiver.kind, name)) {

@@ -14,7 +14,16 @@ import type {
 import type { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../api';
-import { allTypes, contextAt, sceneOf, selectorTypes, stringValue, typeInfo } from './analysis';
+import {
+  allTypes,
+  canInsert,
+  contextAt,
+  makesNode,
+  sceneOf,
+  selectorTypes,
+  stringValue,
+  typeInfo,
+} from './analysis';
 import type { CallSite, CursorContext, Receiver, Scene } from './analysis';
 import {
   API,
@@ -43,6 +52,7 @@ import type { ResolvedCatalog } from './catalog';
 import {
   bufferDoc,
   globalDoc,
+  insertDoc,
   helperDoc,
   memberDoc,
   optionDetail,
@@ -65,6 +75,7 @@ const OWNER_NAMES: Readonly<Record<ReceiverKind, string>> = {
   selection: 'selection',
   node: 'node',
   bus: 'bus',
+  inserts: 'bus inserts',
   sequence: 'sequence',
   param: 'parameter',
   event: 'event',
@@ -122,13 +133,15 @@ function memberOptions(kind: ReceiverKind, section: { name: string; rank: number
   }));
 }
 
-function typeOptions(scene: Scene): Completion[] {
-  return allTypes(scene).map((type) => ({
+function typeOptions(scene: Scene, on: 'chain' | 'bus' | 'inserts' = 'chain'): Completion[] {
+  const types =
+    on === 'chain' ? allTypes(scene) : allTypes(scene).filter((type) => canInsert(type, on));
+  return types.map((type) => ({
     label: type.type,
     type: 'class',
     detail: type.shorthand ? `${typeKind(type)} · ${type.shorthand}` : typeKind(type),
-    info: info(typeDoc(type)),
-    section: { name: 'Node types', rank: 2 },
+    info: info(on === 'chain' ? typeDoc(type) : insertDoc(type)),
+    section: { name: on === 'chain' ? 'Node types' : 'Add as an insert', rank: 2 },
     apply: applyCall(type.type, true),
   }));
 }
@@ -171,6 +184,13 @@ function memberCompletions(scene: Scene, receiver: Receiver): Completion[] | nul
       return null;
     case 'chain':
       return [...memberOptions('chain', { name: 'Chain', rank: 1 }), ...typeOptions(scene)];
+    case 'bus':
+      return [...memberOptions('bus', { name: 'Bus', rank: 1 }), ...typeOptions(scene, 'bus')];
+    case 'inserts':
+      return [
+        ...memberOptions('inserts', { name: 'Bus', rank: 1 }),
+        ...typeOptions(scene, 'inserts'),
+      ];
     case 'selection':
       return [
         ...memberOptions('selection', { name: 'Selection', rank: 1 }),
@@ -259,7 +279,7 @@ export function keyOptions(scene: Scene, call: CallSite): KeyOption[] {
     return [];
   }
   const type = typeInfo(scene, name);
-  if (type && index === 0 && (kind === 'chain' || kind === 'unknown')) {
+  if (type && index === 0 && (kind === 'unknown' || makesNode(scene, receiver, name))) {
     return [
       ...fromParams(paramsOf(scene, [name]).values(), 'Parameters'),
       ...fromOptions(type.options, 'Options', `option of ${name}`),

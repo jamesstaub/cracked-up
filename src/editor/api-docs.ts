@@ -31,6 +31,8 @@ export type ReceiverKind =
   | 'selection'
   | 'node'
   | 'bus'
+  /** What adding an insert to a bus returns: `__.bus('drums').compressor()`. */
+  | 'inserts'
   | 'sequence'
   | 'param'
   | 'event'
@@ -384,19 +386,58 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
   ],
   bus: [
     { name: 'name', description: "The bus's name." },
-    { name: 'gain', description: "The level of the bus's mix, a parameter.", returns: 'param' },
+    {
+      name: 'gain',
+      description:
+        'The level of the bus, a parameter, applied after its inserts: gain.set(0.5). To add a gain node as an insert, use insert().gain().',
+      returns: 'param',
+    },
     {
       name: 'to',
       signature: 'to(target)',
       description:
-        "Where this bus sends its mix: a bus name, or null for nowhere, so that it is heard only through what continues from it with chain(). Default: 'main'.",
+        "Where this bus sends its output: a bus name, or null for nowhere, so that it is heard only through what continues from it with chain(). Default: 'main'.",
       returns: 'same',
     },
     {
       name: 'chain',
       signature: 'chain()',
-      description: "Starts a chain fed by this bus's mix, for processing everything sent to it.",
+      description:
+        "Starts a chain fed by this bus's output, after its inserts. A tap: the bus still goes to its target as well. To process everything on the bus, add an insert instead: bus('drums').compressor().",
       returns: 'chain',
+    },
+    {
+      name: 'insert',
+      signature: 'insert()',
+      description:
+        'The place to add inserts, with every node type as a method. bus.compressor() is short for bus.insert().compressor(); insert() is the way to the types whose name a bus uses itself, such as gain.',
+      returns: 'inserts',
+    },
+    {
+      name: 'inserts',
+      description: "The bus's inserts as a selection, in the order the signal passes through them.",
+      returns: 'selection',
+    },
+  ],
+  inserts: [
+    {
+      name: 'to',
+      signature: 'to(target)',
+      description:
+        "Routes the bus the inserts are on: a bus name, or null for nowhere. Default: 'main'.",
+      returns: 'same',
+    },
+    {
+      name: 'chain',
+      signature: 'chain()',
+      description: "Starts a chain fed by the bus's output, after its inserts. A tap.",
+      returns: 'chain',
+    },
+    { name: 'bus', description: 'The bus the inserts are on.', returns: 'bus' },
+    {
+      name: 'nodes',
+      description: 'The inserts these calls added, in order, as a selection.',
+      returns: 'selection',
     },
   ],
   sequence: [

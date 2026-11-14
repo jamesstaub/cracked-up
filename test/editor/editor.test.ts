@@ -332,6 +332,32 @@ describe('hover and signature help', () => {
     return signatureAt(state, pos, catalog)?.doc ?? null;
   };
 
+  it('describes an insert on a bus: the type, its keys and its arguments', () => {
+    const type = hover("__.bus('drums').compre|ssor({ threshold: -18 })");
+    expect(type?.kind).toBe('dynamics');
+    expect(type?.rows?.map((row) => row.name)).toContain('threshold');
+    expect(type?.note).toContain('adds it as an insert');
+    expect(hover("__.bus('drums').compressor().low|pass(900)")?.note).toContain('as an insert');
+    expect(hover("__.bus('drums').insert().ga|in(0.5)")?.kind).toBe('utility');
+    // On the bus itself `gain` is the level.
+    expect(hover("__.bus('drums').ga|in.set(0.5)")?.description).toContain('level of the bus');
+    expect(hover("__.bus('drums').ins|ert()")?.signature).toBe('insert()');
+    expect(hover("__.bus('drums').compressor().t|o('main')")?.description).toContain(
+      'Routes the bus',
+    );
+    expect(hover("__.bus('drums').compressor({ thres|hold: -18 })")?.kind).toBe(
+      'parameter of compressor',
+    );
+
+    expect(signature("__.bus('drums').compressor(|)")?.signature).toBe(
+      hover('__().compre|ssor()')?.signature,
+    );
+    expect(signature("__.bus('drums').compressor(|)")?.note).toContain('as an insert');
+    expect(signature("__.bus('drums').compressor().lowpass(|)")?.kind).toBe('filter');
+    expect(signature("__.bus('drums').compressor().to(|)")?.signature).toBe('to(target)');
+    expect(signature("__.bus('drums').compressor().to(|)")?.active).toBe('target');
+  });
+
   it('describes a node type, a method, a setter, a key, a helper and a buffer', () => {
     expect(hover('__().low|pass(200)')?.kind).toBe('filter');
     expect(hover('__().low|pass(200)')?.rows?.map((row) => row.name)).toEqual(['frequency', 'q']);

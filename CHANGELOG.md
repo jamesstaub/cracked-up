@@ -108,6 +108,46 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Changed
 
+- **`scope.build()` is all or nothing.** If the builder throws, or asks for anything that cannot
+  be done, the promise rejects and nothing the builder asked for has happened. Before, only a
+  throwing builder was undone, and only partly:
+  - A bad value for a node being kept (`frequency: 'loud'` on a node that already exists) used to
+    be found after everything else had been applied: that one value was skipped and listed in
+    `result.errors`, and the promise resolved. Now the build is refused, the promise rejects with
+    that error (it names the parameter and carries the node's id), and nothing is applied.
+  - What the builder had already asked of nodes that were there before (`set`, a shortcut
+    setter, `ramp`, `offset`, `trigger`, `bypass`, `disconnect`, `dispose`), a kept bus's `to()`
+    and `gain`, and the tempo used to stay done when the builder then threw. Now none of it
+    happens, and no `param:changed`, `node:added` or `node:removed` is emitted.
+  - A sequence the builder replaced gets back its exact state on failure, steps changed with
+    `setStep` and its mute included, as does anything removed with `stop()` or `clear()`.
+  - To make this possible, what a builder asks of a node or bus that was there before the build
+    is checked as it asks and carried out when the builder has returned, in the order asked and
+    after kept nodes have taken the values they were declared with. Inside the builder,
+    `param.value` and `node.bypass` of a kept node therefore still read the old value after
+    being set. New nodes are made, set and connected at once, as before.
+  - `param:changed` for a node the build adds is now emitted after that node's `node:added`.
+  - `result.errors` from `build()` now holds only what a node's own code threw while a
+    successful build was carried out (a `trigger`, `release` or method called on a kept node, a
+    custom parameter handler). The rest of that build has been applied.
+  - Not undone: starting, stopping or seeking the transport inside the builder, buffers loaded
+    and node types registered there. A `tempo` listener hears a refused tempo, then the old one.
+  - A build of another scope made inside a builder is part of the outer build: it is applied
+    when the outer builder succeeds and not at all if it fails.
+- `scope.apply()` still works node by node, and is now consistent about it: a node with a value
+  that cannot be set is left exactly as it was and reported in `result.errors`. Before, the
+  values listed ahead of the bad one were set and those after it were not.
+- A `ramp` with a duration or `from` that is not a finite number, and an `offset` with such a
+  duration, are refused with an `invalid-param` error that names the parameter, in place of the
+  browser's own `TypeError`.
+- **`remote.build()` is all or nothing too.** `set`, shortcut setters, `ramp`, `offset` and the
+  values a node is created with are checked in the sandbox with the host's rules, in or out of a
+  build: a value of the wrong kind now throws there, where it used to be sent and come back as
+  an `error` event. A build's commands are sent as one message with a build number
+  (`RemoteMessage.build`); the host applies all of them or none and answers with a new `built`
+  message. When it refuses, the reasons arrive at `remote.on('error')` as before and the remote
+  goes back to the nodes, sequences and callbacks it had before the build. Commands sent outside
+  a build are applied one by one as before.
 - An error thrown by a sequence, `every` or `at` callback is now also sent to the `error` event of
   the scope it was scheduled in, before the engine's. What happens next is unchanged and now
   documented: the callback is called again at its next step. A host that wants it quiet sets

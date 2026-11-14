@@ -1526,7 +1526,9 @@ __.transport.sequence('toggle', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
             A sequence with a name is replaced in place and stays in time. Give sequences names.
           </li>
           <li>
-            If the function throws, everything it did is undone and the scope plays on as it was.
+            A build happens whole or not at all. If the function throws, or asks for anything that
+            cannot be done, nothing it asked for happens and the scope plays on as it was. See
+            <a href="#build-atomic">below</a>.
           </li>
         </ul>
         <pre data-static><code>const scope = engine.scope('track-1');
@@ -1547,11 +1549,83 @@ result.unchanged; // [saw]</code></pre>
           every parameter back to what the code says, so a value changed from a sequence callback
           lasts until the next rebuild.
         </p>
+        <h3 id="build-atomic">When a build cannot be applied</h3>
+        <p>
+          <code>build</code> returns a promise. If everything the function asked for can be done, it
+          is done and the promise resolves with what changed. If anything cannot, the promise
+          rejects with the first error and <em>nothing</em> has changed: not the nodes, their
+          values, the connections, the buses with their inserts and routes, the sequences, nor the
+          tempo, and the scope has emitted no <code>param:changed</code>, <code>node:added</code> or
+          <code>node:removed</code>. An app can tell its user that the last version that worked is
+          still the one playing, and that is exactly true.
+        </p>
+        <pre data-static><code>try {
+  await scope.build((__) =&gt; {
+    __().saw({ id: 'bass' }).lowpass(1200).gain(0.25).to('main'); // fine
+    __('#bass').set({ frequency: 'loud' });                       // not a number
+  });
+} catch (error) {
+  error.message; // "frequency" on saw "bass" needs a finite number, got "loud".
+  error.nodeId;  // 'bass'
+  // The filter is still where it was.
+}</code></pre>
+        <p>What refuses a build:</p>
+        <ul>
+          <li>the function throwing, for any reason;</li>
+          <li>
+            a value of the wrong kind, for a new node or one being kept, in its options or through
+            <code>set</code>, a shortcut setter, <code>ramp</code> or <code>offset</code>: text for
+            a number, a number that is not finite, a choice the parameter does not have;
+          </li>
+          <li>
+            a node that cannot be built, including one that replaces a kept node because a creation
+            option changed, and a macro whose own build throws;
+          </li>
+          <li>
+            a connection, a bus route or an insert that cannot be made: a node or bus that does not
+            exist, a node with no input, a parameter that cannot be modulated;
+          </li>
+          <li>an id used twice, a method a node does not have;</li>
+          <li>sequence options or a tempo that make no sense.</li>
+        </ul>
+        <p>
+          A number outside a parameter's <code>min</code> and <code>max</code> is not an error: that
+          range is what a control covers, not a limit.
+        </p>
+        <p>
+          To keep that promise the library holds back what your function asks of anything that was
+          already there. A <code>set</code>, <code>ramp</code>, <code>trigger</code> or
+          <code>bypass</code> on a kept node, and a kept bus's <code>to()</code> or
+          <code>gain</code>, are checked on the spot and carried out when the function has returned,
+          in the order you wrote them. The one thing you can notice: inside the function,
+          <code>param.value</code> of a kept node still reads the old value after you set it. New
+          nodes are made, set and connected straight away.
+        </p>
+        <p>
+          <code>result.errors</code> is nearly always empty. It lists only what a node's own code
+          threw while a successful build was being carried out: a <code>trigger</code>,
+          <code>release</code> or method your function called on a kept node, or a custom
+          parameter's handler. Nothing can try those beforehand, so they are reported and the rest
+          of the build stands.
+        </p>
+        <p>
+          Not undone when a build is refused: the transport being started, stopped or moved from
+          inside the function, buffers loaded there, and node types registered there. A listener of
+          the transport's <code>tempo</code> event hears a tempo the function set, and then the old
+          one again.
+        </p>
         <p>
           <code>scope.apply(graph)</code> does the same from data instead of code:
           <code>scope.describe()</code> returns a scope's nodes and connections as plain JSON, and
           <code>apply</code> makes a scope match such a description. That is how a host saves and
           restores a graph, or edits one from a user interface.
+        </p>
+        <p>
+          <code>apply</code> is not all or nothing. It works node by node: a node that cannot be
+          made as described, or whose values cannot all be set, is left exactly as it was, a
+          connection that cannot be made is left out, and each is listed in
+          <code>result.errors</code> while the rest of the description is applied. A saved graph
+          with one stale entry still loads.
         </p>
 
         <h2 id="inspecting">Inspecting the graph</h2>
@@ -1756,6 +1830,15 @@ remote.build((__) =&gt; {
           <li>
             There is no transport position to read, and a script cannot start or stop the transport.
             Sequence events carry the beat and bar.
+          </li>
+          <li>
+            <code>remote.build</code> is all or nothing like <code>scope.build</code>, but it
+            returns nothing to wait for. A value of the wrong kind is refused in the sandbox:
+            <code>build</code> throws and nothing is sent. What only the page can know (a bus that
+            does not exist, a node it cannot build) is refused there: the page applies none of the
+            build, the reason arrives at <code>remote.on('error')</code>, and the sandbox goes back
+            to the nodes, sequences and callbacks it had before. Commands sent outside a build are
+            still applied one by one.
           </li>
         </ul>
         <p>

@@ -346,7 +346,15 @@ export interface ApplyResult {
   readonly updated: readonly Node[];
   /** Nodes that were kept untouched and never stopped sounding. */
   readonly unchanged: readonly Node[];
-  /** Per-node failures. One bad node does not prevent the rest from applying. */
+  /**
+   * From `apply()`: per-node failures. One bad node does not prevent the rest from applying.
+   *
+   * From `build()`: almost always empty, because a build that cannot be applied whole is refused
+   * (its promise rejects). The exception is code of a node's own that throws while a successful
+   * build is being carried out: a `trigger`, `release` or method the builder called on a node that
+   * was already there, or a custom parameter handler. Those are listed here, and everything else
+   * the build asked for has been done.
+   */
   readonly errors: readonly GraphError[];
 }
 
@@ -545,6 +553,11 @@ export interface Scope {
    * scope, which a description cannot name. Each bus of the scope gets the inserts the description
    * lists for it. Sequences are not touched, and nor are buses otherwise.
    *
+   * Unlike `build()`, this works node by node. A node that cannot be made as described, or whose
+   * values cannot all be set, is left exactly as it was and listed in the result's `errors`, as is a
+   * connection that cannot be made; the rest of the description is applied. The promise rejects
+   * only when the description itself is malformed.
+   *
    * The work is done before this returns; the promise is already settled.
    */
   apply(graph: GraphData): Promise<ApplyResult>;
@@ -563,7 +576,21 @@ export interface Scope {
    * one does not ask for is removed. On the root scope that includes everything scheduled through
    * `engine.transport`.
    *
-   * If `fn` throws, the promise rejects and the scope keeps playing as it was.
+   * All or nothing. If anything `fn` asks for cannot be done, the promise rejects with the first such
+   * error and nothing `fn` asked for has happened: nodes, values, connections, buses and their
+   * inserts and routes, sequences, tempo and the events the scope emits are as if `build` had not
+   * been called. That covers `fn` throwing, and every request the library refuses: a value of the
+   * wrong kind for a node being kept or a new one, a bad `set` or `ramp`, a connection or route to
+   * something that does not exist, a node that cannot be built, sequence options that make no sense.
+   * The error names the node (`nodeId`) and the parameter where there is one.
+   *
+   * To make that possible, whatever `fn` asks of a node or bus that was there before the build (a
+   * value set or ramped, a trigger, a bypass, a bus's route or level) is checked as `fn` asks and
+   * carried out when `fn` has returned, in the order asked. So inside `fn`, `param.value` of such a
+   * node still reads what it was. New nodes are made, set and connected straight away.
+   *
+   * Not undone: starting, stopping or seeking the transport from inside `fn`, buffers loaded and
+   * node types registered there, and anything `fn` does outside this engine.
    */
   build(fn: (__: ScopeApi) => void): Promise<ApplyResult>;
 

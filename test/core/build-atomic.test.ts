@@ -126,10 +126,10 @@ const changed =
       fired.push(`more@${event.time.toFixed(6)}`);
     });
     __.transport.every('1/4', (event) => fired.push(`every@${event.time.toFixed(6)}`));
-    part(__, fired);
-    __('#send').set({ gain: 0.05 });
     __('#osc').disconnect();
     __('#osc').connect('#filter');
+    part(__, fired);
+    __('#send').set({ gain: 0.05 });
   };
 
 const corrected = changed(goodSpare);
@@ -530,6 +530,76 @@ describe('build is all or nothing', () => {
     expectSame(played, await direct);
   });
 
+  it('puts every sequence and the transport settings back exactly', async () => {
+    async function run(fail: boolean) {
+      const engine = await offlineEngine(1);
+      const scope = engine.scope('track');
+      const fired: string[] = [];
+      const note = (tag: string) => (event: { time: number; index?: number; value?: number }) =>
+        fired.push(`${tag}:${event.index ?? ''}=${event.value ?? ''}@${event.time.toFixed(6)}`);
+      // Scheduled by someone else: a build of `track` must not disturb it either.
+      engine.transport.sequence('host', { steps: 'x.x', step: '1/8' }, note('host'));
+      await scope.build((__) => {
+        __.transport.sequence('a', { steps: 'x.x.', step: '1/16' }, note('a'));
+        __.transport.sequence('b', { steps: 'xx', step: '1/8' }, note('b'));
+        __.transport.sequence('quiet', { steps: 'x', step: '1/8' }, note('quiet'));
+        __.transport.every('1/4', note('every'));
+      });
+      scope.transport.get('a')!.setStep(1, 0.5);
+      scope.transport.get('quiet')!.muted = true;
+      const outcome = !fail
+        ? null
+        : await scope
+            .build((__) => {
+              __.transport.bpm = 77;
+              __.transport.swing = 0.6;
+              __.transport.timeSignature = [3, 4];
+              __.transport.stepLength = '1/8';
+              __.transport.loop = { start: 0, end: '1/1' };
+              const a = __.transport.get('a')!;
+              a.setStep(0, 0.25).update({ step: '1/8' }).restart();
+              a.muted = true;
+              __.transport.get('quiet')!.muted = false;
+              __.transport.get('b')!.stop();
+              __.transport.clear('quiet');
+              __.transport.sequence('a', { steps: 'xxx' }, note('new'));
+              __.transport.sequence('c', { steps: 'x' }, note('c'));
+              __.transport.at('1/4', note('at'));
+              engine.transport.get('host')!.setStep(1, 1);
+              throw new Error('no');
+            })
+            .then(
+              () => 'resolved',
+              (error: GraphError) => error.message,
+            );
+      const transport = engine.transport;
+      const state = {
+        bpm: transport.bpm,
+        swing: transport.swing,
+        timeSignature: transport.timeSignature,
+        stepLength: transport.stepLength,
+        loop: transport.loop,
+        own: scope.transport.sequences.map((sequence) => ({
+          name: sequence.name,
+          steps: [...sequence.steps],
+          options: sequence.options,
+          muted: sequence.muted,
+        })),
+        host: [...transport.get('host')!.steps],
+      };
+      transport.start();
+      await engine.render();
+      return { outcome, state, fired };
+    }
+    const untouched = await run(false);
+    const failed = await run(true);
+    expect(failed.outcome).toBe('no');
+    expect(failed.state).toEqual(untouched.state);
+    expect(failed.fired).toEqual(untouched.fired);
+    expect(untouched.fired.some((entry) => entry.startsWith('a:1=0.5'))).toBe(true);
+    expect(untouched.fired.some((entry) => entry.startsWith('quiet'))).toBe(false);
+  });
+
   it('holds back what the builder asks of kept nodes until it has finished', async () => {
     const engine = await offlineEngine(0.1);
     const scope = engine.scope('track');
@@ -543,6 +613,41 @@ describe('build is all or nothing', () => {
     });
     expect(during).toBe(200);
     expect(param.value).toBe(300);
+  });
+
+  it('leaves a kept node the builder disposed or disconnected in place when the build fails', async () => {
+    const engine = await offlineEngine(0.1);
+    const scope = engine.scope('track');
+    const patch = (__: ScopeApi): void =>
+      void __().sine({ id: 'osc' }).gain({ id: 'level' }).to('main');
+    await scope.build(patch);
+    const before = scope.describe();
+    const nodes = scope.select('*').nodes;
+    const removed: string[] = [];
+    scope.on('node:removed', (id) => removed.push(id));
+    await expect(
+      scope.build((__) => {
+        patch(__);
+        __('#osc').disconnect();
+        __('#level').dispose();
+        __.bus('nowhere-yet').to('nowhere');
+      }),
+    ).rejects.toMatchObject({ code: 'missing-target' });
+    expect(scope.describe()).toEqual(before);
+    expect(scope.select('*').nodes).toEqual(nodes);
+    expect(nodes.every((node) => !node.disposed)).toBe(true);
+    expect(removed).toEqual([]);
+    expect(() => scope.select('#osc').to('nowhere-yet')).toThrow(/no bus called/);
+
+    // The same requests in a build that succeeds are carried out.
+    await scope.build((__) => {
+      patch(__);
+      __('#osc').disconnect();
+      __('#level').dispose();
+    });
+    expect(scope.describe().edges).toEqual([]);
+    expect(removed).toEqual(['level']);
+    expect(ids(scope.select('*'))).toEqual(['osc']);
   });
 
   it('undoes a build of another scope made inside a builder that then fails', async () => {

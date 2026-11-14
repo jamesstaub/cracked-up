@@ -54,6 +54,11 @@ export interface Node<K extends NodeType = NodeType> {
   /** Every recorded connection, both directions. */
   readonly inputs: readonly Edge[];
   readonly outputs: readonly Edge[];
+  /**
+   * The bus this node is an insert on, or null. An insert's place in its bus is not a connection: it
+   * does not appear in `inputs` or `outputs`.
+   */
+  readonly insertOf: Bus | null;
 
   connect(target: Node | Bus | Param<number>): this;
   disconnect(target?: Node | Bus | Param<number>): this;

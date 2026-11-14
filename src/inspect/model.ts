@@ -40,6 +40,8 @@ export interface ViewNode {
   readonly autoId: boolean;
   /** A bus that belongs to an outer scope, shown here because something in this scope uses it. */
   readonly external: boolean;
+  /** For a node that is an insert on a bus: the bus's name. It is drawn just before that bus. */
+  readonly insertOf: string | null;
   readonly signal: SignalKind;
   /** A macro or a child scope: it has a graph inside. */
   readonly expandable: boolean;
@@ -140,6 +142,7 @@ export function buildModel(
       triggerable: facts?.triggerable ?? false,
       autoId: new RegExp(`^${escapeRegExp(data.type)}-\\d+$`).test(data.id),
       external: false,
+      insertOf: null,
       signal: 'audio',
       expandable: macro,
       children: macro && inner && expanded(key, 'macro') ? buildModel(inner, expanded, key) : null,
@@ -162,6 +165,7 @@ export function buildModel(
         triggerable: false,
         autoId: false,
         external: !owned.has(name),
+        insertOf: null,
         signal: 'audio',
         expandable: false,
         children: null,
@@ -172,9 +176,29 @@ export function buildModel(
   // Outside a macro, a bus someone made is shown whether or not anything uses it yet.
   if (!source.inner) for (const name of owned.keys()) useBus(name);
 
+  // A bus's inserts are drawn in the order the signal meets them: what is sent to the bus arrives at
+  // the first insert, and the last one leads to the bus, which stands for its level and its output.
+  const firstInsert = new Map<string, string>();
+  for (const [name, ids] of Object.entries(snapshot.graph.inserts ?? {})) {
+    if (!owned.has(name)) continue;
+    const keys = ids.map((id) => nodeKey(path, id)).filter((key) => nodes.has(key));
+    if (keys.length === 0) continue;
+    firstInsert.set(name, keys[0]!);
+    const bus = useBus(name);
+    keys.forEach((key, index) => {
+      nodes.set(key, { ...nodes.get(key)!, insertOf: name });
+      addEdge(key, keys[index + 1] ?? bus, 'audio');
+    });
+  }
+  /** Where something sent to a bus is drawn arriving. */
+  const into = (name: string): string => {
+    const bus = useBus(name);
+    return firstInsert.get(name) ?? bus;
+  };
+
   for (const edge of snapshot.graph.edges) {
     const from = typeof edge.from === 'string' ? nodeKey(path, edge.from) : useBus(edge.from.bus);
-    if ('bus' in edge.to) addEdge(from, useBus(edge.to.bus), 'audio');
+    if ('bus' in edge.to) addEdge(from, into(edge.to.bus), 'audio');
     else if ('param' in edge.to) {
       addEdge(from, nodeKey(path, edge.to.node), 'modulation', edge.to.param);
     } else addEdge(from, nodeKey(path, edge.to.node), 'audio');
@@ -184,7 +208,7 @@ export function buildModel(
   }
 
   for (const bus of owned.values()) {
-    if (bus.to !== null) addEdge(useBus(bus.name), useBus(bus.to), 'route');
+    if (bus.to !== null) addEdge(useBus(bus.name), into(bus.to), 'route');
     else if (source.root && bus.name === 'main') {
       const key = outputKey(path);
       nodes.set(key, {
@@ -199,6 +223,7 @@ export function buildModel(
         triggerable: false,
         autoId: false,
         external: false,
+        insertOf: null,
         signal: 'audio',
         expandable: false,
         children: null,
@@ -221,12 +246,13 @@ export function buildModel(
       triggerable: false,
       autoId: false,
       external: false,
+      insertOf: null,
       signal: 'audio',
       expandable: true,
       children: expanded(key, 'scope') ? buildModel(child, expanded, key) : null,
     });
     const links = outerBuses(child);
-    for (const name of links.sends) addEdge(key, useBus(name), 'link');
+    for (const name of links.sends) addEdge(key, into(name), 'link');
     for (const name of links.receives) addEdge(useBus(name), key, 'link');
   }
 
@@ -308,7 +334,7 @@ export function signature(graph: ViewGraph): string {
   const visit = (g: ViewGraph): void => {
     for (const node of g.nodes) {
       parts.push(
-        `${node.key}|${node.type}|${node.classes.join(' ')}|${node.bypassed ? 'b' : ''}|${node.signal}|${node.children ? 'open' : ''}`,
+        `${node.key}|${node.type}|${node.classes.join(' ')}|${node.bypassed ? 'b' : ''}|${node.signal}|${node.insertOf ?? ''}|${node.children ? 'open' : ''}`,
       );
       if (node.children) visit(node.children);
     }
@@ -514,6 +540,16 @@ function endLabel(end: Node | Bus | Param<number>): string {
 
 /** What the detail panel shows for a node. `info` is the registry's entry for its type, if it has one. */
 export function nodeDetail(node: Node, info: NodeTypeInfo | null): NodeDetail {
+  // An insert's place in its bus is not a connection of the node's, so say it here.
+  const bus = node.insertOf;
+  const chain = bus ? bus.inserts.nodes : [];
+  const at = chain.indexOf(node);
+  const before = bus
+    ? at > 0
+      ? label(chain[at - 1]!)
+      : `everything sent to bus ${bus.name}`
+    : null;
+  const after = bus ? (at < chain.length - 1 ? label(chain[at + 1]!) : `bus ${bus.name}`) : null;
   return {
     kind: 'node',
     id: node.id,
@@ -526,8 +562,8 @@ export function nodeDetail(node: Node, info: NodeTypeInfo | null): NodeDetail {
     macro: info?.isMacro ?? false,
     triggerable: (info?.triggerable ?? false) && info?.category !== 'io',
     params: Object.keys(node.params).map((name) => paramDetail(node.param(name))),
-    inputs: node.inputs.map((edge) => label(edge.from)),
-    outputs: node.outputs.map((edge) => endLabel(edge.to)),
+    inputs: [...(before ? [before] : []), ...node.inputs.map((edge) => label(edge.from))],
+    outputs: [...(after ? [after] : []), ...node.outputs.map((edge) => endLabel(edge.to))],
   };
 }
 
@@ -539,6 +575,9 @@ export function busDetail(bus: Bus, to: string | null): NodeDetail {
     category: null,
     description:
       'A named mix point: several chains go in, one signal comes out. ' +
+      (bus.inserts.length > 0
+        ? `What is sent to it passes through its inserts first: ${bus.inserts.nodes.map(label).join(', ')}. `
+        : '') +
       (to === null ? '' : `This one is sent on to the bus "${to}".`),
     classes: [],
     tags: {},

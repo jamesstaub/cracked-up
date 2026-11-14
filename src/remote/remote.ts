@@ -272,6 +272,10 @@ class RemoteNode implements Selectable {
     return this.remote.edgesFrom(this);
   }
 
+  get insertOf(): RemoteBus | null {
+    return this.remote.busWithInsert(this.id);
+  }
+
   connect(target: ConnectTarget): this {
     this.remote.connect(this, target);
     return this;
@@ -976,6 +980,13 @@ class RemoteImpl {
 
   makeInserts(bus: RemoteBus, added: readonly RemoteNode[]): RemoteInserts {
     return new this.Inserts(this, bus, added);
+  }
+
+  busWithInsert(id: string): RemoteBus | null {
+    for (const [name, ids] of this.inserts) {
+      if (ids.includes(id)) return this.buses.get(name) ?? null;
+    }
+    return null;
   }
 
   insertsOf(bus: string): RemoteNode[] {

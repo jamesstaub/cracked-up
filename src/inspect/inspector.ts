@@ -1074,6 +1074,7 @@ class InspectorImpl implements Inspector {
       node.signal === 'control' ? 'control' : '',
       node.bypassed ? 'bypassed' : '',
       node.external ? 'external' : '',
+      node.insertOf !== null ? 'insert' : '',
       node.key === this.selectedKey ? 'selected' : '',
     ];
     element.className = classes.filter(Boolean).join(' ');
@@ -1102,12 +1103,17 @@ class InspectorImpl implements Inspector {
       node.kind === 'bus' ? `bus ${node.id}` : node.kind === 'scope' ? `scope ${node.id}` : '',
       node.kind === 'node' ? `${node.type} ${node.id}` : '',
       node.external ? 'of an outer scope' : '',
+      node.insertOf !== null ? `insert on bus ${node.insertOf}` : '',
       node.macro ? 'macro' : '',
       node.bypassed ? 'bypassed' : '',
     ];
     const target = placed.open ? element.querySelector<HTMLElement>('.group-head')! : element;
     target.setAttribute('aria-label', said.filter(Boolean).join(', '));
-    target.title = node.kind === 'node' ? `${node.type} #${node.id}` : node.id;
+    target.title =
+      node.kind === 'node'
+        ? `${node.type} #${node.id}` +
+          (node.insertOf !== null ? ` (insert on ${node.insertOf})` : '')
+        : node.id;
   }
 
   // --- Pan and zoom ---------------------------------------------------------------------------------

@@ -413,6 +413,95 @@ describe('the detail panel data', () => {
   });
 });
 
+describe('bus inserts in the model', () => {
+  const inserted = async (): Promise<Engine> => {
+    const engine = await offlineEngine(0.1);
+    await engine.scope('live').build((__) => {
+      __().sampler({ id: 'kick' }).to(__.bus('drums'));
+      __().sampler({ id: 'snare' }).gain(0.6).to('drums');
+      __.bus('drums').compressor({ id: 'glue' }).gain({ id: 'trim' });
+      __.bus('sub').to('drums');
+    });
+    return engine;
+  };
+
+  it('draws what is sent to the bus arriving at its first insert, and the last insert leading to the bus', async () => {
+    const engine = await inserted();
+    const model = buildModel(readScope(engine.scope('live')).source);
+    expect(find(model, nodeKey('', 'glue'))).toMatchObject({ kind: 'node', insertOf: 'drums' });
+    expect(find(model, nodeKey('', 'trim'))).toMatchObject({ insertOf: 'drums' });
+    expect(find(model, nodeKey('', 'kick'))!.insertOf).toBeNull();
+    expect(find(model, busKey('', 'drums'))!.insertOf).toBeNull();
+    expect(edgeKeys(model)).toEqual(
+      [
+        '#kick>#glue',
+        '#gain-0>#glue',
+        '#snare>#gain-0',
+        '#glue>#trim',
+        '#trim>@drums',
+        '@drums>@main',
+        '@sub>#glue',
+      ].sort(),
+    );
+    expect(model.edges.find((edge) => edge.key === '@sub>#glue')!.kind).toBe('route');
+    expect(model.edges.find((edge) => edge.key === '#trim>@drums')!.kind).toBe('audio');
+  });
+
+  it('changes its signature when the inserts or their order change', async () => {
+    const engine = await inserted();
+    const live = engine.scope('live');
+    const read = (): string => signature(buildModel(readScope(live).source));
+    const before = read();
+    live.dispatch([{ op: 'bus', name: 'drums', inserts: ['trim', 'glue'] }]);
+    const swapped = read();
+    expect(swapped).not.toBe(before);
+    live.dispatch([{ op: 'bus', name: 'drums', inserts: [] }]);
+    expect(read()).not.toBe(swapped);
+    const model = buildModel(readScope(live).source);
+    expect(find(model, nodeKey('', 'glue'))!.insertOf).toBeNull();
+    expect(edgeKeys(model)).toContain('#kick>@drums');
+  });
+
+  it('says where an insert sits in the detail of the node and of the bus', async () => {
+    const engine = await inserted();
+    const live = engine.scope('live');
+    const info = (type: string) => engine.registry.describe(type);
+    const glue = nodeDetail(live.select('#glue').first()!, info('compressor'));
+    expect(glue.inputs).toEqual(['everything sent to bus drums']);
+    expect(glue.outputs).toEqual(['gain #trim']);
+    const trim = nodeDetail(live.select('#trim').first()!, info('gain'));
+    expect(trim.inputs).toEqual(['compressor #glue']);
+    expect(trim.outputs).toEqual(['bus drums']);
+    expect(busDetail(live.bus('drums'), 'main').description).toContain(
+      'passes through its inserts first: compressor #glue, gain #trim.',
+    );
+  });
+
+  it('draws inserts from data alone, and ignores ones that name a missing node or bus', () => {
+    const model = buildModel({
+      snapshot: {
+        name: 's',
+        graph: {
+          nodes: [
+            { id: 'a', type: 'gain' },
+            { id: 'src', type: 'sine' },
+          ],
+          edges: [{ from: 'src', to: { bus: 'x' } }],
+          inserts: { x: ['ghost', 'a'], nowhere: ['a'] },
+        },
+        buses: [{ name: 'x', to: null, gain: 1 }],
+      },
+      root: false,
+      inner: false,
+      types: {},
+      incoming: [],
+      macros: {},
+      children: [],
+    });
+    expect(edgeKeys(model)).toEqual(['#a>@x', '#src>#a']);
+  });
+});
+
 describe('Node.insideScope', () => {
   it('is the private scope of a macro instance, and null for other nodes', async () => {
     const engine = await offlineEngine(0.1);

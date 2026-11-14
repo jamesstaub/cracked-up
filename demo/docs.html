@@ -255,6 +255,98 @@ __.transport.every('1/4', () => __('sampler').trigger());</code></pre>
           Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
         </p>
 
+        <h3 id="inserts">Effects on a bus: inserts</h3>
+        <p>
+          To process everything sent to a bus, call a node type on the bus. The node goes
+          <em>inside</em> the bus, in series, so all of the bus's sound passes through it and
+          nothing goes round it. The bus stays routed where it was, so there is no
+          <code>.to</code> to write at the end.
+        </p>
+        <pre><code>__.bus('drums').compressor({ id: 'glue', threshold: -18, ratio: 3 });
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('drums');
+__.transport.steps('x.x.', () => __('#kick').trigger());
+__.transport.steps('..x.', () => __('#snare').trigger());</code></pre>
+        <p>
+          Calls can follow one another, and the signal passes through the inserts in the order they
+          were added:
+        </p>
+        <pre><code>__.bus('drums')
+  .overdrive({ id: 'grit', drive: 0.4 })
+  .lowpass({ id: 'tone', frequency: 1200 })
+  .to('main');   // optional: this routes the bus, and 'main' is where it goes anyway
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__.transport.every('1/4', () => __('#kick').trigger());</code></pre>
+        <p>
+          An insert is an ordinary node. It has an id, <code>__('#glue')</code> finds it, and it can
+          be set, ramped, <a href="#bypass">bypassed</a> and disposed like any other. Dispose the
+          last one and the bus is a plain mix point again. What it needs is an input and an output,
+          so a source or an lfo cannot be an insert.
+        </p>
+        <p>The order inside a bus is fixed:</p>
+        <ol>
+          <li>the mix of everything sent to the bus,</li>
+          <li>its inserts, first to last,</li>
+          <li>its level, <code>bus.gain</code>,</li>
+          <li>
+            its output, which goes to the bus's target (<code>main</code> unless you called
+            <code>bus.to(...)</code>) and to every chain started with <code>bus.chain()</code>.
+          </li>
+        </ol>
+        <p>
+          <code>gain</code> on a bus is that level, a parameter:
+          <code>__.bus('drums').gain.set(0.8)</code>. So a gain <em>node</em> cannot be added by
+          calling <code>gain(...)</code> on the bus itself. Start with <code>insert()</code>, which
+          returns the same thing an insert call does and has every node type as a method. After the
+          first insert you are already there:
+        </p>
+        <pre data-static><code>__.bus('drums').insert().gain(0.5).compressor({ threshold: -18 });
+__.bus('drums').compressor({ threshold: -18 }).gain(0.5);   // here gain is the node type
+
+__.bus('drums').inserts;   // a selection of the bus's inserts, in order</code></pre>
+        <p>
+          Outside <code>build</code>, each call adds another insert after the ones already there,
+          and giving an id that exists is an error, as it is in a chain. Inside <code>build</code>,
+          which is how a script that is run again and again should be run, the bus ends up with
+          exactly the inserts the script asked for, in the order it asked: an unchanged line keeps
+          its node and its state, a changed value is set in place, a line you delete takes its
+          insert out, and lines you swap are re-patched without making new nodes.
+        </p>
+        <p>
+          Inserts can only be added from the scope the bus belongs to. A track's script can put a
+          compressor on a bus it made, but not on <code>main</code>, which belongs to the engine's
+          own scope; there, <code>engine.bus('main').compressor()</code> does it.
+        </p>
+
+        <h3 id="bus-chain">Taps: <code>bus.chain()</code> and <code>bus.to(null)</code></h3>
+        <p>
+          <code>bus.chain()</code> starts a chain from the bus's output, after its inserts. It is a
+          <em>tap</em>: the bus still goes to its target as well, so what you chain from it is heard
+          in addition to the bus, not instead of it. Use it for something that runs in parallel: a
+          send to a reverb, a <a href="#recording">recorder</a> listening in.
+        </p>
+        <pre><code>// The drums, and a reverb of the drums beside them.
+__.bus('drums').chain().reverb({ seconds: 2 }).gain(0.3).to('main');
+
+__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
+__.transport.every('1/2', () => __('#snare').trigger());</code></pre>
+        <p>
+          <code>bus.to(null)</code> stops the bus feeding anything itself, which leaves its chains
+          as the only way out. That is the tool when the chain should replace the bus's output and
+          an insert cannot do the job: a <a href="#recording">looper</a> fed by a bus, which is
+          heard only through the looper, or a bus that splits into several different paths.
+        </p>
+        <pre
+          data-static
+        ><code>__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '1 bar' }).to('main');</code></pre>
+        <p>
+          Before inserts existed, <code>bus.to(null).chain()....to('main')</code> was also the way
+          to put an effect on a bus. It still works and sounds the same; an insert says it in one
+          line.
+        </p>
+
         <h2 id="connecting"><code>to</code>, <code>connect</code> and <code>modulate</code></h2>
         <p>
           All three make a connection from the end of a chain. They differ in what they connect to.
@@ -621,12 +713,11 @@ __.transport.bpm = 172;
 const speed = __.transport.bpm / 128;
 
 // --- The sounds ---------------------------------------------------------------
-// The drum bus is made gritty and goes through a filter. to(null) means the bus
-// is heard only through this chain.
-__.bus('drums').to(null).chain()
+// The drum bus is made gritty and goes through a filter: two inserts, which
+// everything sent to the bus passes through.
+__.bus('drums')
   .bitcrusher({ bits: 10, rate: 0.6 })
-  .lowpass({ id: 'tone', frequency: 14000 })
-  .to('main');
+  .lowpass({ id: 'tone', frequency: 14000 });
 __().sampler({ id: 'break', buffer: 'break' }).to('drums');
 
 // A second player of the same break, heard only as echoes: a "delay throw".
@@ -1347,6 +1438,14 @@ inspector.destroy();                           // remove it, and everything it a
                 </td>
               </tr>
               <tr>
+                <td>Nodes in a row leading into a bus, which everything sent to the bus enters</td>
+                <td>
+                  The bus's <a href="#inserts">inserts</a>, in order. The bus's own shape comes
+                  after them: it stands for the bus's level and output, and its meter shows the
+                  signal after the inserts
+                </td>
+              </tr>
+              <tr>
                 <td>A box with a second outline and a small arrow</td>
                 <td>
                   A macro. The arrow opens it in place, as a frame round the nodes inside it. A
@@ -1475,7 +1574,8 @@ remote.build((__) =&gt; {
           </li>
           <li>
             A script can send audio to an outer bus such as <code>main</code>, but cannot change
-            that bus, and cannot select or change nodes outside its scope.
+            that bus or put <a href="#inserts">inserts</a> on it, and cannot select or change nodes
+            outside its scope. Inserts on its own buses work as they do next to the engine.
           </li>
           <li>
             Nodes inside a macro can be written to (<code>__('polysynth lowpass').set(...)</code>)

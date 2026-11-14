@@ -31,6 +31,18 @@ export function checks(engine: Engine): void {
   // @ts-expect-error there is no node type called `lowpas`
   engine.chain().lowpas(800);
 
+  // Inserts on a bus check their options as chain methods do.
+  engine.bus('drums').compressor({ threshold: -18 }).lowpass(900).gain(0.5).to('main');
+  // @ts-expect-error `resonance` is not a lowpass option
+  engine.bus('drums').lowpass({ resonance: 2 });
+  // On the bus itself `gain` is its level, a parameter. The gain node is reached through insert().
+  engine.bus('drums').gain.set(0.5);
+  // @ts-expect-error a bus's `gain` is not a method
+  engine.bus('drums').gain(0.5);
+  engine.bus('drums').insert().gain(0.5);
+  // @ts-expect-error what an insert returns is not a chain: it has no `connect`
+  engine.bus('drums').compressor().connect('#filter');
+
   // A node's params are typed by name and value.
   const filter = engine.select('lowpass').first();
   if (filter) {

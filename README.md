@@ -83,7 +83,7 @@ That opens:
 
 | Import | What it is |
 |---|---|
-| `cracked-up` | `createEngine`, `defineNode`, `defineMacro`, and all the types |
+| `cracked-up` | `createEngine`, `defineNode`, `defineMacro`, `describeNodeTypes`, and all the types |
 | `cracked-up/util` | Pure helpers: patterns, scales, randomness, conversions, `encodeWav`; and `helpers`, every helper by name with its documentation, for putting in scope of scripts |
 | `cracked-up/remote` | `createRemote` and `linkRemote`, for sandboxed scripts |
 | `cracked-up/midi` | `requestMidi` and `createMidi` |

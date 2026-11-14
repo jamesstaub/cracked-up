@@ -13,6 +13,7 @@
  *
  * How each kind of work crosses the boundary:
  * - Building and editing a graph: the remote records chains into GraphData and sends an `apply` command.
+ *   A bus's inserts are part of that graph (`GraphData.inserts`), so they travel the same way.
  * - Node operations (trigger, set, ramp, offset, call, ...): one command each, stamped with a time.
  * - Reading state (`param.value`, a sequence's steps, buffer durations and slices): answered from the
  *   mirror, which the host keeps current with patches. Reads are synchronous, as they are locally.

@@ -42,11 +42,10 @@ export function exampleFor(info: NodeTypeInfo): string {
   if (type === 'multiband') {
     return (
       `// Three drums share a bus, and the multiband squashes the lows, mids and highs of the mix separately.\n` +
-      `__.bus('drums').to(null);\n` +
+      `__.bus('drums').multiband({ lowThreshold: -30, lowRatio: 6, lowGain: 8, highThreshold: -24 }).gain(0.6);\n` +
       `__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');\n` +
       `__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('drums');\n` +
       `__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.35).to('drums');\n` +
-      `__.bus('drums').chain().multiband({ lowThreshold: -30, lowRatio: 6, lowGain: 8, highThreshold: -24 }).gain(0.6).to('main');\n` +
       `__.transport.sequence({ steps: 16, step: '1/16' }, (ev) => {\n` +
       `  if (ev.index % 4 === 0) __('#kick').trigger();\n` +
       `  if (ev.index % 8 === 4) __('#snare').trigger();\n` +

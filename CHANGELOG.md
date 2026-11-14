@@ -12,6 +12,30 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Inserts on a bus.** Calling a node type on a bus puts that node inside the bus, in series
+  between its mix and its output: `__.bus('drums').compressor({ id: 'glue', threshold: -18 })`.
+  Everything sent to the bus passes through it, nothing goes round it, and the bus stays routed
+  where it was, so the long form `bus.to(null).chain()....to('main')` is no longer needed to put
+  an effect on a bus. Calls follow one another in signal order
+  (`bus.overdrive(0.4).lowpass(900)`). What a call returns (`BusInserts`) has every node type as a
+  method, `to()` (routes the bus), `chain()` (taps it), `bus` and `nodes`.
+  - `bus.gain` stays the bus's level, a parameter, now applied after the inserts. `bus.insert()`
+    returns the same `BusInserts` without adding anything, which is the way to a gain node:
+    `bus.insert().gain(0.5)`. `bus.inserts` is a selection of the inserts in order, and
+    `node.insertOf` is the bus a node is an insert on.
+  - An insert is an ordinary node of the scope: selected, set, bypassed and disposed like any
+    other. It needs an input and an output, and can only be added from the scope that owns the
+    bus.
+  - Outside `build()` each call adds another insert. Inside, a bus ends up with the inserts the
+    build asked for, in order: unchanged ones are kept without touching the audio path, changed
+    values are set in place, removed lines take their insert out, reordering re-patches, and a
+    build that throws changes nothing.
+  - As data: `GraphData.inserts` lists each bus's insert ids in order, so `describe()`, `apply()`,
+    `snapshot()` and the remote's `apply` command carry them, and
+    `{ op: 'bus', name, inserts: [ids] }` sets a bus's inserts from existing nodes. The same script
+    text works through `cracked-up/remote`.
+  - The inspector draws a bus's inserts in a row leading into the bus. The editor completes node
+    types after `__.bus('x').`, documents them, and follows what an insert call returns.
 - **Node types can be described without an engine.** `describeNodeTypes(definitions?)` and
   `describeNodeType(definition)` from `cracked-up` return what `engine.registry.list()` and
   `describe(type)` report, read from the definitions alone (the built-ins when given nothing). No
@@ -74,6 +98,13 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Changed
 
+- `bus.chain()` taps the bus's output, which is now after its inserts as well as its level.
+  `bus.input` is a mix node of its own in front of the inserts; `bus.output` is the same node as
+  before.
+- `apply()` now sets the inserts of the scope's buses: a description without `inserts` leaves
+  them with none.
+- `bus` and `chain` can no longer be node type names, as they are members of what an insert call
+  returns.
 - The live demo and the sandboxed demo use `cracked-up/editor` in place of a text box. Clicking a
   sample, node type or helper in the demo's side column inserts it at the cursor.
 - The docs page's contents list keeps its own scroll: reaching its end no longer scrolls the page.

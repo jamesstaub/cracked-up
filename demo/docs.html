@@ -1134,6 +1134,34 @@ for (const sequence of scope.transport.sequences) {
   drawGrid(sequence.name, sequence.steps, sequence.options);
 }</code></pre>
 
+        <h3 id="callback-errors">When a callback throws</h3>
+        <p>
+          An error thrown inside the function of a sequence, an <code>every</code> or an
+          <code>at</code> does not stop the transport, and does not stop that function either: it is
+          called again at its next step, and reports again if it throws again. Everything else plays
+          on.
+        </p>
+        <p>
+          The error goes to the <code>error</code> event of the scope it was scheduled in, and to
+          the engine's. Its <code>origin</code> says where it came from, and gives an app the means
+          to quieten it:
+        </p>
+        <pre data-static><code>scope.on('error', (error) =&gt; {
+  if (error.code !== 'callback') return;
+  const { scope, kind, name, sequence } = error.origin;
+  // kind: 'sequence', 'every' or 'at'. name and sequence are null unless it is a sequence.
+  show(`${name ?? kind} in ${scope.name}: ${error.message}`);
+
+  // Stop calling it. A muted sequence keeps its place and its steps.
+  if (sequence) sequence.muted = true;
+  else error.origin.cancel(); // removes an every() for good
+});
+
+// A rebuild replaces a named sequence in place, and it stays muted. Lift the mute when the
+// script has been changed and built without an error:
+await scope.build(script);
+for (const sequence of scope.transport.sequences) sequence.muted = false;</code></pre>
+
         <h3>Every sequencing method</h3>
         <p>
           <code>sequence.</code> below stands for what

@@ -1,19 +1,21 @@
-import type { GraphError } from '../api';
+import type { CallbackOrigin, GraphError } from '../api';
 
 /** The error type the library throws from direct calls and reports through `error` events. */
 export class CrackedUpError extends Error implements GraphError {
   readonly code: GraphError['code'];
   readonly nodeId?: string;
+  readonly origin?: CallbackOrigin;
 
   constructor(
     code: GraphError['code'],
     message: string,
-    options: { nodeId?: string; cause?: unknown } = {},
+    options: { nodeId?: string; cause?: unknown; origin?: CallbackOrigin } = {},
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'CrackedUpError';
     this.code = code;
     if (options.nodeId !== undefined) this.nodeId = options.nodeId;
+    if (options.origin !== undefined) this.origin = options.origin;
   }
 }
 

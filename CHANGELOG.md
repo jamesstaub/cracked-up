@@ -99,8 +99,18 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   the order they were first made (`scope.transport.sequences`, `__.transport.sequences`). A host
   reads it after a `build()` to learn which sequences a script declares. Sequences made without a
   name, `every` and `at` are not listed.
+- **Callback errors say where they came from.** A `callback` error has an `origin`: the `scope` it
+  was scheduled in, its `kind` (`'sequence'`, `'every'` or `'at'`), the `sequence` and its `name`
+  (null unless it is a sequence), and `cancel()`, which removes it from the transport. The error
+  message names the sequence and the scope.
 
 ### Changed
+
+- An error thrown by a sequence, `every` or `at` callback is now also sent to the `error` event of
+  the scope it was scheduled in, before the engine's. What happens next is unchanged and now
+  documented: the callback is called again at its next step. A host that wants it quiet sets
+  `error.origin.sequence.muted = true` (a rebuild keeps a named sequence and its mute) or calls
+  `error.origin.cancel()`.
 
 - `bus.chain()` taps the bus's output, which is now after its inserts as well as its level.
   `bus.input` is a mix node of its own in front of the inserts; `bus.output` is the same node as

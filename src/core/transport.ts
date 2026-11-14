@@ -4,6 +4,7 @@ import type {
   Pattern,
   Position,
   ScheduledEvent,
+  Scope,
   Sequence,
   SequenceCallback,
   SequenceEvent,
@@ -16,6 +17,7 @@ import type {
 import { durationToBeats } from '../util/duration';
 import { parsePattern } from '../util/pattern';
 import type { EngineImpl } from './engine';
+import type { ScopeImpl } from './scope';
 import { CrackedUpError, Emitter } from './errors';
 
 /** Tolerance, in beats, for treating two positions as the same. Far below one sample at any tempo. */
@@ -37,6 +39,8 @@ function mod(value: number, divisor: number): number {
 type Owner = object | null;
 
 interface Source {
+  /** What scheduled it, for saying where an error came from. */
+  readonly kind: 'sequence' | 'every' | 'at';
   readonly order: number;
   readonly serial: number;
   /** Who scheduled it: a scope, or null for the engine itself. Decides what a scope's clean-up removes. */
@@ -56,6 +60,7 @@ interface Source {
 // ---------------------------------------------------------------------------------------------------
 
 class SequenceImpl implements Source {
+  readonly kind = 'sequence';
   readonly serial: number;
   owner: Owner = null;
   name: string | null;
@@ -219,7 +224,7 @@ class SequenceImpl implements Source {
       sequence: this as unknown as Sequence,
       at: (fraction: number) => time + fraction * duration,
     };
-    this.transport.deliver(event, this.callback);
+    this.transport.deliver(event, this.callback, this);
   }
 
   setStep(index: number, value: number): this {
@@ -246,6 +251,7 @@ class SequenceImpl implements Source {
 
 /** A single callback at one position. */
 class OneShot implements Source {
+  readonly kind = 'at';
   readonly order = 0;
   owner: Owner = null;
   private armed = false;
@@ -277,12 +283,14 @@ class OneShot implements Source {
     this.transport.deliver(
       { time, beat: position, bar: this.transport.barOf(position) },
       this.callback,
+      this,
     );
   }
 }
 
 /** A callback repeated at a fixed interval. */
 class Repeater implements Source {
+  readonly kind = 'every';
   owner: Owner = null;
   private next = 0;
 
@@ -312,6 +320,7 @@ class Repeater implements Source {
     this.transport.deliver(
       { time, beat: position, bar: this.transport.barOf(position) },
       this.callback,
+      this,
     );
   }
 }
@@ -735,16 +744,38 @@ export class TransportImpl {
     if (skipped > 0) this.events.emit('late', { skipped, behindBy });
   }
 
-  /** Runs a callback with the event's time as the default time for everything it does. */
-  deliver<E extends ScheduledEvent>(event: E, callback: (event: E) => void): void {
+  /**
+   * Runs a callback with the event's time as the default time for everything it does. If it throws,
+   * the error is reported to the scope that scheduled it (and so to the engine) with its origin, and
+   * the transport carries on: the callback is called again at its next event.
+   */
+  deliver<E extends ScheduledEvent>(event: E, callback: (event: E) => void, source: Source): void {
     const previous = this.engine.eventTime;
     this.engine.eventTime = event.time;
     try {
       callback(event);
     } catch (thrown) {
       const message = thrown instanceof Error ? thrown.message : String(thrown);
-      this.engine.report(
-        new CrackedUpError('callback', `A transport callback threw: ${message}`, { cause: thrown }),
+      const scope = (source.owner as ScopeImpl | null) ?? this.engine.root;
+      const sequence = source instanceof SequenceImpl ? source : null;
+      const what = sequence
+        ? sequence.name === null
+          ? 'A sequence'
+          : `The sequence "${sequence.name}"`
+        : source.kind === 'every'
+          ? 'An every() callback'
+          : 'An at() callback';
+      scope.report(
+        new CrackedUpError('callback', `${what} in scope "${scope.name}" threw: ${message}`, {
+          cause: thrown,
+          origin: {
+            scope: scope as unknown as Scope,
+            kind: source.kind,
+            sequence: sequence as unknown as Sequence | null,
+            name: sequence?.name ?? null,
+            cancel: () => this.remove(source),
+          },
+        }),
       );
     } finally {
       this.engine.eventTime = previous;

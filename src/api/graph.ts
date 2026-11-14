@@ -360,6 +360,27 @@ export interface GraphError {
   readonly message: string;
   readonly nodeId?: string;
   readonly cause?: unknown;
+  /** On a `callback` error: which scheduled callback threw. */
+  readonly origin?: CallbackOrigin;
+}
+
+/**
+ * Where a callback that threw was scheduled. The error does not stop anything: a sequence or an
+ * `every` is called again at its next step, and reports again if it throws again. A host that
+ * wants it quiet mutes the sequence (`origin.sequence.muted = true`, undone by setting it false,
+ * for example once the script has been changed), or removes it with `cancel()`.
+ */
+export interface CallbackOrigin {
+  /** The scope whose view of the transport it was scheduled through. The root scope for `engine.transport`. */
+  readonly scope: Scope;
+  /** What scheduled it: `transport.sequence` (or `steps`), `every` or `at`. */
+  readonly kind: 'sequence' | 'every' | 'at';
+  /** The sequence, when it is one. Null for `every` and `at`. */
+  readonly sequence: import('./transport').Sequence | null;
+  /** The sequence's name. Null for a sequence made without one, and for `every` and `at`. */
+  readonly name: string | null;
+  /** Removes the sequence or repeating callback from the transport, so it is not called again. */
+  cancel(): void;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -440,6 +461,10 @@ export interface ScopeEvents {
   'node:added': (node: Node) => void;
   'node:removed': (id: string) => void;
   'param:changed': (change: import('./params').ParamChange) => void;
+  /**
+   * Something failed in this scope: a command, a node's build, or a callback scheduled through
+   * the scope's transport that threw (the error's `origin` says which).
+   */
   error: (error: GraphError) => void;
 }
 

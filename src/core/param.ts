@@ -388,24 +388,7 @@ export class ParamImpl {
 
   /** Checks a value against the parameter's kind. */
   private coerce(value: ParamValue): ParamValue {
-    const meta = this.meta;
-    if (meta.kind === 'number') {
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw this.error(`needs a finite number, got ${JSON.stringify(value)}`);
-      }
-      // The metadata range is the range a control covers, not a limit: modulation depths and the like
-      // legitimately go beyond it, and the AudioParam enforces its own hard limits.
-      return value;
-    }
-    if (meta.kind === 'boolean') {
-      if (typeof value === 'boolean') return value;
-      if (value === 0 || value === 1) return value === 1;
-      throw this.error(`needs true or false, got ${JSON.stringify(value)}`);
-    }
-    if (typeof value !== 'string' || !meta.choices.includes(value)) {
-      throw this.error(`must be one of ${meta.choices.join(', ')}; got ${JSON.stringify(value)}`);
-    }
-    return value;
+    return checkValue(this.meta, value, this.node);
   }
 
   private ensureOffsetSource(audio: AudioParam): ConstantSourceNode {
@@ -419,10 +402,51 @@ export class ParamImpl {
   }
 
   private error(problem: string): CrackedUpError {
-    return new CrackedUpError(
-      'invalid-param',
-      `"${this.name}" on ${this.node.type} "${this.node.id}" ${problem}.`,
-      { nodeId: this.node.id },
+    return paramError(this.meta, this.node, problem);
+  }
+}
+
+/** The error for a request a parameter refuses. It names the parameter and its node. */
+export function paramError(
+  meta: ParamMeta,
+  node: { readonly type: string; readonly id: string },
+  problem: string,
+): CrackedUpError {
+  return new CrackedUpError(
+    'invalid-param',
+    `"${meta.name}" on ${node.type} "${node.id}" ${problem}.`,
+    { nodeId: node.id },
+  );
+}
+
+/**
+ * Checks a value against a parameter's kind and returns it as the parameter will hold it. Shared
+ * with the remote, so a script in a sandbox is refused the same values, with the same words.
+ */
+export function checkValue(
+  meta: ParamMeta,
+  value: ParamValue,
+  node: { readonly type: string; readonly id: string },
+): ParamValue {
+  if (meta.kind === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw paramError(meta, node, `needs a finite number, got ${JSON.stringify(value)}`);
+    }
+    // The metadata range is the range a control covers, not a limit: modulation depths and the like
+    // legitimately go beyond it, and the AudioParam enforces its own hard limits.
+    return value;
+  }
+  if (meta.kind === 'boolean') {
+    if (typeof value === 'boolean') return value;
+    if (value === 0 || value === 1) return value === 1;
+    throw paramError(meta, node, `needs true or false, got ${JSON.stringify(value)}`);
+  }
+  if (typeof value !== 'string' || !meta.choices.includes(value)) {
+    throw paramError(
+      meta,
+      node,
+      `must be one of ${meta.choices.join(', ')}; got ${JSON.stringify(value)}`,
     );
   }
+  return value;
 }

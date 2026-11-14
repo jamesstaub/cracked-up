@@ -47,6 +47,7 @@ import type {
   Duration,
 } from '../api';
 import { CrackedUpError } from '../core/errors';
+import { checkValue, paramError } from '../core/param';
 import { describeNodeType } from '../core/registry';
 import { SelectorError, matchesCompound, select } from '../selector';
 import type { Selectable, SelectableTree } from '../selector';
@@ -110,7 +111,44 @@ class RemoteParam {
     for (const listener of [...this.listeners]) listener(change);
   }
 
+  /** Throws what the host would say to this value, so a bad one never leaves the sandbox. */
+  check(value: ParamValue): void {
+    checkValue(this.meta, value, this.node);
+  }
+
+  /** Throws what the host would say to this ramp, as far as can be told from here. */
+  checkRamp(target: number, options: RampOptions): void {
+    if (this.meta.kind !== 'number') {
+      throw paramError(
+        this.meta,
+        this.node,
+        'cannot be ramped: only audio-rate number parameters can',
+      );
+    }
+    if (!(options.duration >= 0 && Number.isFinite(options.duration))) {
+      throw paramError(this.meta, this.node, 'ramp needs a duration of 0 or more seconds');
+    }
+    if (options.from !== undefined && !Number.isFinite(options.from)) {
+      throw paramError(
+        this.meta,
+        this.node,
+        `ramp needs a finite number to start from, got ${JSON.stringify(options.from)}`,
+      );
+    }
+    this.check(target);
+  }
+
+  checkOffset(amount: number): void {
+    if (this.meta.kind !== 'number') {
+      throw paramError(this.meta, this.node, 'cannot be offset: it is not a number');
+    }
+    if (!Number.isFinite(amount)) {
+      throw paramError(this.meta, this.node, 'offset must be a finite number');
+    }
+  }
+
   set(value: ParamValue, options?: At): this {
+    this.check(value);
     const at = this.node.remote.time(options);
     this.assign(value, at);
     this.node.remote.emit({
@@ -132,6 +170,7 @@ class RemoteParam {
   }
 
   ramp(target: number, options: RampOptions): this {
+    this.checkRamp(target, options);
     const at = this.node.remote.time(options);
     this.assign(target, at + options.duration);
     this.node.remote.emit({
@@ -148,6 +187,7 @@ class RemoteParam {
   }
 
   offset(amount: number, options?: OffsetOptions): this {
+    this.checkOffset(amount);
     this.node.remote.emit({
       op: 'offset',
       target: this.node.target,
@@ -440,6 +480,9 @@ class RemoteSelection implements Iterable<RemoteNode> {
     for (const [name, value] of Object.entries(values)) {
       if (value === undefined) continue;
       given[name] = value;
+      for (const node of this.nodes) node.findParam(name)?.check(value);
+    }
+    for (const [name, value] of Object.entries(given)) {
       for (const node of this.nodes) node.findParam(name)?.assign(value, at);
     }
     const target = this.target;
@@ -449,6 +492,7 @@ class RemoteSelection implements Iterable<RemoteNode> {
 
   ramp(param: string, to: number, options: RampOptions): this {
     const at = this.remote.time(options);
+    for (const node of this.nodes) node.findParam(param)?.checkRamp(to, options);
     for (const node of this.nodes) node.findParam(param)?.assign(to, at + options.duration);
     const target = this.target;
     if (target !== null) {
@@ -467,6 +511,7 @@ class RemoteSelection implements Iterable<RemoteNode> {
   }
 
   offset(param: string, amount: number, options?: OffsetOptions): this {
+    for (const node of this.nodes) node.findParam(param)?.checkOffset(amount);
     const target = this.target;
     if (target !== null) {
       this.remote.emit({
@@ -775,6 +820,10 @@ class RemoteImpl {
 
   private errorListeners = new Set<(error: RemoteError) => void>();
 
+  private builds = 0;
+  /** The last build sent that the host has not answered yet, with what to go back to if it refuses. */
+  private unconfirmed: { build: number; restore: () => void } | null = null;
+
   private readonly Selection: typeof RemoteSelection;
   private readonly Chain: typeof RemoteChain;
   private readonly Bus: typeof RemoteBus;
@@ -945,7 +994,7 @@ class RemoteImpl {
     });
   }
 
-  flush(): void {
+  flush(build?: number): void {
     // A build sends everything at once when it ends, or nothing if it fails.
     if (this.declared) return;
     const definitions = this.definitions;
@@ -957,7 +1006,7 @@ class RemoteImpl {
     this.early = [];
     this.late = [];
     this.dirty = false;
-    this.options.send({ type: 'commands', commands });
+    this.options.send({ type: 'commands', commands, ...(build === undefined ? {} : { build }) });
   }
 
   // --- Selecting and building ---------------------------------------------------------------------
@@ -1046,6 +1095,11 @@ class RemoteImpl {
       throw new CrackedUpError('duplicate-id', `There is already a node with the id "${id}".`, {
         nodeId: id,
       });
+    }
+    // Refused here as the host would refuse them, so a bad value never becomes half a build there.
+    for (const meta of info.params) {
+      const value = values[meta.name];
+      if (value !== undefined) checkValue(meta, value, { type, id });
     }
     const classInput = source['class'];
     const classes =
@@ -1414,9 +1468,8 @@ class RemoteImpl {
     this.instances = new Map();
     this.previousInstances = saved.instances;
     this.declared = new Set();
-    try {
-      fn(this.$);
-    } catch (error) {
+    /** Puts the mirror back as it was before this build. */
+    const restore = (): void => {
       Object.assign(this, {
         nodes: saved.nodes,
         edges: saved.edges,
@@ -1426,19 +1479,24 @@ class RemoteImpl {
         onces: saved.onces,
         autoNames: saved.autoNames,
         buses: saved.buses,
-        transportState: saved.transport,
         instances: saved.instances,
         previousInstances: null,
-        definitions: [],
       });
       // The type tables are shared with instance remotes, so they are refilled, not replaced.
       this.macros.clear();
       for (const [type, macro] of saved.macros) this.macros.set(type, macro);
       this.types.clear();
       for (const [type, info] of saved.types) this.types.set(type, info);
+      this.dirty = false;
+    };
+    try {
+      fn(this.$);
+    } catch (error) {
+      restore();
+      this.transportState = saved.transport;
+      this.definitions = [];
       this.early = [];
       this.late = [];
-      this.dirty = false;
       this.declared = null;
       throw error;
     }
@@ -1451,7 +1509,10 @@ class RemoteImpl {
     this.previousInstances = null;
     this.declared = null;
     this.dirty = true;
-    this.flush();
+    // The host applies all of it or none, and says which: see `receive`.
+    const build = ++this.builds;
+    this.unconfirmed = { build, restore };
+    this.flush(build);
   }
 
   // --- Transport ----------------------------------------------------------------------------------
@@ -1643,6 +1704,16 @@ class RemoteImpl {
       case 'error':
         this.reportError(message.error);
         return;
+      case 'built': {
+        // An answer to anything but the latest build is stale: a later build replaced it whole.
+        const pending = this.unconfirmed;
+        if (pending?.build !== message.build) return;
+        this.unconfirmed = null;
+        // Refused: the host kept what it had, so this side goes back to what matches it. The tempo
+        // needs no putting back: the host says what it is whenever it changes.
+        if (!message.ok) pending.restore();
+        return;
+      }
       case 'buffer':
         this.bufferInfo.set(message.key, {
           key: message.key,

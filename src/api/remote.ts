@@ -100,7 +100,16 @@ export interface RemoteMacroData {
 
 /** Sandbox to host. */
 export type RemoteMessage =
-  { type: 'commands'; commands: readonly Command[] } | { type: 'define'; macro: RemoteMacroData };
+  | {
+      type: 'commands';
+      commands: readonly Command[];
+      /**
+       * Present when the commands are one `remote.build()`: its number. The host then applies all of
+       * them or none, and answers with a `built` message carrying the same number.
+       */
+      build?: number;
+    }
+  | { type: 'define'; macro: RemoteMacroData };
 
 /** Host to sandbox. */
 export type HostMessage =
@@ -112,6 +121,11 @@ export type HostMessage =
   | { type: 'snapshot'; snapshot: ScopeSnapshot }
   /** Something the remote sent could not be applied. */
   | { type: 'error'; error: RemoteError }
+  /**
+   * The answer to a `remote.build()`. With `ok: false` nothing of it was applied (the reasons were
+   * sent as `error` messages first), and the remote goes back to what it held before that build.
+   */
+  | { type: 'built'; build: number; ok: boolean }
   | { type: 'buffer'; key: string; duration: number; slices: readonly number[] }
   /**
    * A method of a sandbox-defined macro was called (`trigger` and `release` included). `path` is the
@@ -206,8 +220,13 @@ export interface Remote {
 
   /**
    * Runs `fn` and makes the scope match what it built, like `Scope.build`: the host keeps nodes that
-   * are unchanged, and sequences `fn` no longer declares are removed. If `fn` throws, nothing is sent
-   * and the error is rethrown.
+   * are unchanged, and sequences `fn` no longer declares are removed.
+   *
+   * All or nothing, as there. If `fn` throws, nothing is sent and the error is rethrown; that
+   * includes a parameter value of the wrong kind, which is checked here as it is on the host. What
+   * only the host can tell (a bus that does not exist, a node that cannot be built there) it finds
+   * when the build arrives: it then applies none of it, reports why through `on('error')`, and this
+   * remote goes back to what it held before the build, callbacks included.
    */
   build(fn: (__: ScopeApi) => void): void;
 

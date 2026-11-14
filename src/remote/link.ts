@@ -20,6 +20,7 @@ import type {
   SequenceOptions,
   TransportSnapshot,
 } from '../api';
+import type { ScopeImpl } from '../core/scope';
 import { defineMacro } from '../define';
 
 const bufferInfo = (ref: BufferRef): BufferInfo => ({
@@ -52,11 +53,15 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
   let snapshotPending = false;
   let flushQueued = false;
 
+  /** How many errors have been sent. A build is refused if applying it adds to this. */
+  let failures = 0;
+
   const send = (message: HostMessage): void => {
     if (!disposed) options.send(message);
   };
 
   const sendError = (error: Pick<GraphError, 'code' | 'message' | 'nodeId'>): void => {
+    failures++;
     send({
       type: 'error',
       error: {
@@ -311,6 +316,34 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
     scope.dispatch([command]);
   };
 
+  /**
+   * Applies the commands of one `remote.build()`: all of them, or if any is refused none of them,
+   * leaving the scope, its sequences and the tempo as they were. Either way the remote is told.
+   */
+  const build = (number: number, commands: readonly Command[]): void => {
+    const before = { failures, sequences: [...sequences], onces: [...onces] };
+    const refused = new Error('refused');
+    let ok = true;
+    try {
+      (scope as unknown as ScopeImpl).atomically(
+        () => {
+          for (const command of commands) run(command);
+          if (failures !== before.failures) throw refused;
+        },
+        // A node's own code threw once the build was under way: reported, and the build stands.
+        sendError,
+      );
+    } catch (thrown) {
+      if (thrown !== refused) sendError({ code: 'build-failed', message: describeThrown(thrown) });
+      ok = false;
+      sequences.clear();
+      for (const name of before.sequences) sequences.add(name);
+      onces.clear();
+      for (const [name, off] of before.onces) onces.set(name, off);
+    }
+    send({ type: 'built', build: number, ok });
+  };
+
   return {
     receive(message: RemoteMessage): void {
       if (disposed) return;
@@ -329,7 +362,8 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
       }
       applying = true;
       try {
-        for (const command of message.commands) run(command);
+        if (typeof message.build === 'number') build(message.build, message.commands);
+        else for (const command of message.commands) run(command);
       } finally {
         applying = false;
       }

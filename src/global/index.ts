@@ -78,6 +78,7 @@ export {
 } from '../util/random';
 export { beatsToSeconds, secondsToBeats } from '../util/duration';
 export { detectOnsets } from '../util/onsets';
+export { createWaveformCache, waveformPeaks } from '../util/waveform';
 export {
   addSlice,
   moveSlice,

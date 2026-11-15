@@ -395,8 +395,28 @@ export const HELPER_GROUPS: readonly HelperGroup[] = [
     ],
   },
   {
-    title: 'Slicing a sound',
+    title: 'Sounds and slices',
     helpers: [
+      {
+        name: 'waveformPeaks',
+        signature: 'waveformPeaks(sound, { buckets, start?, end?, channel?, rms? })',
+        description:
+          'A sound reduced for drawing: the lowest and highest sample (min and max, and rms if asked) in each of buckets equal parts of the range from start to end, in seconds. The sound is an AudioBuffer, or its channels and sample rate.',
+        setup: 'const sound = { sampleRate: 4, channels: [new Float32Array([0.5, -1, 0.25, 0])] };',
+        example: 'Array.from(waveformPeaks(sound, { buckets: 2 }).max)',
+        result: '[0.5, 0.25]',
+        fn: util.waveformPeaks,
+      },
+      {
+        name: 'createWaveformCache',
+        signature: 'createWaveformCache(sound, { blockSize? }?)',
+        description:
+          'Prepares a long sound for being drawn again and again: its peaks(options) gives what waveformPeaks gives, in a time that does not grow with the length of the sound.',
+        setup: 'const sound = { sampleRate: 4, channels: [new Float32Array([0.5, -1, 0.25, 0])] };',
+        example: 'Array.from(createWaveformCache(sound).peaks({ buckets: 2 }).min)',
+        result: '[-1, 0]',
+        fn: util.createWaveformCache,
+      },
       {
         name: 'sliceGrid',
         signature: 'sliceGrid(seconds, count, offset?)',

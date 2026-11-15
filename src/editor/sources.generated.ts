@@ -978,6 +978,28 @@ export const HELPER_SOURCES: Readonly<Record<string, SourceEntry>> = {
   ],
   "native": []
  },
+ "waveformPeaks": {
+  "parts": [
+   {
+    "file": "src/util/waveform.ts",
+    "line": 155,
+    "endLine": 170,
+    "code": "/**\n * Reduces a sound, or a range of it, to the lowest and highest sample in each of `buckets` equal\n * parts, for drawing a waveform: one bucket per pixel column, a line from `min` to `max`.\n *\n * Every sample in the range is read once, so the time taken grows with the length of the range\n * (times the number of channels for `'mix'`) and not with the number of buckets. For a long sound\n * that is redrawn often, as on zoom and scroll, use `createWaveformCache`, which gives the same\n * numbers faster.\n *\n * A range that reaches outside the sound gives 0 for the buckets outside. When there are more\n * buckets than samples, neighbouring buckets repeat a sample.\n */\nexport function waveformPeaks(source: AudioSource, options: WaveformOptions): Waveform {\n  const audio = audioData(source);\n  return reduce(audio, options, reduceRaw, viewOf(audio, options.channel ?? 'mix'));\n}"
+   }
+  ],
+  "native": []
+ },
+ "createWaveformCache": {
+  "parts": [
+   {
+    "file": "src/util/waveform.ts",
+    "line": 225,
+    "endLine": 287,
+    "code": "/**\n * Prepares a sound for being drawn again and again at different zooms. `peaks()` gives what\n * `waveformPeaks` gives (the same lowest and highest values exactly; RMS to within rounding), in a\n * time that grows with the number of buckets and hardly at all with the length of the sound.\n *\n * It keeps the reduction of every block of `blockSize` frames, then of every two blocks, every\n * four, and so on. A bucket is put together from the largest blocks that fit inside it, and from\n * the samples themselves at its two ends, so at most `2 * blockSize` samples are read per bucket.\n * The levels for a channel (or for the mix) are made the first time it is asked for: one pass over\n * the sound. They take about `24 / blockSize` bytes per frame: 1.3 MB for five minutes at 48 kHz.\n *\n * The cache does not notice the samples changing. Make a new one when the sound does (the buffer\n * store's `ready` event says when).\n */\nexport function createWaveformCache(\n  source: AudioSource,\n  options: { blockSize?: number } = {},\n): WaveformCache {\n  const audio = audioData(source);\n  const blockSize = Math.max(16, Math.floor(options.blockSize ?? 256));\n  const built = new Map<number | 'mix', { view: View; levels: Level[] }>();\n\n  return {\n    peaks(request) {\n      const channel = request.channel ?? 'mix';\n      let entry = built.get(channel);\n      if (!entry) {\n        const view = viewOf(audio, channel);\n        entry = { view, levels: buildLevels(view, blockSize) };\n        built.set(channel, entry);\n      }\n      const levels = entry.levels;\n      const range = (view: View, a: number, b: number, into: Reduction): void => {\n        let p = a;\n        while (p < b) {\n          if (p % blockSize !== 0 || p + blockSize > b) {\n            // Not on a block, or less than a block left: read samples up to the next block or the end.\n            const next = Math.min(b, (Math.floor(p / blockSize) + 1) * blockSize);\n            reduceRaw(view, p, next, into);\n            p = next;\n            continue;\n          }\n          // The largest block that starts here and ends inside the range.\n          let k = 0;\n          while (\n            k + 1 < levels.length &&\n            p % levels[k + 1]!.size === 0 &&\n            p + levels[k + 1]!.size <= b\n          ) {\n            k++;\n          }\n          const level = levels[k]!;\n          const index = p / level.size;\n          if (level.min[index]! < into.min) into.min = level.min[index]!;\n          if (level.max[index]! > into.max) into.max = level.max[index]!;\n          into.squares += level.squares[index]!;\n          p += level.size;\n        }\n      };\n      return reduce(audio, request, range, entry.view);\n    },\n  };\n}"
+   }
+  ],
+  "native": []
+ },
  "sliceGrid": {
   "parts": [
    {

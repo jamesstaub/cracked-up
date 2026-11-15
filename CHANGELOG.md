@@ -183,6 +183,15 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Changed
 
+- **A rebuild keeps a sampler whose buffer changed.** `build()` and `apply()` used to replace a
+  sampler when its `buffer` differed (it was in `removed` and `added`, and what it was playing
+  was cut off). It is now kept and its buffer changed in place: it is in `updated`, voices that
+  are sounding finish on the old sound, and the next trigger plays the new one. Any other
+  creation option that changes (`choke`, `voices`) still replaces it.
+- `waveformPeaks`, `createWaveformCache`, `detectOnsets` and the slice helpers are in `helpers`
+  and `HELPER_GROUPS` (a new group, "Sounds and slices"), so scripts run with the helpers in
+  scope have those names, and a script's own variable of the same name still wins.
+
 - **`scope.build()` is all or nothing.** If the builder throws, or asks for anything that cannot
   be done, the promise rejects and nothing the builder asked for has happened. Before, only a
   throwing builder was undone, and only partly:

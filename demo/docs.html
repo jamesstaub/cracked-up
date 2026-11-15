@@ -716,6 +716,132 @@ __.transport.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
   __('#s').trigger({ slice: ev.value });
 });</code></pre>
 
+        <h3 id="slice-editing">Changing slices</h3>
+        <p>
+          <code>slices</code> can be set at any time, while samplers play. A trigger reads the list
+          when it is called: a voice that has started, or is scheduled, keeps the region it was
+          given, and the next <code>trigger({ slice })</code> uses the new list. A slice number past
+          the last slice wraps round. Helpers make a list or change one boundary of it; each returns
+          a new list, in order, with no boundary twice:
+        </p>
+        <pre><code>const kit = engine.buffers.get('snare');
+kit.slices = sliceGrid(kit.duration, 4);                    // four equal parts
+kit.slices = addSlice(kit.slices, 0.01, kit.duration);      // one more boundary, 10 ms in
+kit.slices = moveSlice(kit.slices, 2, 0.08, kit.duration);  // the third boundary, to 80 ms
+kit.slices = removeSlice(kit.slices, 3);                    // and the fourth is taken out
+
+__().sampler({ id: 's', buffer: 'snare' }).to('main');
+__.transport.sequence('slices', { steps: 4, step: '1/8' }, (ev) =&gt; {
+  __('#s').trigger({ slice: ev.index });
+});</code></pre>
+        <p>
+          <code>moveSlice</code> keeps a boundary between its neighbours, so dragging one never
+          changes the order or the number of slices. <code>sliceAt(kit.slices, 0.05)</code> says
+          which slice holds a time. The store tells you when an entry changes:
+          <code>engine.buffers.on('slices', (ref) =&gt; ...)</code> when its boundaries do, and
+          <code>on('ready', ...)</code> when its audio arrives or is replaced. Slices belong to the
+          store entry and not to a sampler: a description of the graph (<code>describe()</code>)
+          names a sampler's buffer and not its slices, so an app that saves a project saves
+          <code>ref.slices</code> beside it. In a sandbox, a script sets them with
+          <code>remote.buffers.setSlices(key, boundaries)</code>.
+        </p>
+
+        <h3 id="loop-points">Loop points</h3>
+        <p>
+          With <code>loop</code> on, a sampler repeats its region (<code>start</code> to
+          <code>end</code>) until it is released. Give it <code>loopStart</code> and
+          <code>loopEnd</code>, in seconds of the buffer, and only that part repeats: the voice
+          plays from <code>start</code>, and each time it reaches <code>loopEnd</code> it goes back
+          to <code>loopStart</code>. When it is released it stops; it does not play on to
+          <code>end</code>. Here the attack of the snare is heard once and a short piece of its tail
+          is held for as long as the note lasts:
+        </p>
+        <pre><code>__().sampler({ id: 'held', buffer: 'snare', loop: true, loopStart: 0.03, loopEnd: 0.05 })
+  .gain(0.5)
+  .to('main');
+__.transport.every('1/2', () =&gt; __('#held').trigger({ duration: 0.3 }));</code></pre>
+        <p>
+          Loop points are kept inside the region, and inside the slice when a trigger plays one. A
+          <code>loopEnd</code> at or before <code>loopStart</code> (both are 0 unless you set them)
+          means the whole region repeats. With <code>reverse</code>, the voice plays down from
+          <code>end</code> and goes round between the same two points.
+        </p>
+
+        <h3 id="swap-buffer">Another sound for the same sampler</h3>
+        <p>
+          <code>setOption('buffer', ...)</code> points a sampler at another sound and leaves the
+          node, its connections and its parameter values as they are. A voice that is sounding
+          finishes on the sound it started with; the next trigger plays the new one.
+        </p>
+        <pre><code>__().sampler({ id: 'drum', buffer: 'kick' }).to('main');
+__.transport.sequence('drum', { steps: 8, step: '1/8' }, (ev) =&gt; {
+  // The same sampler: a snare on steps 2 and 6, a kick on the rest.
+  __('#drum').setOption('buffer', ev.index % 4 === 2 ? 'snare' : 'kick').trigger();
+});</code></pre>
+        <p>
+          <code>start</code>, <code>end</code> and the loop points keep their values. An
+          <code>end</code> beyond the new sound stops at its end. A <code>start</code> at or beyond
+          its end leaves nothing to play, so the sampler is silent until <code>start</code> is set
+          lower. When code is re-run with <a href="#rebuilding"><code>build</code></a> and only a
+          sampler's <code>buffer</code> has changed, the same thing happens: the sampler is kept and
+          its sound changed in place. Like <code>set</code>, a <code>setOption</code> made in the
+          build after the node has the last word, which is how an app keeps a sound its user picked
+          while the script still names another.
+        </p>
+
+        <h3 id="waveform-editor">For an app: drawing and editing a sound</h3>
+        <p>
+          The library draws nothing, but it has what a waveform editor for a sampler needs. None of
+          this needs a page except the drawing itself:
+        </p>
+        <pre data-static><code>import { createWaveformCache } from 'cracked-up/util';
+
+const node = scope.select('#drum').first();
+let sound = node.buffer;                       // the store entry: key, duration, slices, buffer
+let cache = sound?.buffer ? createWaveformCache(sound.buffer) : null;
+
+// One lowest and one highest value per pixel column of the visible range.
+const { min, max } = cache.peaks({ buckets: canvas.width, start: viewStart, end: viewEnd });
+
+// The real range of start, end, loopStart and loopEnd is the length of the sound.
+const length = sound.duration;
+node.param('start').set(Math.min(dragged, length));
+
+// Slice markers: sound.slices, changed with addSlice, moveSlice and removeSlice,
+// or all at once: sound.slices = sliceByOnsets(sound.buffer, { sensitivity: 0.6 });
+
+// The play cursor, on every animation frame. Empty when nothing sounds.
+const heads = [];
+function frame() {
+  node.playheads(engine.context.currentTime, heads);
+  drawCursors(heads);                          // seconds from the start of the sound
+  requestAnimationFrame(frame);
+}
+
+// What to redraw, and when.
+engine.buffers.on('slices', (ref) =&gt; { if (ref === sound) drawMarkers(); });
+engine.buffers.on('ready', (ref) =&gt; { if (ref === sound) cache = createWaveformCache(ref.buffer); });
+scope.on('option:changed', (change) =&gt; {
+  if (change.node === node &amp;&amp; change.name === 'buffer') sound = node.buffer;
+});
+
+// The user picks another sound: the sampler is kept, its buffer changed.
+node.setOption('buffer', 'rimshot');</code></pre>
+        <p>
+          <code>waveformPeaks</code> reads every sample of the range each time, which is fine for a
+          drum hit. <code>createWaveformCache</code> reads the sound once and then answers in about
+          a millisecond whatever its length (measured: five minutes of stereo, 1000 columns), so use
+          it for anything long that is zoomed and scrolled. <code>playheads</code> works out the
+          positions from what each voice was told (when it started, its region, speed, direction and
+          loop), so it costs almost nothing, and it is exact to within a sample at a steady speed.
+          On a live context, <code>currentTime</code> runs ahead of what is heard by the output
+          latency; ask for <code>currentTime - engine.context.outputLatency</code> for a cursor that
+          matches the ear. Play positions exist only where the audio is: in a
+          <a href="#sandbox">sandbox</a>, <code>setOption</code>, the loop points and
+          <code>remote.buffers.setSlices</code> all work, <code>node.buffer</code> has the key,
+          duration and slices, and <code>playheads</code> is always empty.
+        </p>
+
         <h2 id="slicing">Slicing a drum break</h2>
         <p>
           A <em>break</em> is a few bars of a drummer playing alone. Cut into slices, it becomes a
@@ -766,16 +892,34 @@ __.transport.sequence('break', { steps: 128 }, (ev) =&gt; {
         <h3>Setting the grid</h3>
         <p>
           The slices of a buffer are a list of boundaries in seconds. You can replace the list at
-          any time. This cuts the same break into 64 eighth notes instead. It is not run from here,
-          because it would change the grid for every other example until you reload the demo:
+          any time, and there are four ways to make one. These cut the same break in other ways.
+          They are not run from here, because they would change the grid for every other example
+          until you reload the demo:
         </p>
         <pre data-static><code>const sound = engine.buffers.get('break');
-// 64 slices need 65 boundaries, spread evenly over the 15 seconds.
-sound.slices = fillArray(65, (i) =&gt; (i * 15) / 64);</code></pre>
+
+// Equal parts: 64 slices, which for this break are eighth notes.
+sound.slices = sliceGrid(sound.duration, 64);
+
+// By tempo: one slice per step at the tempo the break was played at.
+sound.slices = sliceByTempo(sound.duration, 128, '1/8');
+
+// By ear: one slice per hit, wherever the hits are.
+sound.slices = sliceByOnsets(sound.buffer, { sensitivity: 0.5, minGap: 0.05 });
+
+// By hand: any list of times.
+sound.slices = [0, 0.47, 0.94, 1.41, 1.88];</code></pre>
         <p>
           An even grid works for this break because it starts exactly on its first hit, ends exactly
-          on a bar line, and was played to a steady beat. For a break that does not, start the list
-          later than 0, or put each boundary where a hit begins.
+          on a bar line, and was played to a steady beat. <code>sliceGrid</code> and
+          <code>sliceByTempo</code> take an offset as their last argument for a break whose first
+          hit comes later than 0. For a break that was not played to a steady beat, or whose tempo
+          you do not know, <code>sliceByOnsets</code> listens for where each hit begins:
+          <code>sensitivity</code>, from 0 to 1, is how small a hit counts, and
+          <code>minGap</code> is the least time between two of them, in seconds. The slices then
+          have different lengths, so a pattern of slice numbers plays hits rather than steps.
+          <code>detectOnsets</code> gives the same times without making slices of them. To change
+          one boundary of a list, see <a href="#slice-editing">Changing slices</a>.
         </p>
         <h3>A new order</h3>
         <p>
@@ -1518,8 +1662,9 @@ __.transport.sequence('toggle', { steps: [0, 1], step: '1/4' }, (ev) =&gt; {
             no id, so an app can tell which nodes are known only by their position.
           </li>
           <li>
-            A node is replaced only if its type or one of its creation options (a sampler's buffer,
-            an oscillator's gate) changed.
+            A node is replaced only if its type or one of its creation options (an oscillator's
+            gate, a sampler's <code>choke</code>) changed. A sampler's <code>buffer</code> is the
+            exception: it is <a href="#swap-buffer">changed in place</a>.
           </li>
           <li>Nodes, connections and sequences the function no longer asks for are removed.</li>
           <li>

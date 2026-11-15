@@ -46,6 +46,9 @@ with it: old Cracked code will not run unchanged.
   connections for debugging, with a level meter on every output and the details of any node.
 - **Composing helpers** (`cracked-up/util`): Euclidean rhythms, pattern transforms, sieves, scales
   and chords, seeded randomness, conversions.
+- **What a waveform editor needs** (the library draws nothing): min and max data for drawing a
+  sound at any zoom, onset detection, slice boundaries as editable data, loop points, the play
+  position of a sampler's voices, and a sampler's sound changed without rebuilding it.
 - **Keys and the mouse** (`createInteraction` in `cracked-up/util`): `keyPress`, `keyRelease` and
   `mouseMovement` for playing a script from the computer keyboard and pointer.
 
@@ -84,7 +87,7 @@ That opens:
 | Import | What it is |
 |---|---|
 | `cracked-up` | `createEngine`, `defineNode`, `defineMacro`, `describeNodeTypes`, and all the types |
-| `cracked-up/util` | Pure helpers: patterns, scales, randomness, conversions, `encodeWav`; and `helpers`, every helper by name with its documentation, for putting in scope of scripts |
+| `cracked-up/util` | Pure helpers: patterns, scales, randomness, conversions, `encodeWav`, waveform data, onsets and slices; and `helpers`, every helper by name with its documentation, for putting in scope of scripts |
 | `cracked-up/remote` | `createRemote` and `linkRemote`, for sandboxed scripts |
 | `cracked-up/midi` | `requestMidi` and `createMidi` |
 | `cracked-up/inspect` | `createInspector`, `openInspector` and `toggleInspector`: the graph view for debugging |

@@ -8,11 +8,14 @@
  */
 export { createEditor } from './editor';
 export type {
+  CursorInfo,
   Editor,
   EditorOptions,
   ErrorPlace,
+  RevealOptions,
   SetValueOptions,
 } from './editor';
+export type { DiagnosticSeverity, EditorDiagnostic, PlacedDiagnostic } from './diagnostics';
 export { createSourcePanel } from './panel';
 export type { DefinitionTarget, SourcePanel, SourcePanelOptions } from './panel';
 export {
@@ -54,3 +57,4 @@ export { resolveCatalog } from './catalog';
 export type { ResolvedCatalog } from './catalog';
 export { completionSource, completionsAt } from './completion';
 export { catalogField, definitionAt, hoverAt, setCatalogEffect, signatureAt } from './intel';
+export { diagnosticExtensions, diagnosticsAt, diagnosticsOf, setDiagnostics } from './diagnostics';

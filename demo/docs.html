@@ -1890,9 +1890,9 @@ remote.build((__) =&gt; {
         <p>
           <code>cracked-up/editor</code> is a code editor for cracked-up scripts, for an app to
           embed. It is the editor in the <a href="./index.html">live demo</a>. It completes node
-          types, parameters, selectors, buffer and bus names and helpers as you type, shows what
-          each is when you hover, and shows the source of a node type or helper when you Cmd-click
-          it (Ctrl-click outside macOS), or press F12 on it.
+          types, parameters, selectors, buffer and bus names, helpers and the arguments of functions
+          an app adds, shows what each is when you hover, and shows the source of a node type or
+          helper when you Cmd-click it (Ctrl-click outside macOS), or press F12 on it.
         </p>
         <p>
           It is built on <a href="https://codemirror.net/">CodeMirror 6</a>, which is not bundled
@@ -1946,10 +1946,12 @@ async function run() {
         <pre data-static><code>editor.setCatalog({
   types: engine.registry.list(),
   buffers: [{ key: 'kick' }, { key: 'break', slices: 128 }],
-  ids: ['lead', 'pad'],          // nodes other scripts made
+  // nodes other scripts made; with a type, the editor knows an id's parameters
+  ids: ['lead', { name: 'pad', type: 'polysynth', description: 'The pad on track 2.' }],
   classes: ['drums'],
-  buses: ['reverb-send'],
-  sequences: ['intro'],
+  // a name, or a name with what it is for, shown in completion and on hover
+  buses: ['drums', { name: 'reverb-send', description: 'The shared reverb. Send to it, quietly.' }],
+  sequences: ['intro', { name: 'fill', description: 'One bar, every eighth bar.' }],
   globals: [
     { name: 'engine', description: 'The engine.' },
     // kind says what a name is, so its members are completed: midi.follow(), midi.output().note()
@@ -2012,6 +2014,135 @@ editor.setCatalog(catalogFromRemoteState(link.state()));</code></pre>
           same data and build its catalog from that.
         </p>
 
+        <p>
+          <code>catalogFromRemoteState</code> also lists the ids (with their node types), classes
+          and buses of the scope's snapshot when the state has one. With an engine in the page,
+          <code>catalogFromScope(scope)</code> gives the same names and the scope's sequences, to
+          merge into a catalog after a script has run:
+          <code>catalogFromEngine(engine, catalogFromScope(scope))</code>.
+        </p>
+
+        <h3>Functions of your own</h3>
+        <p>
+          An app often puts functions of its own in scope of scripts, beside the library's. List one
+          in <code>globals</code> and its name is completed with its description. Describe it in
+          <code>functions</code> and the editor helps inside its brackets as well: it completes each
+          argument by what the argument is, shows the signature with the argument being typed, and
+          completes the members of what the function returns. A description is plain data, like the
+          rest of the catalog, so it can be sent to a page that has no engine.
+        </p>
+        <pre
+          data-static
+        ><code>// In scripts:  const cutoff = dial('#filter', 'frequency', { label: 'Cutoff' });
+//              const density = dial('density', { min: 0, max: 1 });
+const dial = {
+  name: 'dial',
+  description: 'Shows a dial for a parameter, or for a value of its own.',
+  signatures: [
+    {
+      args: [
+        { name: 'target', kind: 'selector', description: 'Which nodes: a selector, a chain or a bus.' },
+        { name: 'param', kind: 'param', of: 'target', description: 'The parameter to turn.' },
+        {
+          name: 'options',
+          kind: 'options',
+          optional: true,
+          options: [
+            { name: 'label', type: 'string', description: 'What it is called on screen.' },
+            { name: 'mode', values: ['midi', 'db'], description: 'How the value reads.' },
+            { name: 'send', kind: 'bus', description: 'A bus it also sets the level of.' },
+          ],
+        },
+      ],
+      returns: {
+        name: 'dial',
+        members: [
+          { name: 'value', description: 'Where the dial is now.' },
+          { name: 'set', signature: 'set(value)', description: 'Moves the dial.' },
+        ],
+      },
+    },
+    {
+      description: 'A dial that is not tied to a node.',
+      args: [
+        { name: 'name', kind: 'name' },
+        {
+          name: 'range',
+          kind: 'options',
+          options: [{ name: 'min', type: 'number' }, { name: 'max', type: 'number' }],
+        },
+      ],
+    },
+  ],
+};
+
+editor.setCatalog({ ...catalogFromEngine(engine), functions: [dial] });</code></pre>
+        <p>What an argument's <code>kind</code> gives:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Kind</th>
+                <th>What the editor offers</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>'selector'</code></td>
+                <td>
+                  In a string, what it offers inside <code>__('…')</code>: ids, classes and node
+                  types. Anything that is not a string, such as a variable holding a chain or
+                  <code>__.bus('drums')</code>, is left alone.
+                </td>
+              </tr>
+              <tr>
+                <td><code>'param'</code></td>
+                <td>
+                  Parameter names. With <code>of</code> naming another argument, the parameters of
+                  the nodes that argument refers to: what a selector matches (an id or class the
+                  script gives, or an id the catalog gives a <code>type</code>), the nodes a chain
+                  in a variable made, what a selection holds, or <code>gain</code> for a bus. When
+                  that cannot be told, the parameters of every type.
+                </td>
+              </tr>
+              <tr>
+                <td><code>'sequence'</code>, <code>'bus'</code>, <code>'buffer'</code></td>
+                <td>The names of those, from the catalog and the script.</td>
+              </tr>
+              <tr>
+                <td><code>'options'</code></td>
+                <td>
+                  The keys listed in <code>options</code>, each with its description. After a key,
+                  its <code>values</code>, or what its <code>kind</code> says
+                  (<code>'boolean'</code>, <code>'bus'</code>, <code>'param'</code> and so on).
+                </td>
+              </tr>
+              <tr>
+                <td><code>'list'</code></td>
+                <td>
+                  In each string of an array, what <code>items</code> says:
+                  <code>{ kind: 'list', items: { kind: 'param', of: 'target' } }</code>.
+                </td>
+              </tr>
+              <tr>
+                <td><code>'name'</code>, <code>'value'</code></td>
+                <td>Nothing: a string of the script's own, and anything at all.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          With several signatures, the one used is the first that the arguments written so far fit:
+          a string cannot be an <code>'options'</code> or a <code>'list'</code>, and an object or an
+          array can be nothing else. So <code>dial('density', {</code> is the second signature above
+          and <code>dial('#filter', '</code> the first. <code>returns</code> lists the members of
+          the returned value, or names one of the library's own objects with
+          <code>kind</code> (<code>'chain'</code>, <code>'selection'</code>,
+          <code>'sequence'</code>, <code>'param'</code>…). Members are completed after the call
+          itself and after a <code>const</code> or <code>let</code> declared with it. A function of
+          the same name that the script declares takes over, and the editor then says nothing.
+        </p>
+
         <h3>Text the host controls</h3>
         <div class="table-wrap">
           <table>
@@ -2063,6 +2194,29 @@ editor.setCatalog(catalogFromRemoteState(link.state()));</code></pre>
                 </td>
               </tr>
               <tr>
+                <td><code>setDiagnostics(list)</code>, <code>clearDiagnostics()</code></td>
+                <td>Marks problems in the text. See below.</td>
+              </tr>
+              <tr>
+                <td><code>reveal(place, options?)</code></td>
+                <td>
+                  Scrolls <code>{ line }</code>, <code>{ line, column }</code> or
+                  <code>{ pos }</code> into view and puts the cursor there. Options:
+                  <code>select</code> (<code>'cursor'</code>, <code>'line'</code> to select the
+                  line, <code>'none'</code> to only scroll), <code>flash</code> (marks the line for
+                  a moment), <code>focus</code>, and <code>align</code> (<code>'center'</code> by
+                  default). Returns false for a line the text has not got.
+                </td>
+              </tr>
+              <tr>
+                <td><code>editor.cursor</code>, <code>onCursor(cursor)</code></td>
+                <td>
+                  Where the cursor is: <code>{ pos, line, column, from, to, empty }</code>, lines
+                  and columns from 1. <code>onCursor</code> is called when the user moves it or
+                  changes the selection, and not for <code>setValue</code> or <code>reveal</code>.
+                </td>
+              </tr>
+              <tr>
                 <td><code>focus()</code>, <code>destroy()</code></td>
                 <td>As named.</td>
               </tr>
@@ -2075,6 +2229,38 @@ editor.setCatalog(catalogFromRemoteState(link.state()));</code></pre>
           and <code>extensions</code> (any CodeMirror extensions). <code>editor.view</code> is the
           CodeMirror view, for anything not covered here. Tab indents; press Escape and then Tab to
           move focus out of the editor with the keyboard.
+        </p>
+
+        <h3>Problems the host finds</h3>
+        <p>
+          <code>showError</code> is for the one error that stopped a script. For everything else an
+          app notices, such as a selector that matches no node or a name that is not a sequence,
+          <code>setDiagnostics</code> marks each place: a wavy underline, the line number in the
+          colour of the worst problem on the line, and the message when the pointer rests on it. F8
+          and Shift-F8 move the cursor to the next and the previous problem and show its message;
+          Escape hides it.
+        </p>
+        <pre data-static><code>editor.setDiagnostics([
+  // by line, by line and column (the word there), or by position
+  { line: 4, severity: 'warning', message: 'No node has the id "fliter".', source: 'controls' },
+  { line: 9, column: 7, severity: 'error', message: 'There is no sequence called "stepz".' },
+  { from: 120, to: 131, severity: 'info', message: 'This control is not used.' },
+]);
+editor.clearDiagnostics();
+
+// Linking a list of your own to the code, both ways:
+row.onclick = () =&gt; editor.reveal({ line: problem.line }, { flash: true, focus: true });
+createEditor({ parent, onCursor: (cursor) =&gt; highlightControlDeclaredOn(cursor.line) });</code></pre>
+        <p>
+          Each call replaces the list before. In between, a problem follows its text as the user
+          types, and one whose text is deleted goes with it; a problem that names a line the text
+          has not got is left out. <code>editor.diagnostics</code> is the list as it stands, each
+          with its <code>from</code>, <code>to</code>, <code>line</code> and
+          <code>column</code> now. Each editor has its own list. The severities are
+          <code>'error'</code>, <code>'warning'</code> and <code>'info'</code>, coloured by
+          <code>--cu-error-text</code>, <code>--cu-warning-text</code> and
+          <code>--cu-info-text</code>. This is built from the CodeMirror packages listed above;
+          <code>@codemirror/lint</code> is not needed.
         </p>
 
         <h3>Go to definition and the source panel</h3>
@@ -2142,18 +2328,19 @@ panel.show({ kind: 'type', name: 'tapedelay' });   // from a menu of your own, s
           The names are <code>--cu-bg</code>, <code>--cu-text</code>, <code>--cu-muted</code>,
           <code>--cu-border</code>, <code>--cu-accent</code>, <code>--cu-panel-bg</code>,
           <code>--cu-hover-bg</code>, <code>--cu-selection</code>, <code>--cu-active-line</code>,
-          <code>--cu-error-bg</code>, <code>--cu-error-text</code>, <code>--cu-shadow</code>,
-          <code>--cu-code-comment</code>, <code>--cu-code-string</code>,
-          <code>--cu-code-number</code>, <code>--cu-code-keyword</code>,
-          <code>--cu-code-dunder</code>, <code>--cu-code-property</code>,
-          <code>--cu-font-mono</code>, <code>--cu-font-ui</code>, <code>--cu-font-size</code> and
-          <code>--cu-line-height</code>. They are also exported as <code>THEME_PROPERTIES</code>.
+          <code>--cu-error-bg</code>, <code>--cu-error-text</code>, <code>--cu-warning-text</code>,
+          <code>--cu-info-text</code>, <code>--cu-shadow</code>, <code>--cu-code-comment</code>,
+          <code>--cu-code-string</code>, <code>--cu-code-number</code>,
+          <code>--cu-code-keyword</code>, <code>--cu-code-dunder</code>,
+          <code>--cu-code-property</code>, <code>--cu-font-mono</code>, <code>--cu-font-ui</code>,
+          <code>--cu-font-size</code> and <code>--cu-line-height</code>. They are also exported as
+          <code>THEME_PROPERTIES</code>.
         </p>
         <p>
-          Sizes, measured on the built files: the editor's own code is 112 kB unminified (29 kB
+          Sizes, measured on the built files: the editor's own code is 160 kB unminified (40 kB
           gzipped), and the source text is a separate 121 kB file (about 27 kB gzipped) loaded on
           first use. CodeMirror is the larger part: in this site's build the editor with CodeMirror
-          comes to about 525 kB minified, 176 kB gzipped. This page does not load it; the code
+          comes to about 529 kB minified, 177 kB gzipped. This page does not load it; the code
           examples here are coloured by <code>highlightBlocks</code>, a small highlighter with no
           dependency that the same entry point exports.
         </p>

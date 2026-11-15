@@ -87,6 +87,31 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
   1000 buckets, about 1 ms against 23 to 57 ms, after one pass of 30 to 56 ms to build it. Neither
   draws anything or needs a page.
 
+- **The editor helps inside a host's own functions.** A catalog's new `functions` list describes a
+  function an app puts in scope of scripts: its signatures, and for each argument a kind:
+  `'selector'`, `'param'` (of the nodes another argument refers to), `'sequence'`, `'bus'`,
+  `'buffer'`, `'name'`, `'options'` (keys, with values or a kind for each), `'list'` or `'value'`.
+  The editor completes each argument accordingly, picks the signature that fits the arguments
+  written (a string, an object or an array), shows it with the argument being typed, documents the
+  function and its option keys on hover, and completes the members of what it returns, after the
+  call or a variable declared with it. A parameter argument follows its target: what a selector
+  matches, the nodes a chain in a variable made, a selection, or a bus (`gain`).
+- **Catalog entries can say what they are.** `buses` and `sequences` take `{ name, description }`
+  as well as a name, and `ids` take `{ name, type, description }`. Descriptions show in completion
+  and on hover; an id's `type` gives the editor its parameters wherever a selector names it. Plain
+  strings are still valid. `catalogFromScope(scope)` and `catalogFromSnapshot(snapshot)` read these
+  names from a scope, and `catalogFromRemoteState` now lists them when the state has a snapshot.
+- **Problems from the host in the editor.** `editor.setDiagnostics([{ line | from, severity,
+  message, source? }])` underlines each place, colours its line number, and shows the message on
+  hover and with F8 / Shift-F8. Problems follow their text through edits until the host replaces
+  them with the next list or `clearDiagnostics()`. New theme properties `--cu-warning-text` and
+  `--cu-info-text`. No new dependency.
+- **Going to a place and knowing where the cursor is.** `editor.reveal({ line, column? } | { pos },
+  { select, flash, focus, align })`, `editor.cursor`, and the `onCursor` option, which reports the
+  user's cursor moves and not the host's.
+- Hover in the editor now describes a parameter name in a string (`ramp('frequency', …)`), an id or
+  node type inside a selector, and a chain's `.nodes` and a selection's `.filter('type')` narrow
+  completion to the right node types.
 - **Inserts on a bus.** Calling a node type on a bus puts that node inside the bus, in series
   between its mix and its output: `__.bus('drums').compressor({ id: 'glue', threshold: -18 })`.
   Everything sent to the bus passes through it, nothing goes round it, and the bus stays routed

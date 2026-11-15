@@ -9,15 +9,27 @@ import { StateEffect, StateField } from '@codemirror/state';
 import type { EditorState, Extension } from '@codemirror/state';
 import { hoverTooltip, showTooltip } from '@codemirror/view';
 import type { Tooltip } from '@codemirror/view';
-import { callAround, entityAt, makesNode, sceneOf, typeInfo } from './analysis';
+import {
+  callAround,
+  entityAt,
+  hostCall,
+  hostMember,
+  makesNode,
+  sceneOf,
+  typeInfo,
+} from './analysis';
 import type { CallSite, Entity, Scene } from './analysis';
 import { DUNDER_CALL, apiMember } from './api-docs';
 import { resolveCatalog } from './catalog';
 import type { ResolvedCatalog } from './catalog';
-import { keyOptions } from './completion';
+import { keyOptions, stringItems } from './completion';
 import {
   bufferDoc,
+  callDoc,
+  functionDoc,
   globalDoc,
+  hostMemberDoc,
+  idDoc,
   helperDoc,
   insertDoc,
   memberDoc,
@@ -57,7 +69,7 @@ function setterDocFor(scene: Scene, name: string, types: readonly string[] | nul
   );
 }
 
-function docFor(scene: Scene, entity: Entity): Doc | null {
+function docFor(scene: Scene, entity: Entity, pos: number): Doc | null {
   switch (entity.kind) {
     case 'type':
       return entity.insert ? insertDoc(entity.info) : typeDoc(entity.info);
@@ -83,14 +95,41 @@ function docFor(scene: Scene, entity: Entity): Doc | null {
       return (
         keyOptions(scene, entity.call).find((option) => option.name === entity.name)?.doc ?? null
       );
+    case 'function': {
+      const info = scene.catalog.functions.get(entity.name);
+      return info ? functionDoc(info) : null;
+    }
+    case 'hostMember':
+      return hostMemberDoc(entity.member, entity.owner);
     case 'string': {
       const isBuffer = entity.key === 'buffer' || entity.key === 'into';
       const buffer = isBuffer
         ? scene.catalog.buffers.find((entry) => entry.key === entity.value)
         : undefined;
-      return buffer ? bufferDoc(buffer) : null;
+      if (buffer) return bufferDoc(buffer);
+      // Whatever would be offered inside this string says what its value is.
+      const items = stringItems(scene, entity.from + 1, entity);
+      if (items === 'selector') return selectorDoc(scene, entity.value, pos - entity.from - 1);
+      return items?.find((item) => item.text === entity.value)?.doc ?? null;
     }
   }
+}
+
+/** The id or node type named at an offset in a selector. */
+function selectorDoc(scene: Scene, selector: string, offset: number): Doc | null {
+  for (const match of selector.matchAll(/[#.]?[\w-]+/g)) {
+    if (offset < match.index || offset > match.index + match[0].length) continue;
+    const token = match[0];
+    if (token.startsWith('#')) {
+      const id = token.slice(1);
+      const entry = scene.catalog.idInfo.get(id);
+      return idDoc(id, scene.doc.ids.get(id)?.type ?? entry?.type, entry);
+    }
+    if (token.startsWith('.')) return null;
+    const info = typeInfo(scene, token);
+    return info ? typeDoc(info) : null;
+  }
+  return null;
 }
 
 /** The documentation for whatever is at a position, with the range it covers. */
@@ -102,7 +141,7 @@ export function hoverAt(
   const scene = sceneOf(state, catalog);
   const entity = entityAt(scene, pos);
   if (!entity || pos < entity.from || pos > entity.to) return null;
-  const doc = docFor(scene, entity);
+  const doc = docFor(scene, entity, pos);
   return doc ? { from: entity.from, to: entity.to, doc } : null;
 }
 
@@ -138,6 +177,8 @@ function signatureDoc(scene: Scene, call: CallSite): Doc | null {
     if (scene.doc.definitions.has(name)) return null;
     const helper = scene.catalog.helpers.get(name);
     if (helper) return withActive(helperDoc(helper, name), index);
+    const host = hostCall(scene, call);
+    if (host) return callDoc(host.info, host.signature, index);
     const global = scene.catalog.globals.get(name);
     return global?.signature ? withActive(globalDoc(global), index) : null;
   }
@@ -149,6 +190,12 @@ function signatureDoc(scene: Scene, call: CallSite): Doc | null {
         : typeDoc(info);
   }
   if (receiver.kind === 'unknown') return null;
+  if (receiver.kind === 'host') {
+    const own = hostMember(receiver, name);
+    return own?.signature && receiver.host
+      ? withActive(hostMemberDoc(own, receiver.host), index)
+      : null;
+  }
   const member = apiMember(receiver.kind, name);
   if (member?.signature) {
     return withActive(memberDoc(member, receiver.kind === 'dunder' ? '__' : receiver.kind), index);

@@ -11,6 +11,8 @@ import type {
   NodeDefinition,
   NodeTypeInfo,
   RemoteState,
+  Scope,
+  ScopeSnapshot,
 } from '../api';
 import { describeNodeTypes } from '../describe';
 import { HELPER_GROUPS } from '../util/helper-docs';
@@ -54,6 +56,113 @@ export interface GlobalInfo {
   readonly kind?: ReceiverKind;
 }
 
+/** A bus or a sequence the host knows of, with what it is for. */
+export interface NamedEntry {
+  readonly name: string;
+  readonly description?: string;
+}
+
+/** A node the host knows of by its id. */
+export interface IdEntry {
+  readonly name: string;
+  /** Its node type, so that its parameters can be completed where the id is named. */
+  readonly type?: string;
+  readonly description?: string;
+}
+
+// --- Functions of the host's own ---------------------------------------------------------------------
+
+/**
+ * What an argument is, which decides what the editor offers inside it:
+ *
+ * - `'selector'`: a selector string, completed like the string in `__('…')`. Anything that is not a
+ *   string (a variable holding a chain, a bus) is left alone.
+ * - `'param'`: a parameter name of the nodes that another argument (`of`) refers to.
+ * - `'sequence'`, `'bus'`, `'buffer'`: the name of one.
+ * - `'name'`: a string of the script's own choosing. Nothing is offered.
+ * - `'options'`: an object literal with the keys listed in `options`.
+ * - `'list'`: an array literal, each item being what `items` says.
+ * - `'value'`: anything. Nothing is offered.
+ */
+export type ArgumentKind =
+  'selector' | 'param' | 'sequence' | 'bus' | 'buffer' | 'name' | 'options' | 'list' | 'value';
+
+/** What a value is: an argument, an item of a list, or the value of an option. */
+export interface ValueInfo {
+  readonly kind: ArgumentKind;
+  /**
+   * For `'param'`: the name of the argument of the same call that says which nodes, a `'selector'`
+   * or `'bus'` argument. Left out: the parameters of every node type are offered.
+   */
+  readonly of?: string;
+  /** For `'options'`: the keys of the object. */
+  readonly options?: readonly OptionKeyInfo[];
+  /** For `'list'`: what each item is. */
+  readonly items?: ValueInfo;
+}
+
+/** One key of an options object a host function takes. */
+export interface OptionKeyInfo {
+  readonly name: string;
+  readonly description?: string;
+  /** The value's type as shown: `'number'`, `"'midi' | 'db'"`. Left out: made from `values`. */
+  readonly type?: string;
+  /** The default as shown. */
+  readonly default?: string;
+  /** The values it can take, offered after the colon. A string is offered in quotes. */
+  readonly values?: readonly (string | number | boolean)[];
+  /** Instead of `values`: what the value is, completed as an argument of that kind would be. */
+  readonly kind?: 'selector' | 'param' | 'sequence' | 'bus' | 'buffer' | 'boolean';
+  /** For `kind: 'param'`: the argument that says which nodes. */
+  readonly of?: string;
+}
+
+export interface ArgumentInfo extends ValueInfo {
+  readonly name: string;
+  readonly description?: string;
+  readonly optional?: boolean;
+}
+
+/** A member of what a host function returns: `value`, `set(value)`. */
+export interface MemberInfo {
+  readonly name: string;
+  /** How to call it. A property has none. */
+  readonly signature?: string;
+  readonly description: string;
+  /** One of the library's own objects, when the member gives one back. */
+  readonly returns?: ReceiverKind;
+}
+
+/** What a host function gives back. */
+export interface ReturnInfo {
+  /** A word for it, shown with its members: `'control'`. */
+  readonly name?: string;
+  readonly description?: string;
+  /** When it is one of the library's own objects: `'chain'`, `'selection'`, `'sequence'`... */
+  readonly kind?: ReceiverKind;
+  /** Otherwise, its members, completed after a dot. */
+  readonly members?: readonly MemberInfo[];
+}
+
+/** One way of calling a host function. */
+export interface FunctionSignature {
+  readonly args: readonly ArgumentInfo[];
+  /** What this way of calling it does, when that differs from the function's description. */
+  readonly description?: string;
+  readonly returns?: ReturnInfo;
+}
+
+/**
+ * A function the host puts in scope of scripts, described well enough for the editor to help
+ * inside its brackets. With several signatures, the one that fits the arguments written so far is
+ * used: the first whose argument kinds agree with a string, an object or an array where one is.
+ */
+export interface FunctionInfo {
+  readonly name: string;
+  readonly description: string;
+  readonly signatures: readonly FunctionSignature[];
+}
+
 export interface EditorCatalog {
   /** Node types, as from `engine.registry.list()` or `RemoteState.types`. */
   readonly types?: readonly NodeTypeInfo[];
@@ -64,15 +173,20 @@ export interface EditorCatalog {
    * Names that exist outside the document being edited, such as nodes made by another track's
    * script. The editor adds what it finds in its own document to these.
    */
-  readonly ids?: readonly string[];
+  readonly ids?: readonly (IdEntry | string)[];
   readonly classes?: readonly string[];
   /** Bus names. `main` is always offered. */
-  readonly buses?: readonly string[];
-  readonly sequences?: readonly string[];
+  readonly buses?: readonly (NamedEntry | string)[];
+  readonly sequences?: readonly (NamedEntry | string)[];
   /** Names of the MIDI inputs and outputs connected, offered where a port is named. */
   readonly midiInputs?: readonly string[];
   readonly midiOutputs?: readonly string[];
   readonly globals?: readonly GlobalInfo[];
+  /**
+   * Functions of the host's own that scripts call by name, with their arguments described. A name
+   * listed here and in `globals` is taken from here.
+   */
+  readonly functions?: readonly FunctionInfo[];
 }
 
 /** The library's own helpers, as catalog data. */
@@ -127,14 +241,52 @@ export function catalogFromNodes(
   return { types: describeNodeTypes(definitions), ...extra };
 }
 
-/** A catalog from what a host sends a sandbox (`link.state()`), for pages that have no engine. */
+/**
+ * The names in a scope's snapshot, as catalog data: each node's id with its type, the classes, and
+ * the buses. For merging into a catalog: `catalogFromEngine(engine, catalogFromSnapshot(snapshot))`.
+ */
+export function catalogFromSnapshot(
+  snapshot: ScopeSnapshot,
+): Required<Pick<EditorCatalog, 'ids' | 'classes' | 'buses'>> {
+  const classes = new Set<string>();
+  for (const node of snapshot.graph.nodes) for (const name of node.classes ?? []) classes.add(name);
+  return {
+    ids: snapshot.graph.nodes.map((node) => ({ name: node.id, type: node.type })),
+    classes: [...classes],
+    buses: snapshot.buses.map((bus) => bus.name).filter((name) => name !== 'main'),
+  };
+}
+
+/**
+ * The names a scope has right now: what `catalogFromSnapshot` reads, and its named sequences. Call
+ * it again after the script has run.
+ *
+ *   catalogFromEngine(engine, catalogFromScope(scope))
+ */
+export function catalogFromScope(
+  scope: Scope,
+): Required<Pick<EditorCatalog, 'ids' | 'classes' | 'buses' | 'sequences'>> {
+  return {
+    ...catalogFromSnapshot(scope.snapshot()),
+    sequences: scope.transport.sequences.flatMap((sequence) => sequence.name ?? []),
+  };
+}
+
+/**
+ * A catalog from what a host sends a sandbox (`link.state()`), for pages that have no engine. When
+ * the state has the scope's snapshot, the ids (with their types), classes and buses in it are listed.
+ */
 export function catalogFromRemoteState(
-  state: Pick<RemoteState, 'types'> & { readonly buffers?: readonly BufferInfo[] },
+  state: Pick<RemoteState, 'types'> & {
+    readonly buffers?: readonly BufferInfo[];
+    readonly snapshot?: ScopeSnapshot;
+  },
   extra: EditorCatalog = {},
 ): EditorCatalog {
   return {
     types: state.types,
     buffers: (state.buffers ?? []).map(bufferEntry),
+    ...(state.snapshot ? catalogFromSnapshot(state.snapshot) : {}),
     ...extra,
   };
 }
@@ -185,14 +337,39 @@ export interface ResolvedCatalog {
   readonly helpers: ReadonlyMap<string, HelperInfo>;
   readonly helperList: readonly HelperInfo[];
   readonly buffers: readonly BufferEntry[];
+  /** The names, in the order given. What else is known of each is in the map beside it. */
   readonly ids: readonly string[];
+  readonly idInfo: ReadonlyMap<string, IdEntry>;
   readonly classes: readonly string[];
   readonly buses: readonly string[];
+  readonly busInfo: ReadonlyMap<string, NamedEntry>;
   readonly sequences: readonly string[];
+  readonly sequenceInfo: ReadonlyMap<string, NamedEntry>;
   readonly midiInputs: readonly string[];
   readonly midiOutputs: readonly string[];
   readonly globals: ReadonlyMap<string, GlobalInfo>;
+  /** The host's functions that are well formed: a name and at least one signature. */
+  readonly functions: ReadonlyMap<string, FunctionInfo>;
 }
+
+/** Entries that may be bare names, by name. One that is neither a string nor named is left out. */
+function byName<T extends { readonly name: string }>(
+  entries: readonly (T | string)[] | undefined,
+): Map<string, T | { readonly name: string }> {
+  const found = new Map<string, T | { readonly name: string }>();
+  for (const entry of entries ?? []) {
+    if (typeof entry === 'string') found.set(entry, { name: entry });
+    else if (entry && typeof entry.name === 'string') found.set(entry.name, entry);
+  }
+  return found;
+}
+
+const isFunctionInfo = (info: FunctionInfo): boolean =>
+  !!info &&
+  typeof info.name === 'string' &&
+  Array.isArray(info.signatures) &&
+  info.signatures.length > 0 &&
+  info.signatures.every((signature) => signature && Array.isArray(signature.args));
 
 let defaultHelpers: HelperInfo[] | null = null;
 const resolved = new WeakMap<EditorCatalog, ResolvedCatalog>();
@@ -206,6 +383,9 @@ export function resolveCatalog(catalog: EditorCatalog): ResolvedCatalog {
     helpers.set(helper.name, helper);
     if (helper.alias) helpers.set(helper.alias, helper);
   }
+  const idInfo = byName<IdEntry>(catalog.ids);
+  const busInfo = byName<NamedEntry>(catalog.buses);
+  const sequenceInfo = byName<NamedEntry>(catalog.sequences);
   const result: ResolvedCatalog = {
     source: catalog,
     types: new Map((catalog.types ?? []).map((info) => [info.type, info])),
@@ -214,13 +394,19 @@ export function resolveCatalog(catalog: EditorCatalog): ResolvedCatalog {
     buffers: (catalog.buffers ?? []).map((entry) =>
       typeof entry === 'string' ? { key: entry } : entry,
     ),
-    ids: catalog.ids ?? [],
+    ids: [...idInfo.keys()],
+    idInfo,
     classes: catalog.classes ?? [],
-    buses: catalog.buses ?? [],
-    sequences: catalog.sequences ?? [],
+    buses: [...busInfo.keys()],
+    busInfo,
+    sequences: [...sequenceInfo.keys()],
+    sequenceInfo,
     midiInputs: catalog.midiInputs ?? [],
     midiOutputs: catalog.midiOutputs ?? [],
     globals: new Map((catalog.globals ?? []).map((info) => [info.name, info])),
+    functions: new Map(
+      (catalog.functions ?? []).filter(isFunctionInfo).map((info) => [info.name, info]),
+    ),
   };
   resolved.set(catalog, result);
   return result;

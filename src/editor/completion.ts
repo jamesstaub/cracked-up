@@ -18,15 +18,19 @@ import {
   allTypes,
   canInsert,
   contextAt,
+  hostCall,
   makesNode,
+  referredArgument,
   sceneOf,
   selectorTypes,
   stringValue,
+  targetOf,
   typeInfo,
 } from './analysis';
 import type { CallSite, CursorContext, Receiver, Scene } from './analysis';
 import {
   API,
+  apiMember,
   AT_OPTIONS,
   COMMON_INIT,
   DEFINITION_OPTIONS,
@@ -48,10 +52,15 @@ import {
   TRIGGER_COMMON,
 } from './api-docs';
 import type { ApiOption, ReceiverKind } from './api-docs';
-import type { ResolvedCatalog } from './catalog';
+import type { ArgumentKind, OptionKeyInfo, ResolvedCatalog, ValueInfo } from './catalog';
 import {
   bufferDoc,
+  functionDoc,
   globalDoc,
+  hostMemberDoc,
+  hostOptionInfo,
+  idDoc,
+  namedDoc,
   insertDoc,
   helperDoc,
   memberDoc,
@@ -61,6 +70,7 @@ import {
   paramDoc,
   renderDoc,
   setterDoc,
+  signatureText,
   typeDoc,
   typeKind,
 } from './docs';
@@ -182,6 +192,22 @@ function memberCompletions(scene: Scene, receiver: Receiver): Completion[] | nul
   switch (receiver.kind) {
     case 'unknown':
       return null;
+    case 'host': {
+      const owner = receiver.host;
+      if (!owner) return null;
+      return (owner.members ?? [])
+        .filter((member) => member && typeof member.name === 'string')
+        .map((member) => ({
+          label: member.name,
+          type: member.signature ? 'method' : 'property',
+          detail: member.signature ? member.signature.slice(member.name.length) : '',
+          info: info(hostMemberDoc(member, owner)),
+          section: { name: owner.name ?? 'Members', rank: 1 },
+          ...(member.signature
+            ? { apply: applyCall(member.name, takesArguments(member.signature)) }
+            : {}),
+        }));
+    }
     case 'chain':
       return [...memberOptions('chain', { name: 'Chain', rank: 1 }), ...typeOptions(scene)];
     case 'bus':
@@ -211,6 +237,8 @@ export interface KeyOption {
   /** What the value can be, when the editor can offer values. */
   readonly param?: ParamMeta;
   readonly option?: OptionInfo | ApiOption;
+  /** A key of a host function's options, as the host described it. */
+  readonly host?: OptionKeyInfo;
 }
 
 const fromParams = (
@@ -249,6 +277,23 @@ const typesOf = (scene: Scene, types: readonly string[] | null): NodeTypeInfo[] 
 export function keyOptions(scene: Scene, call: CallSite): KeyOption[] {
   const { name, index, receiver } = call;
   if (receiver === null) {
+    const host = hostCall(scene, call);
+    if (host) {
+      const argument = host.signature.args[index];
+      if (argument?.kind !== 'options') return [];
+      return (argument.options ?? [])
+        .filter((option) => option && typeof option.name === 'string')
+        .map((option) => {
+          const shown = hostOptionInfo(option);
+          return {
+            name: option.name,
+            detail: optionDetail(shown),
+            doc: optionDoc(option.name, shown, `option of ${name}`),
+            section: 'Options',
+            host: option,
+          };
+        });
+    }
     if (['keyPress', 'key_press'].includes(name) && index === 1) {
       return fromOptions(KEY_PRESS_OPTIONS, 'Options');
     }
@@ -392,10 +437,78 @@ function bufferItems(catalog: ResolvedCatalog): ValueItem[] {
 
 const durationItems = (): ValueItem[] => DURATIONS.map(([text, detail]) => ({ text, detail }));
 
+const BOOLEANS: readonly ValueItem[] = [
+  { text: 'true', bare: true },
+  { text: 'false', bare: true },
+];
+
+/** What is offered for a value of a kind a host named, in a call of one of its functions. */
+function kindItems(
+  scene: Scene,
+  pos: number,
+  call: CallSite,
+  kind: ArgumentKind | 'boolean',
+  of: string | undefined,
+): ValueItem[] | 'selector' | null {
+  switch (kind) {
+    case 'selector':
+      return 'selector';
+    case 'param': {
+      const host = hostCall(scene, call);
+      const target = targetOf(scene, host ? referredArgument(host, call, of) : undefined);
+      if (target.kind === 'nodes') return paramItems(scene, target.types);
+      // A bus has one parameter: its level.
+      const gain = apiMember('bus', 'gain');
+      return [
+        {
+          text: 'gain',
+          detail: 'the level of the bus',
+          ...(gain ? { doc: memberDoc(gain, 'bus') } : {}),
+        },
+      ];
+    }
+    case 'sequence':
+      return sequenceItems(scene);
+    case 'bus':
+      return busNames(scene, pos, false);
+    case 'buffer':
+      return bufferItems(scene.catalog);
+    case 'boolean':
+      return [...BOOLEANS];
+    default:
+      return null;
+  }
+}
+
+/** What is offered for the value of one key of a host function's options. */
+function hostOptionItems(
+  scene: Scene,
+  pos: number,
+  call: CallSite,
+  option: OptionKeyInfo,
+): ValueItem[] | 'selector' | null {
+  if (Array.isArray(option.values) && option.values.length > 0) {
+    return option.values
+      .filter((value) => ['string', 'number', 'boolean'].includes(typeof value))
+      .map((value) => ({
+        text: String(value),
+        detail: option.name,
+        ...(typeof value === 'string' ? {} : { bare: true }),
+      }));
+  }
+  return option.kind ? kindItems(scene, pos, call, option.kind, option.of) : null;
+}
+
 /** The values the editor can offer for one key of a call's options object. */
-function valueItems(scene: Scene, call: CallSite, key: string): ValueItem[] {
+function valueItems(
+  scene: Scene,
+  call: CallSite,
+  key: string,
+  pos: number,
+): ValueItem[] | 'selector' {
   const option = keyOptions(scene, call).find((candidate) => candidate.name === key);
   if (!option) return [];
+  if (option.host) return hostOptionItems(scene, pos, call, option.host) ?? [];
   if (option.param) {
     if (option.param.kind === 'boolean') {
       return [
@@ -436,10 +549,25 @@ const portItems = (scene: Scene, direction: 'input' | 'output'): ValueItem[] =>
 const classNames = (scene: Scene): string[] =>
   unique([...scene.doc.classes.keys(), ...scene.catalog.classes]);
 
+/** A name with what the host said it is for, when it said. */
+const described = (text: string, detail: string, doc: Doc | null): ValueItem => ({
+  text,
+  detail,
+  ...(doc ? { doc } : {}),
+});
+
+const sequenceItems = (scene: Scene): ValueItem[] =>
+  unique([...scene.doc.sequences, ...scene.catalog.sequences]).map((text) =>
+    described(text, 'sequence', namedDoc(scene.catalog.sequenceInfo.get(text), 'sequence')),
+  );
+
 function busNames(scene: Scene, pos: number, forSending: boolean): ValueItem[] {
-  const items: ValueItem[] = [{ text: 'main', detail: 'the engine output' }];
+  const main = namedDoc(scene.catalog.busInfo.get('main'), 'bus');
+  const items: ValueItem[] = [described('main', 'the engine output', main)];
   for (const name of unique([...scene.doc.buses, ...scene.catalog.buses])) {
-    if (name !== 'main') items.push({ text: name, detail: 'bus' });
+    if (name !== 'main') {
+      items.push(described(name, 'bus', namedDoc(scene.catalog.busInfo.get(name), 'bus')));
+    }
   }
   // Inside a macro's definition, its two own buses.
   const inMacro = [...scene.doc.localTypes.values()].some(
@@ -473,14 +601,19 @@ const toCompletions = (items: readonly ValueItem[], quote: boolean): Completion[
 function selectorCompletions(scene: Scene, pos: number, before: string): CompletionResult {
   const token = /[#.]?[\w-]*$/.exec(before)?.[0] ?? '';
   const options: Completion[] = [];
-  const ids = new Map<string, string>();
+  const ids = new Map<string, string | undefined>();
   for (const [id, owner] of scene.doc.ids) ids.set(id, owner.type);
-  for (const id of scene.catalog.ids) if (!ids.has(id)) ids.set(id, 'id');
+  for (const id of scene.catalog.ids) {
+    if (!ids.has(id)) ids.set(id, scene.catalog.idInfo.get(id)?.type);
+  }
   for (const [id, type] of ids) {
+    const entry = scene.catalog.idInfo.get(id);
+    const doc = entry?.description ? idDoc(id, type, entry) : null;
     options.push({
       label: `#${id}`,
       type: 'constant',
-      detail: type,
+      detail: typeof type === 'string' ? type : 'id',
+      ...(doc ? { info: info(doc) } : {}),
       section: { name: 'Ids', rank: 1 },
     });
   }
@@ -511,15 +644,25 @@ function selectorCompletions(scene: Scene, pos: number, before: string): Complet
   return { from: pos - token.length, options: inOrder(options), validFor: /^[#.]?[\w-]*$/ };
 }
 
-function stringItems(
+/** What a string is, by where it is written: the values to offer, or that it is a selector. */
+export function stringItems(
   scene: Scene,
   pos: number,
-  context: CursorContext & { kind: 'string' },
+  context: Pick<CursorContext & { kind: 'string' }, 'call' | 'key' | 'list'>,
 ): ValueItem[] | 'selector' | null {
   const { call, key } = context;
   if (!call) return null;
-  if (key !== null) return valueItems(scene, call, key);
+  if (key !== null) return valueItems(scene, call, key, pos);
   const { name, index, receiver } = call;
+  const host = hostCall(scene, call);
+  if (host) {
+    // An item of a list argument is what the list's `items` says; any other string is the argument.
+    let value: ValueInfo | undefined = host.signature.args[index];
+    if (context.list) value = value?.kind === 'list' ? value.items : undefined;
+    return value ? kindItems(scene, pos, call, value.kind, value.of) : null;
+  }
+  // Only the host's functions say what the items of a list are.
+  if (context.list) return null;
   if (receiver === null) return name === '__' && index === 0 ? 'selector' : null;
   const kind = receiver.kind;
   if (kind === 'midi') {
@@ -536,10 +679,7 @@ function stringItems(
     }
     if (kind === 'transport' || kind === 'unknown') {
       if (name === 'sequence' || name === 'steps' || name === 'get' || name === 'clear') {
-        return unique([...scene.doc.sequences, ...scene.catalog.sequences]).map((text) => ({
-          text,
-          detail: 'sequence',
-        }));
+        return sequenceItems(scene);
       }
       if (['every', 'at', 'seconds', 'seek', 'toAudioTime'].includes(name)) return durationItems();
     }
@@ -588,7 +728,22 @@ function nameCompletions(scene: Scene): Completion[] {
       });
     }
   }
+  for (const fn of scene.catalog.functions.values()) {
+    if (scene.doc.definitions.has(fn.name)) continue;
+    const signature = signatureText(fn.name, fn.signatures[0]!);
+    options.push({
+      label: fn.name,
+      type: 'function',
+      detail: signature.slice(fn.name.length),
+      info: info(functionDoc(fn)),
+      apply: applyCall(
+        fn.name,
+        fn.signatures.some((candidate) => candidate.args.length > 0),
+      ),
+    });
+  }
   for (const global of scene.catalog.globals.values()) {
+    if (scene.catalog.functions.has(global.name)) continue;
     options.push({
       label: global.name,
       type: global.signature ? 'function' : 'variable',
@@ -641,8 +796,8 @@ export function completionsAt(
     case 'key':
       return result(context.from, keyCompletions(scene, context));
     case 'value': {
-      const items = valueItems(scene, context.call, context.key);
-      if (items.length === 0) {
+      const items = valueItems(scene, context.call, context.key, pos);
+      if (items === 'selector' || items.length === 0) {
         return explicit || context.from < pos ? nameResult(scene, context.from) : null;
       }
       return {
@@ -655,10 +810,12 @@ export function completionsAt(
       const items = stringItems(scene, pos, context);
       if (items === null) return null;
       if (items === 'selector') return selectorCompletions(scene, pos, context.before);
-      if (items.length === 0) return null;
+      // A word that is not a string (`true`) is not offered inside quotes.
+      const strings = items.filter((item) => !item.bare || context.key === null);
+      if (strings.length === 0) return null;
       return {
         from: context.from,
-        options: inOrder(toCompletions(items, false)),
+        options: inOrder(toCompletions(strings, false)),
         validFor: /^[^'"`\n]*$/,
       };
     }

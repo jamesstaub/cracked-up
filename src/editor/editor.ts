@@ -49,6 +49,8 @@ import { scanDocument, treeOf } from './analysis';
 import { isCatalogStore, resolveCatalog } from './catalog';
 import type { CatalogStore, EditorCatalog } from './catalog';
 import { completionSource } from './completion';
+import { diagnosticExtensions, diagnosticsOf, setDiagnostics } from './diagnostics';
+import type { EditorDiagnostic, PlacedDiagnostic } from './diagnostics';
 import { catalogField, definitionAt, intelExtensions, setCatalogEffect } from './intel';
 import { createSourcePanel } from './panel';
 import type { DefinitionTarget, SourcePanel } from './panel';
@@ -63,6 +65,32 @@ export interface ErrorPlace {
   pos?: number;
 }
 
+/** Where the cursor is. Lines and columns count from 1; positions from 0. */
+export interface CursorInfo {
+  /** The end of the selection that moves: where the cursor is drawn. */
+  readonly pos: number;
+  readonly line: number;
+  readonly column: number;
+  /** The selection, in the order of the text. Equal when nothing is selected. */
+  readonly from: number;
+  readonly to: number;
+  readonly empty: boolean;
+}
+
+export interface RevealOptions {
+  /**
+   * `'cursor'` (the default) puts the cursor at the place; `'line'` selects its whole line;
+   * `'none'` leaves the selection as it is and only scrolls.
+   */
+  select?: 'cursor' | 'line' | 'none';
+  /** Marks the line for a moment, so the eye finds it. */
+  flash?: boolean;
+  /** Also gives the editor the keyboard focus. */
+  focus?: boolean;
+  /** Where in the editor's height the line ends up. Default `'center'`. */
+  align?: 'center' | 'start' | 'end' | 'nearest';
+}
+
 export interface EditorOptions {
   /** The element to mount into. The editor fills it. */
   parent: HTMLElement;
@@ -75,6 +103,11 @@ export interface EditorOptions {
    * for `setValue`. It is called on every edit; a host that wants to wait for a pause does that itself.
    */
   onChange?: (value: string, editor: Editor) => void;
+  /**
+   * Called when the user moves the cursor or changes the selection, by key, by pointer or by
+   * editing. Not called for what the host does through `setValue` and `reveal`.
+   */
+  onCursor?: (cursor: CursorInfo, editor: Editor) => void;
   readOnly?: boolean;
   lineNumbers?: boolean;
   lineWrapping?: boolean;
@@ -145,6 +178,24 @@ export interface Editor {
    */
   showError(error: unknown, place?: ErrorPlace): void;
   clearError(): void;
+  /**
+   * Shows the host's problems in the text: an underline under each, its line number coloured, the
+   * message on hover, and F8 / Shift-F8 to go from one to the next. The list replaces the one
+   * before; an empty list clears it. Between calls each problem follows its text as the user edits,
+   * and one whose text is deleted goes with it. A problem that names a line the text has not got is
+   * left out. `setValue` with `history: 'reset'` clears them.
+   */
+  setDiagnostics(diagnostics: readonly EditorDiagnostic[]): void;
+  clearDiagnostics(): void;
+  /** The problems now shown, each where it is in the text now. */
+  readonly diagnostics: readonly PlacedDiagnostic[];
+  /** Where the cursor is, and what is selected. */
+  readonly cursor: CursorInfo;
+  /**
+   * Scrolls a place into view, and by default puts the cursor there. Returns false, and does
+   * nothing, for a line the text has not got. `onCursor` is not called.
+   */
+  reveal(place: ErrorPlace, options?: RevealOptions): boolean;
   /**
    * Does what Cmd/Ctrl-click does, at a position (default: the cursor). Returns whether there was a
    * node type or helper there.
@@ -234,6 +285,39 @@ function errorPosition(
     }
   }
   return null;
+}
+
+// --- A line marked for a moment --------------------------------------------------------------------
+
+const setFlash = StateEffect.define<number | null>();
+
+const flashField = StateField.define<number | null>({
+  create: () => null,
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(setFlash)) return effect.value;
+    return value !== null && transaction.docChanged ? transaction.changes.mapPos(value) : value;
+  },
+  provide: (field) =>
+    EditorView.decorations.from(field, (value) => (view) => {
+      if (value === null) return Decoration.none;
+      const line = view.state.doc.lineAt(Math.min(value, view.state.doc.length));
+      return Decoration.set([Decoration.line({ class: 'cu-flash-line' }).range(line.from)]);
+    }),
+});
+
+const FLASH_MS = 900;
+
+function cursorOf(state: EditorState): CursorInfo {
+  const range = state.selection.main;
+  const line = state.doc.lineAt(range.head);
+  return {
+    pos: range.head,
+    line: line.number,
+    column: range.head - line.from + 1,
+    from: range.from,
+    to: range.to,
+    empty: range.empty,
+  };
 }
 
 // --- Small decorations ------------------------------------------------------------------------------
@@ -436,6 +520,8 @@ export function createEditor(options: EditorOptions): Editor {
       editorTheme,
       dunderPlugin,
       errorField,
+      flashField,
+      diagnosticExtensions(),
       linkPlugin,
       readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
       EditorView.contentAttributes.of({
@@ -474,6 +560,16 @@ export function createEditor(options: EditorOptions): Editor {
           (transaction) => transaction.docChanged && !transaction.annotation(fromHost),
         );
         if (byUser) options.onChange(update.state.doc.toString(), editor);
+      }),
+      EditorView.updateListener.of((update) => {
+        if (!options.onCursor) return;
+        const before = update.startState.selection.main;
+        const after = update.state.selection.main;
+        if (before.anchor === after.anchor && before.head === after.head) return;
+        const byHost = update.transactions.every(
+          (transaction) => transaction.annotation(fromHost) === true,
+        );
+        if (!byHost) options.onCursor(cursorOf(update.state), editor);
       }),
     ];
     if (options.lineNumbers) list.push(lineNumbers(), highlightActiveLineGutter());
@@ -518,6 +614,8 @@ export function createEditor(options: EditorOptions): Editor {
     }
   }
   watch(catalogSource);
+
+  let flashTimer: ReturnType<typeof setTimeout> | null = null;
 
   const editor: Editor = {
     element: root,
@@ -595,6 +693,50 @@ export function createEditor(options: EditorOptions): Editor {
     clearError() {
       if (view.state.field(errorField) !== null) view.dispatch({ effects: setError.of(null) });
     },
+    setDiagnostics(diagnostics) {
+      setDiagnostics(view, diagnostics);
+    },
+    clearDiagnostics() {
+      setDiagnostics(view, []);
+    },
+    get diagnostics() {
+      return diagnosticsOf(view.state);
+    },
+    get cursor() {
+      return cursorOf(view.state);
+    },
+    reveal(place, revealOptions = {}) {
+      const state = view.state;
+      const hasPlace = place.pos !== undefined || place.line !== undefined;
+      const pos = hasPlace ? errorPosition(state, null, place) : null;
+      if (pos === null) return false;
+      const line = state.doc.lineAt(pos);
+      const select = revealOptions.select ?? 'cursor';
+      const effects: StateEffect<unknown>[] = [
+        EditorView.scrollIntoView(pos, { y: revealOptions.align ?? 'center' }),
+      ];
+      if (revealOptions.flash) effects.push(setFlash.of(pos));
+      view.dispatch({
+        ...(select === 'none'
+          ? {}
+          : {
+              selection: select === 'line' ? { anchor: line.from, head: line.to } : { anchor: pos },
+            }),
+        effects,
+        annotations: fromHost.of(true),
+      });
+      if (revealOptions.flash) {
+        if (flashTimer !== null) clearTimeout(flashTimer);
+        flashTimer = setTimeout(() => {
+          flashTimer = null;
+          if (!destroyed && view.state.field(flashField, false) !== null) {
+            view.dispatch({ effects: setFlash.of(null), annotations: fromHost.of(true) });
+          }
+        }, FLASH_MS);
+      }
+      if (revealOptions.focus) view.focus();
+      return true;
+    },
     goToDefinition,
     focus() {
       view.focus();
@@ -602,6 +744,7 @@ export function createEditor(options: EditorOptions): Editor {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      if (flashTimer !== null) clearTimeout(flashTimer);
       unsubscribe?.();
       unsubscribe = null;
       if (ownsPanel) panel?.destroy();

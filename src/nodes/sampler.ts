@@ -25,6 +25,59 @@ interface Voice {
   readonly startTime: number;
   /** When the voice has been told to stop, or Infinity if it plays to its end. */
   stopTime: number;
+  /** Where it starts, and how much it plays unless it loops: seconds of the buffer it plays. */
+  readonly from: number;
+  readonly length: number;
+  /** The part it repeats, in seconds of the buffer it plays, or null when it does not loop. */
+  readonly loop: readonly [number, number] | null;
+  /** It plays the reversed copy, so its place in the sound is counted from the end. */
+  readonly reverse: boolean;
+  /** Seconds the whole buffer lasts. */
+  readonly total: number;
+  /** Its speed over time: `rates[i]` from `times[i]` on. The first time is when it starts. */
+  readonly times: number[];
+  readonly rates: number[];
+}
+
+/**
+ * Where a voice is in its sound at an audio time, in seconds from the start of the sound, or NaN
+ * when it is not sounding then. Worked out from what the voice was told, not read from the audio.
+ */
+function positionOf(voice: Voice, time: number): number {
+  if (time < voice.startTime || time >= voice.stopTime) return Number.NaN;
+  let played = 0;
+  for (let i = 0; i < voice.times.length; i++) {
+    const until = i + 1 < voice.times.length ? Math.min(time, voice.times[i + 1]!) : time;
+    if (until > voice.times[i]!) played += voice.rates[i]! * (until - voice.times[i]!);
+  }
+  let place = voice.from + played;
+  if (voice.loop) {
+    const [loopStart, loopEnd] = voice.loop;
+    if (place >= loopEnd) place = loopStart + ((place - loopStart) % (loopEnd - loopStart));
+  } else if (played >= voice.length) {
+    return Number.NaN;
+  }
+  return voice.reverse ? voice.total - place : place;
+}
+
+/**
+ * Notes a change of speed on a voice. The browser reads a source's playback rate once per block of
+ * 128 frames, so a change takes effect at the first block that starts at or after its time.
+ */
+function noteRate(voice: Voice, rate: number, at: number, sampleRate: number): void {
+  const block = 128 / sampleRate;
+  const time = Math.ceil(at / block - 1e-9) * block;
+  if (time <= voice.startTime) {
+    voice.rates[0] = rate;
+    return;
+  }
+  let index = voice.times.length;
+  while (index > 1 && voice.times[index - 1]! > time) index--;
+  if (voice.times[index - 1] === time) voice.rates[index - 1] = rate;
+  else {
+    voice.times.splice(index, 0, time);
+    voice.rates.splice(index, 0, rate);
+  }
 }
 
 /**
@@ -125,7 +178,10 @@ export const sampler = defineNode({
         gain: out.gain,
         // Voices already sounding follow speed changes; the rest are read when a voice starts.
         speed(value, at) {
-          for (const voice of voices) voice.source.playbackRate.setValueAtTime(value as number, at);
+          for (const voice of voices) {
+            voice.source.playbackRate.setValueAtTime(value as number, at);
+            noteRate(voice, value as number, at, context.audio.sampleRate);
+          }
         },
         start() {},
         end() {},
@@ -169,9 +225,10 @@ export const sampler = defineNode({
           if (oldest) stopVoice(oldest, at);
         }
 
+        const speed = number('speed');
         const source = new AudioBufferSourceNode(context.audio, {
           buffer: reverse ? reversed(buffer) : buffer,
-          playbackRate: number('speed'),
+          playbackRate: speed,
         });
         const velocity = typeof options['velocity'] === 'number' ? options['velocity'] : 1;
         const level = velocity === 1 ? null : new GainNode(context.audio, { gain: velocity });
@@ -190,7 +247,18 @@ export const sampler = defineNode({
         } else {
           source.start(at, from, length);
         }
-        const voice: Voice = { source, startTime: at, stopTime: Infinity };
+        const voice: Voice = {
+          source,
+          startTime: at,
+          stopTime: Infinity,
+          from,
+          length,
+          loop: loop ? [from, from + length] : null,
+          reverse,
+          total,
+          times: [at],
+          rates: [speed],
+        };
         if (typeof options['duration'] === 'number') stopVoice(voice, at + options['duration']);
         voices.add(voice);
         source.onended = () => {
@@ -201,6 +269,12 @@ export const sampler = defineNode({
       },
       release(_options, at) {
         stopVoicesBefore(at);
+      },
+      playheads(at, into) {
+        for (const voice of voices) {
+          const position = positionOf(voice, at);
+          if (!Number.isNaN(position)) into.push(position);
+        }
       },
       dispose() {
         for (const voice of voices) {

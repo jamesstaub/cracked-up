@@ -12,6 +12,17 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Play position.** `node.playheads(at?, into?)` gives where each sounding voice of a sampler is
+  in its buffer, in seconds, at an audio time (default now): for drawing a play cursor. It is
+  worked out from what each voice was told (start time, region, speed and its changes, reverse,
+  loop, and where it was stopped), so it costs a few additions per voice, allocates nothing when
+  handed a list to fill, and can be asked for future times. Empty when nothing sounds and for
+  other node types. Checked against offline renders of a sound whose samples hold their own time:
+  within a tenth of a sample in Chromium and WebKit, speed changes included; Firefox filters
+  sound played at a speed other than 1, which a render confirms only to 2 ms. A node type of
+  your own answers by returning `playheads(at, into)` from `build`. Host only: a remote's nodes
+  answer with nothing.
+
 - **Slices as data a host edits.** `addSlice`, `moveSlice`, `removeSlice`, `normalizeSlices` and
   `sliceAt` in `cracked-up/util` take a list of boundaries and return a new one, sorted, without
   repeats and (given the duration) inside the sound: `ref.slices = addSlice(ref.slices, 1.5)`.

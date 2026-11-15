@@ -341,6 +341,12 @@ class RemoteNode implements Selectable {
     return this;
   }
 
+  /** Play positions are known only where the audio is: on the host. */
+  playheads(_at?: number, into: number[] = []): number[] {
+    into.length = 0;
+    return into;
+  }
+
   dispose(): void {
     this.remote.removeNodes([this]);
   }

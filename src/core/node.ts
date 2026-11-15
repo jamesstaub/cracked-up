@@ -358,6 +358,12 @@ export class NodeImpl {
     fn(args, at);
   }
 
+  playheads(at: number = this.engine.now(), into: number[] = []): number[] {
+    into.length = 0;
+    if (!this.disposed) this.built.playheads?.(at, into);
+    return into;
+  }
+
   // --- Lifetime -----------------------------------------------------------------------------------
 
   dispose(): void {

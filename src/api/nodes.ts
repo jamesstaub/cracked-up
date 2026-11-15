@@ -407,6 +407,12 @@ export interface BuiltNode {
   release?(options: ReleaseOptions, at: number): void;
   /** Extra operations, reachable as `node.call(name, args)` and as `call` commands. */
   methods?: Record<string, (args: Readonly<Record<string, unknown>>, at: number) => void>;
+  /**
+   * For a node that plays recorded sound: adds to `into` where each voice sounding at the audio
+   * time `at` is in that sound, in seconds. This is what `node.playheads()` returns. It is called
+   * on every animation frame, so it should do little and make nothing.
+   */
+  playheads?(at: number, into: number[]): void;
   dispose?(): void;
 }
 

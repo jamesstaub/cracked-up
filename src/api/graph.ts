@@ -77,6 +77,30 @@ export interface Node<K extends NodeType = NodeType> {
   /** Calls a method the node's definition declares (see `methods` on node and macro definitions). */
   call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
 
+  /**
+   * Where the node's voices are in the sound they play, for drawing a play cursor: one position
+   * per voice sounding at the audio time `at` (default: now, `context.currentTime`), in seconds
+   * from the start of the buffer, oldest voice first. Empty when nothing sounds then, and for
+   * node types that play no buffer (today only `sampler` answers).
+   *
+   * The positions are worked out from what each voice was told (when it started, its region,
+   * speed, direction and loop), not measured, so asking costs a few additions per voice, can be
+   * done on every animation frame, and works for times in the future and on an offline context
+   * before it renders. Pass the same `into` each time and nothing is allocated: it is emptied,
+   * filled and returned.
+   *
+   * How exact: for a voice at a steady speed it is the sample being played, to within a sample
+   * (reversed, the sample just before the position). Changes of speed while a voice sounds (a `set` or an
+   * `offset`; a sampler's speed cannot be ramped or modulated) are followed, at the block of 128
+   * frames where the browser applies them. On a live context
+   * `currentTime` is ahead of what is heard by the output latency and moves in steps of 128
+   * frames, so for a cursor that matches the ear ask for
+   * `context.currentTime - context.outputLatency`, or use `context.getOutputTimestamp()`.
+   *
+   * Not available to a sandboxed script: a remote's nodes always answer with an empty list.
+   */
+  playheads(at?: number, into?: number[]): number[];
+
   /** Native output, for hosts that need to attach their own analyser or visualiser. Read-only use. */
   readonly output: AudioNode | null;
 

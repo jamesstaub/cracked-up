@@ -61,3 +61,14 @@ describe('remote: slices', () => {
     expect(remote.buffers.get('stairs')?.slices).toEqual([0, 0.75, 1]);
   });
 });
+
+describe('remote: play position', () => {
+  it('is host-only: a remote node answers with nothing, the host node with the position', async () => {
+    const { scope, remote, __ } = await linked(0.5);
+    __().sampler({ id: 's', buffer: 'stairs' }).to('main');
+    __('#s').trigger({ at: 0 });
+    remote.flush();
+    expect(__('#s').first()!.playheads(0.25)).toEqual([]);
+    expect(scope.select('#s').first()!.playheads(0.25)).toEqual([0.25]);
+  });
+});

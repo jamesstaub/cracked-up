@@ -77,6 +77,17 @@ export {
   random_envelope,
 } from '../util/random';
 export { beatsToSeconds, secondsToBeats } from '../util/duration';
+export { detectOnsets } from '../util/onsets';
+export {
+  addSlice,
+  moveSlice,
+  normalizeSlices,
+  removeSlice,
+  sliceAt,
+  sliceByOnsets,
+  sliceByTempo,
+  sliceGrid,
+} from '../util/slices';
 
 /** The default engine. Its context starts suspended until `play()` is called from a user gesture. */
 const impl = new EngineImpl({ context: new AudioContext() });

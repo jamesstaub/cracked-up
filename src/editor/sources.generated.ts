@@ -978,6 +978,105 @@ export const HELPER_SOURCES: Readonly<Record<string, SourceEntry>> = {
   ],
   "native": []
  },
+ "sliceGrid": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 26,
+    "endLine": 33,
+    "code": "/**\n * Slice boundaries for a sound cut into equal parts: `count` slices need `count + 1` boundaries, in\n * seconds. `offset` moves the whole grid later, for a sound whose first hit is not at its start.\n */\nexport function sliceGrid(seconds: number, count: number, offset = 0): number[] {\n  const slices = Math.min(MAX_SLICES, Math.max(1, Math.floor(count)));\n  return Array.from({ length: slices + 1 }, (_, index) => offset + (seconds * index) / slices);\n}"
+   }
+  ],
+  "native": []
+ },
+ "sliceByTempo": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 35,
+    "endLine": 56,
+    "code": "/**\n * Slice boundaries for a sound played to a steady beat: one every `step` at `bpm`, from `offset`\n * (where the first hit is) to the end of the sound, which is the last boundary.\n */\nexport function sliceByTempo(\n  seconds: number,\n  bpm: number,\n  step: Duration = '1/16',\n  offset = 0,\n): number[] {\n  const length = beatsToSeconds(durationToBeats(step), bpm);\n  if (!(length > 0) || !Number.isFinite(length)) {\n    throw new RangeError(`sliceByTempo needs a tempo and a step longer than nothing.`);\n  }\n  const boundaries: number[] = [];\n  // The last step may be cut short by the end, but not to less than a click.\n  for (let i = 0; i < MAX_SLICES && offset + i * length < seconds - MIN_SLICE; i++) {\n    boundaries.push(offset + i * length);\n  }\n  boundaries.push(seconds);\n  return boundaries;\n}"
+   }
+  ],
+  "native": []
+ },
+ "detectOnsets": {
+  "parts": [
+   {
+    "file": "src/util/onsets.ts",
+    "line": 25,
+    "endLine": 137,
+    "code": "/**\n * Finds where sounds begin: the times, in seconds, at which the level jumps. For cutting a recording\n * at its hits (`sliceByOnsets`) or showing them.\n *\n * It measures energy in steps of about 3 ms, over the whole signal and over its high frequencies\n * alone (so a hi-hat over a ringing kick is found), and reports a time when the 12 ms that follow\n * are louder than the 23 ms before by more than the sensitivity asks. The time is then moved to the\n * first sample that rises above what came just before. Before the start of the sound counts as\n * silence, so a sound that begins at once has an onset at its start, and so, at the default\n * sensitivity and above, does one that fades in from nothing, near where it becomes audible.\n *\n * The same input always gives the same answer. All channels are averaged first. It reads every\n * sample three times and keeps two numbers per 3 ms, so a five-minute sound takes tens of\n * milliseconds. A sound that swells slowly out of another has no onset to find; a low note below\n * about 30 Hz can be mistaken for hits at the highest sensitivity.\n */\nexport function detectOnsets(source: AudioSource, options: OnsetOptions = {}): number[] {\n  const { sampleRate, channels } = audioData(source);\n  const total = channels[0]?.length ?? 0;\n  const sensitivity = Math.min(1, Math.max(0, options.sensitivity ?? 0.5));\n  const minGap = Math.max(0, options.minGap ?? 0.05);\n  const first = Math.min(total, Math.max(0, Math.round((options.start ?? 0) * sampleRate)));\n  const last = Math.min(\n    total,\n    Math.max(first, Math.round((options.end ?? total / sampleRate) * sampleRate)),\n  );\n  const hop = Math.max(8, Math.round(sampleRate * 0.0029));\n  // What comes just before `start` is read too, so a sound already going there is not an onset.\n  const origin = Math.max(0, first - BEHIND * hop);\n  const hops = Math.ceil((last - origin) / hop);\n  if (hops === 0 || channels.length === 0) return [];\n\n  const scale = 1 / channels.length;\n  const sample = (index: number): number => {\n    let value = 0;\n    for (let c = 0; c < channels.length; c++) value += channels[c]![index]!;\n    return value * scale;\n  };\n\n  // Running totals of energy per hop: of the signal, and of its sample-to-sample difference, which\n  // is the signal with its low frequencies turned down.\n  const full = new Float64Array(hops + 1);\n  const high = new Float64Array(hops + 1);\n  let before = 0;\n  for (let k = 0; k < hops; k++) {\n    let energy = 0;\n    let edges = 0;\n    const end = Math.min(last, origin + (k + 1) * hop);\n    for (let i = origin + k * hop; i < end; i++) {\n      const value = sample(i);\n      energy += value * value;\n      edges += (value - before) * (value - before);\n      before = value;\n    }\n    full[k + 1] = full[k]! + energy;\n    high[k + 1] = high[k]! + edges;\n  }\n\n  /** Mean energy per hop of hops `from` up to `to`. Hops before the start are silence. */\n  const mean = (sums: Float64Array, from: number, to: number): number =>\n    (sums[Math.min(hops, Math.max(0, to))]! - sums[Math.min(hops, Math.max(0, from))]!) /\n    (to - from);\n\n  const loudest = (sums: Float64Array): number => {\n    let most = 0;\n    for (let k = 0; k < hops; k++) most = Math.max(most, mean(sums, k, k + AHEAD));\n    return most;\n  };\n  const jump = 10 ** ((15 - 12 * sensitivity) / 10);\n  const gate = 10 ** (-(20 + 40 * sensitivity) / 10);\n  const bands = [full, high].map((sums) => ({ sums, loudest: loudest(sums) }));\n\n  const rises = (k: number): boolean =>\n    bands.some(({ sums, loudest: most }) => {\n      if (most <= 0) return false;\n      const ahead = mean(sums, k, k + AHEAD);\n      const behind = mean(sums, k - BEHIND, k);\n      // The floor keeps near-silence before a hit from making every hit an enormous jump, and\n      // noise in near-silence from being one.\n      const floor = most * 1e-6;\n      return ahead >= most * gate && ahead + floor >= (behind + floor) * jump;\n    });\n\n  const peak = (from: number, to: number): number => {\n    let most = 0;\n    for (let i = Math.max(origin, from); i < Math.min(last, to); i++) {\n      most = Math.max(most, Math.abs(sample(i)));\n    }\n    return most;\n  };\n\n  /** The first sample of the hit that hop `k` sees coming: the first to rise above what came before. */\n  const refine = (k: number): number => {\n    const from = Math.max(first, origin + k * hop);\n    const to = Math.min(last, origin + (k + AHEAD) * hop);\n    const threshold = Math.max(peak(from - AHEAD * hop, from), 0.2 * peak(from, to));\n    for (let i = from; i < to; i++) if (Math.abs(sample(i)) > threshold) return i;\n    // Nothing stands out sample by sample (a hit under something louder): the newest hop in view.\n    return Math.max(first, Math.min(last - 1, origin + (k + AHEAD - 1) * hop));\n  };\n\n  const onsets: number[] = [];\n  let next = 0;\n  for (let k = 0; k < hops; k++) {\n    // Not a hop whose view ends before `start`, nor one inside the gap after the last onset.\n    if (origin + (k + AHEAD) * hop <= first || origin + k * hop < next || !rises(k)) continue;\n    const frame = refine(k);\n    onsets.push(frame / sampleRate);\n    // Not again until this hit has left the window, nor within the gap asked for.\n    next = Math.max(frame + minGap * sampleRate, frame + (AHEAD + 1) * hop);\n  }\n  return onsets;\n}"
+   }
+  ],
+  "native": []
+ },
+ "sliceByOnsets": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 58,
+    "endLine": 69,
+    "code": "/**\n * Slice boundaries where the hits of a sound begin, found by `detectOnsets` (which the options go\n * to): the start of the sound, every onset, and the end.\n */\nexport function sliceByOnsets(source: AudioSource, options: OnsetOptions = {}): number[] {\n  const audio = audioData(source);\n  const duration = (audio.channels[0]?.length ?? 0) / audio.sampleRate;\n  const onsets = detectOnsets(audio, options).filter(\n    (time) => time >= MIN_SLICE && time <= duration - MIN_SLICE,\n  );\n  return [0, ...onsets.slice(0, MAX_SLICES - 1), duration];\n}"
+   }
+  ],
+  "native": []
+ },
+ "addSlice": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 71,
+    "endLine": 82,
+    "code": "/**\n * The boundaries with one more, at `time`. Nothing is added within a millisecond of a boundary that\n * is already there, or (with `duration` given) outside the sound. Returns a new list.\n */\nexport function addSlice(boundaries: readonly number[], time: number, duration?: number): number[] {\n  const current = normalizeSlices(boundaries, duration);\n  if (!Number.isFinite(time) || time < 0 || (duration !== undefined && time > duration)) {\n    return current;\n  }\n  if (current.some((other) => Math.abs(other - time) < MIN_SLICE)) return current;\n  return normalizeSlices([...current, time]);\n}"
+   }
+  ],
+  "native": []
+ },
+ "moveSlice": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 84,
+    "endLine": 105,
+    "code": "/**\n * The boundaries with the one at `index` moved to `time`. It stays between its neighbours, a\n * millisecond clear of each (and, with `duration` given, inside the sound), so the boundaries keep\n * their order and their number while one is dragged. Returns a new list.\n */\nexport function moveSlice(\n  boundaries: readonly number[],\n  index: number,\n  time: number,\n  duration?: number,\n): number[] {\n  const current = normalizeSlices(boundaries, duration);\n  if (!Number.isInteger(index) || index < 0 || index >= current.length || !Number.isFinite(time)) {\n    return current;\n  }\n  const low = index === 0 ? 0 : current[index - 1]! + MIN_SLICE;\n  const high =\n    index === current.length - 1 ? (duration ?? Infinity) : current[index + 1]! - MIN_SLICE;\n  // Neighbours too close to move between: it stays where it is.\n  if (high >= low) current[index] = Math.min(Math.max(time, low), high);\n  return current;\n}"
+   }
+  ],
+  "native": []
+ },
+ "removeSlice": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 107,
+    "endLine": 114,
+    "code": "/** The boundaries without the one at `index`. Returns a new list. */\nexport function removeSlice(\n  boundaries: readonly number[],\n  index: number,\n  duration?: number,\n): number[] {\n  return normalizeSlices(boundaries, duration).filter((_, at) => at !== index);\n}"
+   }
+  ],
+  "native": []
+ },
+ "normalizeSlices": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 14,
+    "endLine": 24,
+    "code": "/**\n * Slice boundaries as a buffer wants them: only finite numbers, in ascending order, each one once,\n * and with `duration` given, none outside the sound (those are moved to its start or end).\n */\nexport function normalizeSlices(boundaries: readonly number[], duration?: number): number[] {\n  const inside = boundaries\n    .filter((time) => Number.isFinite(time))\n    .map((time) => (duration === undefined ? time : Math.min(Math.max(time, 0), duration)))\n    .sort((a, b) => a - b);\n  return inside.filter((time, index) => index === 0 || time !== inside[index - 1]);\n}"
+   }
+  ],
+  "native": []
+ },
+ "sliceAt": {
+  "parts": [
+   {
+    "file": "src/util/slices.ts",
+    "line": 116,
+    "endLine": 123,
+    "code": "/** Which slice a time falls in: the number to give `trigger({ slice })`. -1 outside every slice. */\nexport function sliceAt(boundaries: readonly number[], time: number): number {\n  if (boundaries.length < 2 || !(time >= boundaries[0]!)) return -1;\n  for (let index = 0; index < boundaries.length - 1; index++) {\n    if (time < boundaries[index + 1]!) return index;\n  }\n  return -1;\n}"
+   }
+  ],
+  "native": []
+ },
  "scale": {
   "parts": [
    {

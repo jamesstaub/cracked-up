@@ -12,6 +12,17 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Onset detection and slice grids.** `detectOnsets(sound, { sensitivity, minGap, start, end })`
+  in `cracked-up/util` gives the times where hits begin in an `AudioBuffer` or plain channel data:
+  an energy detector over the whole signal and its high frequencies, with the time moved to the
+  first sample that stands out. Deterministic. Tested on synthetic material: clicks to the sample,
+  drum-like hits within 1 ms, 5 ms attacks within 5 ms, a hi-hat over a held bass note within
+  12 ms, nothing in silence or in a sustained tone after its start.
+  Three ways to make a buffer's slice boundaries, all returning a list for `ref.slices`:
+  `sliceGrid(seconds, count, offset?)` (equal parts; it was a function of the demo page),
+  `sliceByTempo(seconds, bpm, step?, offset?)` and `sliceByOnsets(sound, options?)`. All are
+  helpers, so scripts and the editor's completion have them.
+
 - **Waveform data for drawing.** `waveformPeaks(source, { buckets, start, end, channel, rms })` in
   `cracked-up/util` reduces an `AudioBuffer` (or plain channel arrays with a sample rate) to the
   lowest and highest sample, and optionally the RMS, of each of `buckets` equal parts of a time

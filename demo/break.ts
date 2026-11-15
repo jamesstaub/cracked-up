@@ -6,6 +6,7 @@
  */
 
 import type { BufferRef, Engine } from '../src';
+import { sliceGrid } from '../src/util';
 
 export const BREAK = {
   /** The name samplers use: `sampler({ buffer: 'break' })`. */
@@ -32,14 +33,7 @@ export const BREAK_SLICES = BREAK.bars * BREAK.beatsPerBar * 4;
 /** How long the break lasts at its own tempo, in seconds. */
 export const BREAK_SECONDS = (BREAK.bars * BREAK.beatsPerBar * 60) / BREAK.bpm;
 
-/**
- * Slice boundaries for a sound cut into equal parts: `count` slices need `count + 1` boundaries, in
- * seconds. `offset` moves the whole grid later, for a sound whose first hit is not at its start.
- */
-export function sliceGrid(seconds: number, count: number, offset = 0): number[] {
-  const slices = Math.max(1, Math.floor(count));
-  return Array.from({ length: slices + 1 }, (_, index) => offset + (seconds * index) / slices);
-}
+export { sliceGrid };
 
 /** One line saying whose sound the break is. */
 export const BREAK_CREDIT = `${BREAK.name} by ${BREAK.author}, ${BREAK.licence}`;

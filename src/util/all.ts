@@ -6,3 +6,5 @@ export * from './curves';
 export * from './music';
 export * from './wav';
 export * from './waveform';
+export * from './onsets';
+export * from './slices';

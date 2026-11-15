@@ -395,6 +395,95 @@ export const HELPER_GROUPS: readonly HelperGroup[] = [
     ],
   },
   {
+    title: 'Slicing a sound',
+    helpers: [
+      {
+        name: 'sliceGrid',
+        signature: 'sliceGrid(seconds, count, offset?)',
+        description:
+          'Slice boundaries, in seconds, that cut a sound of that length into count equal parts. offset moves the whole grid later.',
+        example: 'sliceGrid(2, 4)',
+        result: '[0, 0.5, 1, 1.5, 2]',
+        fn: util.sliceGrid,
+      },
+      {
+        name: 'sliceByTempo',
+        signature: 'sliceByTempo(seconds, bpm, step?, offset?)',
+        description:
+          'Slice boundaries for a sound played to a steady beat: one every step (a sixteenth note unless you say) at that tempo, from offset to the end of the sound.',
+        example: "sliceByTempo(2, 120, '1/4')",
+        result: '[0, 0.5, 1, 1.5, 2]',
+        fn: util.sliceByTempo,
+      },
+      {
+        name: 'detectOnsets',
+        signature: 'detectOnsets(sound, { sensitivity?, minGap?, start?, end? }?)',
+        description:
+          'The times, in seconds, where hits begin in a sound: an AudioBuffer, or its channels and sample rate. sensitivity goes from 0 to 1; minGap is the least time between two hits.',
+        setup:
+          'const sound = { sampleRate: 8, channels: [new Float32Array([0, 0, 1, 0, 0, 0, 0, 0])] };',
+        example: 'detectOnsets(sound)',
+        result: '[0.25]',
+        fn: util.detectOnsets,
+      },
+      {
+        name: 'sliceByOnsets',
+        signature: 'sliceByOnsets(sound, { sensitivity?, minGap?, start?, end? }?)',
+        description:
+          'Slice boundaries where the hits of a sound begin: its start, every onset detectOnsets finds, and its end.',
+        setup:
+          'const sound = { sampleRate: 8, channels: [new Float32Array([0, 0, 0, 0, 1, 0, 0, 0])] };',
+        example: 'sliceByOnsets(sound)',
+        result: '[0, 0.5, 1]',
+        fn: util.sliceByOnsets,
+      },
+      {
+        name: 'addSlice',
+        signature: 'addSlice(boundaries, time, duration?)',
+        description:
+          'The boundaries with one more at that time, in order. Nothing is added on top of a boundary that is there, or outside the sound when its duration is given.',
+        example: 'addSlice([0, 1, 2], 1.5)',
+        result: '[0, 1, 1.5, 2]',
+        fn: util.addSlice,
+      },
+      {
+        name: 'moveSlice',
+        signature: 'moveSlice(boundaries, index, time, duration?)',
+        description:
+          'The boundaries with one of them moved. It stays between its neighbours, a millisecond clear of each, so the order and the number of slices do not change.',
+        example: 'moveSlice([0, 1, 2], 1, 1.25)',
+        result: '[0, 1.25, 2]',
+        fn: util.moveSlice,
+      },
+      {
+        name: 'removeSlice',
+        signature: 'removeSlice(boundaries, index, duration?)',
+        description: 'The boundaries without the one at that place in the list.',
+        example: 'removeSlice([0, 1, 2], 1)',
+        result: '[0, 2]',
+        fn: util.removeSlice,
+      },
+      {
+        name: 'normalizeSlices',
+        signature: 'normalizeSlices(boundaries, duration?)',
+        description:
+          'Boundaries put in order, each one once, and with a duration given, none outside the sound.',
+        example: 'normalizeSlices([1, 0, 1, 5], 2)',
+        result: '[0, 1, 2]',
+        fn: util.normalizeSlices,
+      },
+      {
+        name: 'sliceAt',
+        signature: 'sliceAt(boundaries, time)',
+        description:
+          'Which slice a time falls in: the number to give trigger({ slice }). -1 when it is outside every slice.',
+        example: 'sliceAt([0, 0.5, 1], 0.7)',
+        result: '1',
+        fn: util.sliceAt,
+      },
+    ],
+  },
+  {
     title: 'Numbers and time',
     helpers: [
       {

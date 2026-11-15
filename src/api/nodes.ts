@@ -56,7 +56,16 @@ export interface SamplerParams {
   /** Start and end of the played region, in seconds of the buffer. An `end` at or before `start` means the end of the buffer. */
   start: number;
   end: number;
+  /** Repeats until released: the region, or the part of it between the loop points. */
   loop: boolean;
+  /**
+   * Loop points, in seconds of the buffer like `start` and `end`. With `loop` on, a voice plays from
+   * `start` to `loopEnd`, then goes round from `loopStart` to `loopEnd` until it is released, when
+   * it stops. They are kept inside the region (and inside the slice, for a slice). A `loopEnd` at or
+   * before `loopStart`, which the defaults of 0 are, means the whole region repeats.
+   */
+  loopStart: number;
+  loopEnd: number;
   reverse: boolean;
   gain: number;
 }

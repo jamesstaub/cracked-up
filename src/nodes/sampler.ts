@@ -154,7 +154,29 @@ export const sampler = defineNode({
       rate: 'control',
       description: 'Where playback stops. At or before start means the end of the buffer.',
     },
-    loop: { default: false, description: 'Repeats the region until released.' },
+    loop: {
+      default: false,
+      description:
+        'Repeats until released: the whole region, or the part of it between loopStart and loopEnd.',
+    },
+    loopStart: {
+      default: 0,
+      min: 0,
+      max: 60,
+      unit: 'seconds',
+      rate: 'control',
+      description:
+        'With loop on, where in the buffer each repeat begins. Playback still begins at start. Kept inside the region.',
+    },
+    loopEnd: {
+      default: 0,
+      min: 0,
+      max: 60,
+      unit: 'seconds',
+      rate: 'control',
+      description:
+        'With loop on, where in the buffer playback jumps back to loopStart. At or before loopStart means the whole region repeats.',
+    },
     reverse: { default: false, description: 'Plays the region backwards.' },
     gain: { default: 1, min: 0, max: 2, unit: 'gain', description: 'Output level.' },
   },
@@ -186,6 +208,8 @@ export const sampler = defineNode({
         start() {},
         end() {},
         loop() {},
+        loopStart() {},
+        loopEnd() {},
         reverse() {},
       },
       trigger(options, at) {
@@ -217,6 +241,15 @@ export const sampler = defineNode({
         const reverse = flag('reverse');
         const loop = flag('loop');
         const from = reverse ? total - end : start;
+        // The part that repeats, in seconds of the buffer the voice plays: the loop points where
+        // they fall inside the region, or all of it.
+        let repeats: readonly [number, number] | null = loop ? [from, from + length] : null;
+        if (loop) {
+          const inside = (time: number) => Math.min(Math.max(time, start), end);
+          const first = inside(number('loopStart'));
+          const last = inside(number('loopEnd'));
+          if (last > first) repeats = reverse ? [total - last, total - first] : [first, last];
+        }
 
         if (choke) {
           stopVoicesBefore(at);
@@ -239,10 +272,10 @@ export const sampler = defineNode({
           source.connect(out);
         }
 
-        if (loop) {
+        if (repeats) {
           source.loop = true;
-          source.loopStart = from;
-          source.loopEnd = from + length;
+          source.loopStart = repeats[0];
+          source.loopEnd = repeats[1];
           source.start(at, from);
         } else {
           source.start(at, from, length);
@@ -253,7 +286,7 @@ export const sampler = defineNode({
           stopTime: Infinity,
           from,
           length,
-          loop: loop ? [from, from + length] : null,
+          loop: repeats,
           reverse,
           total,
           times: [at],

@@ -72,3 +72,19 @@ describe('remote: play position', () => {
     expect(scope.select('#s').first()!.playheads(0.25)).toEqual([0.25]);
   });
 });
+
+describe('remote: loop points', () => {
+  it('are parameters like any other', async () => {
+    const { engine, remote, __ } = await linked(0.5);
+    __()
+      .sampler({ id: 's', buffer: 'stairs', loop: true, loopStart: 0.2, loopEnd: 0.3 })
+      .to('main');
+    __('#s').trigger({ at: 0 });
+    __('#s').set({ loopEnd: 0.3 });
+    expect(__('#s').param('loopStart').value).toBe(0.2);
+    remote.flush();
+    const audio = await engine.render();
+    expect(valueAt(audio, 0.05)).toBeCloseTo(0.05, 6);
+    expect(valueAt(audio, 0.45)).toBeCloseTo(0.25, 6);
+  });
+});

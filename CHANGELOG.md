@@ -12,6 +12,14 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Loop points on the sampler.** Two parameters, `loopStart` and `loopEnd`, in seconds of the
+  buffer like `start` and `end`. With `loop` on, a voice plays from `start`, and on reaching
+  `loopEnd` goes round from `loopStart` until it is released, when it stops (it does not play on
+  to `end`). Reversed, it plays down from `end` and goes round between the same two points. The
+  points are kept inside the region, and inside the slice for `trigger({ slice })`; a `loopEnd`
+  at or before `loopStart`, which the defaults of 0 are, means the whole region repeats, so
+  existing code sounds the same, sample for sample. Both can be given for one trigger.
+
 - **Play position.** `node.playheads(at?, into?)` gives where each sounding voice of a sampler is
   in its buffer, in seconds, at an audio time (default now): for drawing a play cursor. It is
   worked out from what each voice was told (start time, region, speed and its changes, reverse,

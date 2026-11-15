@@ -864,6 +864,17 @@ class RemoteImpl {
       get: (key) => this.bufferInfo.get(key),
       load: (url, loadOptions) =>
         this.emit({ op: 'loadBuffer', key: loadOptions?.key ?? url, url }),
+      setSlices: (key, boundaries) => {
+        const slices = [...boundaries].filter(Number.isFinite).sort((a, b) => a - b);
+        const known = this.bufferInfo.get(key);
+        if (known) {
+          this.bufferInfo.set(key, {
+            ...known,
+            slices: slices.length >= 2 ? slices : [0, known.duration],
+          });
+        }
+        this.emit({ op: 'slices', key, slices });
+      },
     };
     this.transportState = options.transport;
     this.scopeName = options.snapshot.name;

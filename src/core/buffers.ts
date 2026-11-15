@@ -4,6 +4,7 @@ import { CrackedUpError, Emitter } from './errors';
 type BufferEvents = {
   ready: (ref: BufferRef) => void;
   error: (ref: BufferRef) => void;
+  slices: (ref: BufferRef) => void;
 };
 
 class BufferRefImpl implements BufferRef {
@@ -72,7 +73,11 @@ class BufferRefImpl implements BufferRef {
 
   set slices(boundaries: readonly number[]) {
     const sorted = [...boundaries].filter(Number.isFinite).sort((a, b) => a - b);
+    const before = this.slices;
     this.customSlices = sorted.length >= 2 ? Object.freeze(sorted) : null;
+    const after = this.slices;
+    const same = after.length === before.length && after.every((time, i) => time === before[i]);
+    if (!same) this.events.emit('slices', this);
   }
 }
 
@@ -122,7 +127,7 @@ export class BufferStoreImpl implements BufferStore {
     return this.refs.delete(key);
   }
 
-  on(event: 'ready' | 'error', listener: (ref: BufferRef) => void): Unsubscribe {
+  on(event: 'ready' | 'error' | 'slices', listener: (ref: BufferRef) => void): Unsubscribe {
     return this.events.on(event, listener);
   }
 

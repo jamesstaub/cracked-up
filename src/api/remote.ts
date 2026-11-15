@@ -161,6 +161,11 @@ export interface RemoteBuffers {
   get(key: string): BufferInfo | undefined;
   /** Asks the host to load a URL. The host may refuse. `get` answers once it has loaded. */
   load(url: string, options?: { key?: string }): void;
+  /**
+   * Replaces a buffer's slice boundaries, as setting `ref.slices` does on the host. The host may
+   * refuse. `get` answers with the new list at once.
+   */
+  setSlices(key: string, boundaries: readonly number[]): void;
 }
 
 /** The part of the transport a remote script can use. Tempo changes are sent as `transport` commands. */

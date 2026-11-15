@@ -12,6 +12,18 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Slices as data a host edits.** `addSlice`, `moveSlice`, `removeSlice`, `normalizeSlices` and
+  `sliceAt` in `cracked-up/util` take a list of boundaries and return a new one, sorted, without
+  repeats and (given the duration) inside the sound: `ref.slices = addSlice(ref.slices, 1.5)`.
+  `moveSlice` keeps a boundary between its neighbours, so a drag never changes the order or the
+  count. The buffer store has a `slices` event, fired when an entry's boundaries are set to
+  something different (`ready` already fires when its audio arrives or is replaced). Slices can
+  be changed while samplers play: a trigger reads them when it is called, so voices started or
+  scheduled keep their region and the next `trigger({ slice })` uses the new list. A sandboxed
+  script sets them with `remote.buffers.setSlices(key, boundaries)`, which is the new `slices`
+  command; a host can refuse it in `allow`. Slices stay on the store entry: `describe()` and
+  `snapshot()` carry a sampler's buffer key, not the slices.
+
 - **Onset detection and slice grids.** `detectOnsets(sound, { sensitivity, minGap, start, end })`
   in `cracked-up/util` gives the times where hits begin in an `AudioBuffer` or plain channel data:
   an energy detector over the whole signal and its high frequencies, with the time moved to the

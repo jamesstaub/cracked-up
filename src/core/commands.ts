@@ -138,6 +138,17 @@ export function execute(scope: ScopeImpl, command: Command): void {
       scope.engine.buffers.load(command.url, { key: command.key });
       return;
     }
+    case 'slices': {
+      const ref = scope.engine.buffers.get(command.key);
+      if (!ref) {
+        throw new CrackedUpError('missing-target', `There is no buffer called "${command.key}".`);
+      }
+      if (!Array.isArray(command.slices) || command.slices.some((t) => typeof t !== 'number')) {
+        throw new CrackedUpError('invalid-command', 'A "slices" command needs a list of numbers.');
+      }
+      ref.slices = command.slices;
+      return;
+    }
     case 'setStep': {
       const sequence = scope.transport.get(command.name);
       if (!sequence) {

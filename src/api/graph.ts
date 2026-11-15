@@ -466,7 +466,9 @@ export type Command =
   | { op: 'clearSequence'; name: string }
   // Transport and buffers. A host may refuse these from a sandbox.
   | { op: 'transport'; set: { bpm?: number; swing?: number } }
-  | { op: 'loadBuffer'; key: string; url: string };
+  | { op: 'loadBuffer'; key: string; url: string }
+  /** Replaces the slice boundaries of a buffer in the engine's store. */
+  | { op: 'slices'; key: string; slices: readonly number[] };
 
 // ---------------------------------------------------------------------------------------------------
 // Scopes

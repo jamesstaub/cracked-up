@@ -43,8 +43,19 @@ export interface BufferRef {
   /** Seconds. null until ready. */
   readonly duration: number | null;
   /**
-   * Slice boundaries in seconds, ascending, starting at 0 and ending at the duration. Samplers
-   * triggered with `{ slice: n }` play from boundary n to boundary n + 1.
+   * Slice boundaries in seconds, ascending: by default the start and the end of the sound, which
+   * is one slice. Samplers triggered with `{ slice: n }` play from boundary n to boundary n + 1.
+   *
+   * Setting it replaces the list (it is sorted; fewer than two boundaries means the default again)
+   * and fires the store's `slices` event if anything changed. It can be set at any time, before
+   * the audio has loaded and while samplers play. A trigger reads the boundaries when it is
+   * called: voices already started or scheduled keep the region they were given, the next
+   * `trigger({ slice })` uses the new list, and a slice number past the new last slice wraps round.
+   *
+   * To change one boundary, set the list `addSlice`, `moveSlice` or `removeSlice` (in
+   * `cracked-up/util`) returns: `ref.slices = addSlice(ref.slices, 1.5, ref.duration ?? undefined)`.
+   * Slices belong to the store entry, not to any node: `describe()` and `snapshot()` carry a
+   * sampler's buffer key and not its slices, so a host that saves a project saves `slices` itself.
    */
   slices: readonly number[];
 }
@@ -59,7 +70,12 @@ export interface BufferStore {
   /** Every entry, in the order added. */
   list(): readonly BufferRef[];
   delete(key: string): boolean;
-  on(event: 'ready' | 'error', listener: (ref: BufferRef) => void): Unsubscribe;
+  /**
+   * - `ready`: an entry's audio arrived or was replaced (a load finished, a recorder wrote a take).
+   * - `error`: a load or decode failed.
+   * - `slices`: an entry's slice boundaries were set to something different.
+   */
+  on(event: 'ready' | 'error' | 'slices', listener: (ref: BufferRef) => void): Unsubscribe;
 }
 
 // ---------------------------------------------------------------------------------------------------

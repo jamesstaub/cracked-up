@@ -549,6 +549,14 @@ const link = linkRemote(scope, {
                 <td><code>loadBuffer</code></td>
                 <td>Makes the page fetch a URL. Consider refusing it, or checking the URL</td>
               </tr>
+              <tr>
+                <td><code>slices</code></td>
+                <td>
+                  Replaces the slice boundaries of a buffer in the engine's store, which every
+                  sampler that plays it shares. Refuse it if scripts should not change each other's
+                  sounds
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

@@ -122,6 +122,9 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
     engine.transport.on('start', sendTransport),
     engine.transport.on('stop', sendTransport),
     engine.buffers.on('ready', (ref) => send({ type: 'buffer', ...bufferInfo(ref) })),
+    engine.buffers.on('slices', (ref) => {
+      if (ref.state === 'ready') send({ type: 'buffer', ...bufferInfo(ref) });
+    }),
   ];
 
   /** The ids leading to a macro instance from the linked scope, or null if it is not inside it. */

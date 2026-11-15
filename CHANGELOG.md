@@ -12,6 +12,15 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Waveform data for drawing.** `waveformPeaks(source, { buckets, start, end, channel, rms })` in
+  `cracked-up/util` reduces an `AudioBuffer` (or plain channel arrays with a sample rate) to the
+  lowest and highest sample, and optionally the RMS, of each of `buckets` equal parts of a time
+  range, for one channel or the mix of all. It reads every sample in the range once.
+  `createWaveformCache(source)` gives the same numbers from a multi-resolution cache in a time that
+  depends on the number of buckets and not on the length: for five minutes of stereo at 48 kHz and
+  1000 buckets, about 1 ms against 23 to 57 ms, after one pass of 30 to 56 ms to build it. Neither
+  draws anything or needs a page.
+
 - **Inserts on a bus.** Calling a node type on a bus puts that node inside the bus, in series
   between its mix and its output: `__.bus('drums').compressor({ id: 'glue', threshold: -18 })`.
   Everything sent to the bus passes through it, nothing goes round it, and the bus stays routed

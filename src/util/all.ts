@@ -5,3 +5,4 @@ export * from './random';
 export * from './curves';
 export * from './music';
 export * from './wav';
+export * from './waveform';

@@ -177,6 +177,7 @@ export const looper = defineNode({
       default: 1,
       min: 0,
       max: 2,
+      unit: 'gain',
       rate: 'audio',
       description: 'Level of the loop playback.',
     },
@@ -184,6 +185,7 @@ export const looper = defineNode({
       default: 1,
       min: 0,
       max: 2,
+      unit: 'gain',
       rate: 'audio',
       description: 'Level of the input passed straight through. 0 lets only the loop out.',
     },
@@ -191,6 +193,7 @@ export const looper = defineNode({
       default: 0.7,
       min: 0,
       max: 1,
+      unit: 'gain',
       rate: 'audio',
       description:
         'Level at which layers after the first are recorded. Below 1 so that layers stacked on each other do not add up to distortion. Read when a layer starts.',
@@ -295,7 +298,7 @@ export const input = defineNode({
     'Live audio from a microphone or audio interface. The browser asks the person for permission the first time; until they answer, and if they refuse, the node is silent. Live engines only: an offline render has no microphone.',
   shorthand: 'gain',
   params: {
-    gain: { default: 1, min: 0, max: 4, rate: 'audio', description: 'Input level.' },
+    gain: { default: 1, min: 0, max: 4, unit: 'gain', rate: 'audio', description: 'Input level.' },
   },
   options: {
     deviceId: {

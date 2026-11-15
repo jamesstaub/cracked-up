@@ -53,7 +53,11 @@ export interface OscillatorParams {
 export interface SamplerParams {
   /** Playback rate. Negative is not reverse; use `reverse`. */
   speed: number;
-  /** Start and end of the played region, in seconds of the buffer. An `end` at or before `start` means the end of the buffer. */
+  /**
+   * Start and end of the played region, in seconds of the buffer. An `end` at or before `start`
+   * means the end of the buffer. The range in their metadata, 0 to 60, is nominal: the range that
+   * means something is 0 to the length of the sound, which is `node.buffer?.duration`.
+   */
   start: number;
   end: number;
   /** Repeats until released: the region, or the part of it between the loop points. */
@@ -424,6 +428,8 @@ export interface BuiltNode {
    * definition's `options` so hosts and remotes know.
    */
   options?: Record<string, (value: unknown, at: number) => void>;
+  /** For a node that plays a sound from the buffer store: the entry it plays now, if it has one. */
+  buffer?(): BufferRef | null;
   /**
    * For a node that plays recorded sound: adds to `into` where each voice sounding at the audio
    * time `at` is in that sound, in seconds. This is what `node.playheads()` returns. It is called

@@ -16,7 +16,7 @@ import type {
   ReleaseOptions,
   TriggerOptions,
 } from './nodes';
-import type { Engine } from './engine';
+import type { BufferRef, Engine } from './engine';
 
 // ---------------------------------------------------------------------------------------------------
 // Nodes
@@ -76,6 +76,21 @@ export interface Node<K extends NodeType = NodeType> {
 
   /** Calls a method the node's definition declares (see `methods` on node and macro definitions). */
   call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
+
+  /**
+   * For a node that plays a sound from the engine's buffer store (a sampler): the entry it plays,
+   * with its `key`, its `duration` in seconds once loaded, its `slices` and its `buffer`. Null for
+   * a sampler with no buffer and for every other node type. After `setOption('buffer', ...)` it is
+   * the new entry, from the moment of the call even when the change is scheduled for later.
+   *
+   * This is what gives a sampler's `start`, `end`, `loopStart` and `loopEnd` their real range: 0
+   * to `node.buffer.duration`. Listen to the scope's `option:changed` for the node playing another
+   * buffer, and to the store's `ready` and `slices` for the entry itself changing.
+   *
+   * On a remote's node it has only `key`, `duration` and `slices`, and is null until the host has
+   * loaded the sound.
+   */
+  readonly buffer: BufferRef | null;
 
   /**
    * Changes one of the creation options the node type marks `live`, with the node and everything

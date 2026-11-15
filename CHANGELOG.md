@@ -12,6 +12,12 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **`node.buffer`.** The buffer store entry a sampler plays (`key`, `duration`, `slices`,
+  `buffer`), or null: what a host needs to give `start`, `end`, `loopStart` and `loopEnd` their
+  real range, 0 to `node.buffer.duration`, in place of the nominal 0 to 60 seconds of their
+  metadata. It follows `setOption('buffer', ...)`. On a remote's node it has the key, duration
+  and slices. A node type of your own answers by returning `buffer()` from `build`.
+
 - **Changing a sampler's sound without making a new node.** `setOption('buffer', key)` on a node
   or a selection points an existing sampler at another buffer (a store key, a URL, an
   `AudioBuffer` or a `BufferRef`, as at creation). Voices already sounding finish on the sound
@@ -240,6 +246,10 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 - `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
 
 ### Fixed
+
+- The level parameters of `looper` (`gain`, `monitor`, `overdub`) and of `input` (`gain`) had no
+  unit in their metadata; they now say `gain`, like every other level. Values and behaviour are
+  unchanged.
 
 - Following MIDI clock: a MIDI Start that arrives while the transport is already playing now moves
   it to the beginning. Before, it was ignored, so a transport started by hand never lined up with

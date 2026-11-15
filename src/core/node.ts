@@ -1,5 +1,6 @@
 import type {
   At,
+  BufferRef,
   Bus,
   BuiltNode,
   MacroContext,
@@ -357,6 +358,10 @@ export class NodeImpl {
     }
     if (this.later(() => fn(args, at))) return;
     fn(args, at);
+  }
+
+  get buffer(): BufferRef | null {
+    return this.disposed ? null : (this.built.buffer?.() ?? null);
   }
 
   /** Whether a creation option can be changed in place. */

@@ -260,3 +260,79 @@ describe('build() and apply() with a different buffer', () => {
     expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(0.75, 6);
   });
 });
+
+describe('what a sampler plays, for a host', () => {
+  it('node.buffer is the store entry: its key, length and slices give the real range of start and end', async () => {
+    const engine = await setup(0.1);
+    engine.chain().sampler({ id: 's', buffer: 'low' }).gain({ id: 'g' }).to('main');
+    engine.chain().sampler({ id: 'empty' }).to('main');
+    const node = engine.select('#s').first()!;
+    expect(node.buffer).toBe(engine.buffers.get('low'));
+    expect(node.buffer?.key).toBe('low');
+    expect(node.buffer?.duration).toBe(1);
+    expect(node.param('end').meta).toMatchObject({ min: 0, max: 60, unit: 'seconds' });
+    node.buffer!.slices = [0, 0.5, 1];
+    expect(engine.buffers.get('low')?.slices).toEqual([0, 0.5, 1]);
+
+    node.setOption('buffer', 'high', { at: 0.05 });
+    expect(node.buffer?.key).toBe('high');
+    expect(node.buffer?.duration).toBeCloseTo(0.2, 9);
+    node.setOption('buffer', undefined);
+    expect(node.buffer).toBeNull();
+
+    expect(engine.select('#empty').first()!.buffer).toBeNull();
+    expect(engine.select('#g').first()!.buffer).toBeNull();
+    const made = level(0.3, 1);
+    engine.chain().sampler({ id: 'own', buffer: made }).to('main');
+    expect(engine.select('#own').first()!.buffer?.buffer).toBe(made);
+    node.dispose();
+    expect(node.buffer).toBeNull();
+  });
+
+  it('a buffer still loading has a key and no duration yet', async () => {
+    const engine = await setup(0.1);
+    const encoded = new ArrayBuffer(8);
+    const ref = engine.buffers.add('pending', encoded);
+    ref.ready.catch(() => {});
+    engine.chain().sampler({ id: 's', buffer: 'pending' }).to('main');
+    const node = engine.select('#s').first()!;
+    expect(node.buffer?.key).toBe('pending');
+    expect(node.buffer?.duration).toBeNull();
+  });
+});
+
+describe('parameter metadata of the built-in types', () => {
+  it('gives every level a gain or decibel unit, every frequency hertz and a log curve, every time seconds', async () => {
+    const engine = await setup(0.1);
+    const wrong: string[] = [];
+    for (const info of engine.registry.list()) {
+      for (const meta of info.params) {
+        if (meta.kind !== 'number') continue;
+        const name = meta.name.toLowerCase();
+        const where = `${info.type}.${meta.name}`;
+        const isLevel = /gain$|^monitor$|^overdub$|^sustain$|^feedback$/.test(name);
+        if (isLevel && !['gain', 'db'].includes(meta.unit)) wrong.push(`${where}: ${meta.unit}`);
+        const isFrequency =
+          /frequency$|cutoff$|crossover$|^tone$|^lowcut$|^color$|^postcut$|rate$/.test(name);
+        if (
+          isFrequency &&
+          info.type !== 'bitcrusher' &&
+          (meta.unit !== 'hz' || meta.curve !== 'log')
+        ) {
+          wrong.push(`${where}: ${meta.unit} ${meta.curve}`);
+        }
+        const isTime = /^(time|attack|decay|release|latency|start|end|loopstart|loopend)$/.test(
+          name,
+        );
+        if (isTime && meta.unit !== 'seconds') wrong.push(`${where}: ${meta.unit}`);
+        if (/threshold$|knee$/.test(name) && meta.unit !== 'db')
+          wrong.push(`${where}: ${meta.unit}`);
+        if (/detune$/.test(name) && meta.unit !== 'cents') wrong.push(`${where}: ${meta.unit}`);
+        if (name === 'pan' && meta.unit !== 'pan') wrong.push(`${where}: ${meta.unit}`);
+        if (/ratio$|^speed$/.test(name) && meta.unit !== 'ratio')
+          wrong.push(`${where}: ${meta.unit}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+});

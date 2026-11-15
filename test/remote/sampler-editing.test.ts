@@ -134,3 +134,19 @@ describe('remote: changing a sampler’s buffer', () => {
     expect(remote.describe().nodes[0]?.init).toEqual({ buffer: 'ones' });
   });
 });
+
+describe('remote: what a sampler plays', () => {
+  it('node.buffer has the key, duration and slices the sandbox knows', async () => {
+    const { remote, __ } = await linked(0.1);
+    __().sampler({ id: 's', buffer: 'stairs' }).gain({ id: 'g' }).to('main');
+    const node = __('#s').first()!;
+    expect(node.buffer).toEqual({ key: 'stairs', duration: 1, slices: [0, 1] });
+    remote.buffers.setSlices('stairs', [0, 0.5, 1]);
+    expect(node.buffer?.slices).toEqual([0, 0.5, 1]);
+    node.setOption('buffer', 'ones');
+    expect(node.buffer?.duration).toBeCloseTo(0.5, 9);
+    node.setOption('buffer', 'not-loaded-yet');
+    expect(node.buffer).toBeNull();
+    expect(__('#g').first()!.buffer).toBeNull();
+  });
+});

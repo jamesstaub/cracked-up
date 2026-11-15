@@ -145,7 +145,8 @@ export const sampler = defineNode({
       max: 60,
       unit: 'seconds',
       rate: 'control',
-      description: 'Where in the buffer playback begins.',
+      description:
+        "Where in the buffer playback begins. The sound's own length is the real upper limit.",
     },
     end: {
       default: 0,
@@ -331,6 +332,7 @@ export const sampler = defineNode({
       release(_options, at) {
         stopVoicesBefore(at);
       },
+      buffer: () => sounds[sounds.length - 1] ?? null,
       playheads(at, into) {
         for (const voice of voices) {
           const position = positionOf(voice, at);

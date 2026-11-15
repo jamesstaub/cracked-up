@@ -353,6 +353,12 @@ class RemoteNode implements Selectable {
     return this;
   }
 
+  /** What the sandbox knows of the buffer this node plays: its key, duration and slices. */
+  get buffer(): BufferInfo | null {
+    const key = this.init['buffer'];
+    return typeof key === 'string' ? (this.remote.buffers.get(key) ?? null) : null;
+  }
+
   /** Play positions are known only where the audio is: on the host. */
   playheads(_at?: number, into: number[] = []): number[] {
     into.length = 0;

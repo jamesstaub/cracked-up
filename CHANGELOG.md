@@ -12,6 +12,24 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Changing a sampler's sound without making a new node.** `setOption('buffer', key)` on a node
+  or a selection points an existing sampler at another buffer (a store key, a URL, an
+  `AudioBuffer` or a `BufferRef`, as at creation). Voices already sounding finish on the sound
+  they started with; triggers at or after the change's time (`{ at }`, or the event's time in a
+  sequence callback) play the new one; parameters keep their values. `start`, `end` and the loop
+  points are not changed: an `end` past the new sound stops at its end, and a `start` at or past
+  its end plays nothing until it is set lower. `describe()` reports the new buffer and the scope
+  emits `option:changed`.
+  - `build()` and `apply()` now keep a sampler whose `buffer` is the only creation option that
+    changed, and change it in place: the node is in `updated`, not in `removed` and `added`, and
+    what it was playing carries on. A `setOption` made at top level of a build after the node has
+    the last word, as a `set` does, so a host's choice of sound survives re-runs of the script.
+  - It is general: an option a node type can change in place is marked `live` in its
+    `OptionInfo`, and its `build` returns a handler for it in `options`. Today only the
+    sampler's `buffer` is.
+  - As a command it is `{ op: 'option', target, at, name, value }`, which is what a remote's
+    `setOption` sends; a host that filters commands in `allow` sees it.
+
 - **Loop points on the sampler.** Two parameters, `loopStart` and `loopEnd`, in seconds of the
   buffer like `start` and `end`. With `loop` on, a voice plays from `start`, and on reaching
   `loopEnd` goes round from `loopStart` until it is released, when it stops (it does not play on

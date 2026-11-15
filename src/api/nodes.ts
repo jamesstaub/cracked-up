@@ -417,6 +417,14 @@ export interface BuiltNode {
   /** Extra operations, reachable as `node.call(name, args)` and as `call` commands. */
   methods?: Record<string, (args: Readonly<Record<string, unknown>>, at: number) => void>;
   /**
+   * Creation options that can be changed afterwards, by name: each is called with the new value
+   * (`undefined` when a rebuild no longer gives the option) and the audio time it applies at. This
+   * is what `node.setOption()` and the `option` command reach, and what lets `build()` and
+   * `apply()` keep a node whose description differs only in these. Mark each one `live` in the
+   * definition's `options` so hosts and remotes know.
+   */
+  options?: Record<string, (value: unknown, at: number) => void>;
+  /**
    * For a node that plays recorded sound: adds to `into` where each voice sounding at the audio
    * time `at` is in that sound, in seconds. This is what `node.playheads()` returns. It is called
    * on every animation frame, so it should do little and make nothing.
@@ -435,6 +443,12 @@ export interface OptionInfo {
   /** The default, as text. Omit when the option has none. */
   readonly default?: string;
   readonly description: string;
+  /**
+   * True when the option can be changed on a living node with `setOption` (the node's `build`
+   * returned a handler for it in `options`). A rebuild that changes only such options keeps the
+   * node. Every other option is fixed when the node is made: changing it makes a new node.
+   */
+  readonly live?: boolean;
 }
 
 export interface NodeDefinition<K extends string = string> {

@@ -78,6 +78,16 @@ export interface Node<K extends NodeType = NodeType> {
   call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
 
   /**
+   * Changes one of the creation options the node type marks `live`, with the node and everything
+   * connected to it left in place. Today that is a sampler's `buffer`:
+   * `node.setOption('buffer', 'snare')`. The value is whatever the option accepts at creation.
+   * From `at` on (default: now, or the event's time inside a sequence callback) the node behaves
+   * as if made with it; `describe()` reports the new value, and the scope emits `option:changed`.
+   * Throws `invalid-command` for an option that is not live.
+   */
+  setOption(name: string, value: unknown, options?: At): this;
+
+  /**
    * Where the node's voices are in the sound they play, for drawing a play cursor: one position
    * per voice sounding at the audio time `at` (default: now, `context.currentTime`), in seconds
    * from the start of the buffer, oldest voice first. Empty when nothing sounds then, and for
@@ -165,6 +175,11 @@ export interface SelectionBase<K extends NodeType = NodeType> extends Iterable<N
   trigger(options?: TriggerOptions<K>): this;
   release(options?: ReleaseOptions): this;
   call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this;
+  /**
+   * Changes a live creation option on every selected node that has it; others are skipped. See
+   * `Node.setOption`. `__('#snare').setOption('buffer', 'rimshot')`.
+   */
+  setOption(name: string, value: unknown, options?: At): this;
 
   /**
    * Bypasses every selected node, or with `false` brings them back. A bypassed effect passes its input
@@ -472,6 +487,8 @@ export type Command =
       method: string;
       args?: Readonly<Record<string, Json>>;
     }
+  /** A live creation option of the nodes that have it, such as a sampler's `buffer` (a store key). */
+  | { op: 'option'; target: CommandTarget; at: number; name: string; value: Json }
   // Graph
   | { op: 'apply'; graph: GraphData }
   /** Commands for the private scope inside one macro instance, named by its id. */
@@ -503,10 +520,23 @@ export interface ScopeEvents {
   'node:removed': (id: string) => void;
   'param:changed': (change: import('./params').ParamChange) => void;
   /**
+   * A live creation option of a node changed (`setOption`, an `option` command, or a rebuild that
+   * kept the node): for a sampler, it now plays another buffer. `value` is what was given.
+   */
+  'option:changed': (change: OptionChange) => void;
+  /**
    * Something failed in this scope: a command, a node's build, or a callback scheduled through
    * the scope's transport that threw (the error's `origin` says which).
    */
   error: (error: GraphError) => void;
+}
+
+export interface OptionChange {
+  readonly node: Node;
+  readonly name: string;
+  readonly value: unknown;
+  /** Audio time at which the change takes effect. */
+  readonly at: number;
 }
 
 /**
@@ -574,7 +604,8 @@ export interface Scope {
   /**
    * Makes the scope match the description. Nodes are matched by id: matching nodes are kept and
    * updated in place, missing ones are created, extra ones are disposed. A node is kept only if its
-   * type and creation options are unchanged; otherwise it is replaced, and appears in both `removed`
+   * type and creation options are unchanged, apart from options its type marks `live` (a sampler's
+   * `buffer`), which are changed in place; otherwise it is replaced, and appears in both `removed`
    * and `added`. Connections the description does not list are removed, except those that leave the
    * scope, which a description cannot name. Each bus of the scope gets the inserts the description
    * lists for it. Sequences are not touched, and nor are buses otherwise.

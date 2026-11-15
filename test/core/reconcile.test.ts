@@ -183,7 +183,8 @@ describe('build', () => {
 
     const result = await scope.build((__) => {
       __().saw({ id: 'osc' }).to('main');
-      __().sampler({ id: 'hit', buffer: 'two' }).to('main');
+      // Not the buffer alone: a sampler takes a new buffer in place (see sampler-buffer.test.ts).
+      __().sampler({ id: 'hit', buffer: 'two', choke: false }).to('main');
     });
     expect(result.removed).toEqual(['osc', 'hit']);
     expect(ids(result.added)).toEqual(['osc', 'hit']);

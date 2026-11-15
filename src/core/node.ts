@@ -51,7 +51,8 @@ export class NodeImpl {
   readonly scope: ScopeImpl;
   readonly engine: EngineImpl;
   readonly entry: RegistryEntry;
-  readonly init: Readonly<Record<string, unknown>>;
+  /** Creation options as last given. Replaced, never mutated, when a live option changes. */
+  init: Readonly<Record<string, unknown>>;
   readonly modulates: string | null;
   /** The macro instance this node is inside, or null. */
   readonly parent: NodeImpl | null;
@@ -356,6 +357,34 @@ export class NodeImpl {
     }
     if (this.later(() => fn(args, at))) return;
     fn(args, at);
+  }
+
+  /** Whether a creation option can be changed in place. */
+  hasLiveOption(name: string): boolean {
+    return Object.hasOwn(this.built.options ?? {}, name);
+  }
+
+  setOption(name: string, value: unknown, options?: At): this {
+    this.applyOption(name, value, this.engine.resolveAt(options?.at));
+    return this;
+  }
+
+  applyOption(name: string, value: unknown, at: number): void {
+    if (!this.hasLiveOption(name)) {
+      throw new CrackedUpError(
+        'invalid-command',
+        `${this.type} "${this.id}" has no option called "${name}" that can be changed after it is made.`,
+        { nodeId: this.id },
+      );
+    }
+    this.scope.optionSet(this, name);
+    if (this.later(() => this.applyOption(name, value, at))) return;
+    if (this.scope.sameOption(this.init[name], value)) return;
+    this.built.options![name]!(value, at);
+    const init = { ...this.init, [name]: value };
+    if (value === undefined) delete init[name];
+    this.init = init;
+    this.scope.optionChanged({ node: this as unknown as Node, name, value, at });
   }
 
   playheads(at: number = this.engine.now(), into: number[] = []): number[] {

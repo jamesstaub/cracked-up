@@ -88,3 +88,49 @@ describe('remote: loop points', () => {
     expect(valueAt(audio, 0.45)).toBeCloseTo(0.25, 6);
   });
 });
+
+describe('remote: changing a sampler’s buffer', () => {
+  it('setOption changes it on the host in place, and the mirror agrees', async () => {
+    const { engine, scope, remote, __ } = await linked(1);
+    __().sampler({ id: 's', buffer: 'stairs', gain: 0.5 }).to('main');
+    remote.flush();
+    const node = scope.select('#s').first()!;
+    __('#s').trigger({ at: 0, duration: 0.1 });
+    __('#s').setOption('buffer', 'ones', { at: 0.2 });
+    __('#s').trigger({ at: 0.2 });
+    remote.flush();
+    expect(scope.select('#s').first()).toBe(node);
+    expect(remote.describe()).toEqual(scope.describe());
+    expect(scope.describe().nodes[0]?.init).toEqual({ buffer: 'ones' });
+    // A later change of structure sends the whole graph again: the buffer stays what it was set to.
+    __().gain({ id: 'later' });
+    remote.flush();
+    expect(scope.select('#s').first()).toBe(node);
+    const audio = await engine.render();
+    expect(valueAt(audio, 0.05)).toBeCloseTo(0.025, 6);
+    expect(valueAt(audio, 0.3)).toBeCloseTo(0.5, 6);
+    expect(() => __('#s').first()!.setOption('choke', false)).toThrow(/no option called "choke"/);
+  });
+
+  it('a remote build with a different buffer keeps the host’s node', async () => {
+    const { scope, remote, errors } = await linked(0.5);
+    remote.build((__) => __().sampler({ id: 's', buffer: 'stairs' }).to('main'));
+    remote.flush();
+    const node = scope.select('#s').first()!;
+    remote.build((__) => __().sampler({ id: 's', buffer: 'ones' }).to('main'));
+    remote.flush();
+    expect(errors).toEqual([]);
+    expect(scope.select('#s').first()).toBe(node);
+    expect(scope.describe().nodes[0]?.init).toEqual({ buffer: 'ones' });
+  });
+
+  it('hears of a buffer the host changes', async () => {
+    const { scope, remote, __ } = await linked(0.5);
+    __().sampler({ id: 's', buffer: 'stairs' }).to('main');
+    remote.flush();
+    scope.select('#s').setOption('buffer', 'ones');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(remote.describe()).toEqual(scope.describe());
+    expect(remote.describe().nodes[0]?.init).toEqual({ buffer: 'ones' });
+  });
+});

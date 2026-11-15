@@ -5,6 +5,7 @@ import type {
   GraphData,
   Json,
   NodeData,
+  OptionChange,
   ParamChange,
   ParamValue,
   ScopeApi,
@@ -37,6 +38,10 @@ interface PendingUpdate {
    * last word, as they do the first time the code runs, when the node is new.
    */
   set?: Set<string>;
+  /** Live creation options whose value differs from what the node has. */
+  options?: Readonly<Record<string, unknown>>;
+  /** Live options the build's own code set after asking for the node; as with `set`. */
+  setOptions?: Set<string>;
   classes: readonly string[];
   tags: Tags;
   bypass: boolean;
@@ -268,18 +273,22 @@ export class ScopeImpl {
 
     // A rebuild keeps the node it finds if nothing fixed at creation differs. Parameter values, classes,
     // tags and bypass can all change on a living node, and do so when the rebuild succeeds.
-    if (
-      build &&
-      previous &&
-      previous.type === type &&
-      previous.modulates === modulates &&
-      sameJson(this.comparableInit(previous.init), this.comparableInit(init))
-    ) {
+    const options =
+      build && previous && previous.type === type && previous.modulates === modulates
+        ? this.liveDifference(previous, init)
+        : null;
+    if (build && previous && options) {
       // Checked now, while the rebuild can still be refused whole. They are set when it succeeds.
       for (const [name, value] of Object.entries(values)) previous.params[name]!.check(value);
       build.claimed.add(previous);
       build.order.push(previous);
-      build.pending.set(previous, { values, classes, tags, bypass });
+      build.pending.set(previous, {
+        values,
+        classes,
+        tags,
+        bypass,
+        ...(Object.keys(options).length > 0 ? { options } : {}),
+      });
       return previous;
     }
 
@@ -319,6 +328,37 @@ export class ScopeImpl {
       out[key] = this.engine.buffersImpl.keyOf(value) ?? value;
     }
     return out;
+  }
+
+  /** Whether two values of a creation option are the same, a stored buffer and its key included. */
+  sameOption(a: unknown, b: unknown): boolean {
+    const buffers = this.engine.buffersImpl;
+    return sameJson(buffers.keyOf(a) ?? a, buffers.keyOf(b) ?? b);
+  }
+
+  /**
+   * How a node's creation options differ from `init`, when it can take the difference in place:
+   * the options to change, by name (none when nothing differs). Null when an option that is fixed
+   * at creation differs, so that the node must be replaced.
+   */
+  private liveDifference(
+    node: NodeImpl,
+    init: Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> | null {
+    const before = this.comparableInit(node.init);
+    const after = this.comparableInit(init);
+    const changes: Record<string, unknown> = {};
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (
+        Object.hasOwn(before, key) === Object.hasOwn(after, key) &&
+        sameJson(before[key], after[key])
+      ) {
+        continue;
+      }
+      if (!node.hasLiveOption(key)) return null;
+      changes[key] = init[key];
+    }
+    return changes;
   }
 
   /**
@@ -941,6 +981,11 @@ export class ScopeImpl {
       node.applyBypass(update.bypass, at);
       changed = true;
     }
+    for (const [name, value] of Object.entries(update.options ?? {})) {
+      if (update.setOptions?.has(name)) continue;
+      node.applyOption(name, value, at);
+      changed = true;
+    }
     return changed;
   }
 
@@ -961,6 +1006,19 @@ export class ScopeImpl {
   paramSet(node: NodeImpl, name: string): void {
     const pending = this.building?.pending.get(node);
     if (pending) (pending.set ??= new Set()).add(name);
+  }
+
+  /** A live option was set. During a build this is remembered for a node that is being kept. */
+  optionSet(node: NodeImpl, name: string): void {
+    const pending = this.building?.pending.get(node);
+    if (pending) (pending.setOptions ??= new Set()).add(name);
+  }
+
+  optionChanged(change: OptionChange): void {
+    const node = change.node as unknown as NodeImpl;
+    const tx = this.engine.tx;
+    if (tx?.created.has(node)) tx.announce(node, () => this.events.emit('option:changed', change));
+    else this.events.emit('option:changed', change);
   }
 
   paramChanged(change: ParamChange): void {

@@ -276,6 +276,13 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       returns: 'same',
     },
     {
+      name: 'setOption',
+      signature: 'setOption(name, value, options?)',
+      description:
+        "Changes a creation option that can change on a living node, such as a sampler's sound: setOption('buffer', 'snare'). Voices already sounding finish on the old sound.",
+      returns: 'same',
+    },
+    {
       name: 'bypass',
       signature: 'bypass(on?, options?)',
       description:
@@ -385,6 +392,13 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'call',
       signature: 'call(method, args?, options?)',
       description: 'Calls a method the node type declares.',
+      returns: 'same',
+    },
+    {
+      name: 'setOption',
+      signature: 'setOption(name, value, options?)',
+      description:
+        "Changes a creation option that can change on a living node, such as a sampler's sound: setOption('buffer', 'snare').",
       returns: 'same',
     },
     { name: 'dispose', signature: 'dispose()', description: 'Removes the node from the graph.' },

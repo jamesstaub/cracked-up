@@ -253,7 +253,7 @@ class RemoteNode implements Selectable {
     public tags: Tags,
     /** Base values that have been given. A parameter not listed has its default. */
     readonly values: Record<string, ParamValue>,
-    readonly init: Readonly<Record<string, Json>>,
+    public init: Readonly<Record<string, Json>>,
     public bypassed: boolean,
   ) {
     const params: Record<string, RemoteParam> = {};
@@ -338,6 +338,18 @@ class RemoteNode implements Selectable {
 
   call(method: string, args?: Readonly<Record<string, Json>>, options?: At): this {
     this.remote.select([this]).call(method, args, options);
+    return this;
+  }
+
+  setOption(name: string, value: unknown, options?: At): this {
+    if (!this.info.options[name]?.live) {
+      throw new CrackedUpError(
+        'invalid-command',
+        `${this.type} "${this.id}" has no option called "${name}" that can be changed after it is made.`,
+        { nodeId: this.id },
+      );
+    }
+    this.remote.select([this]).setOption(name, value, options);
     return this;
   }
 
@@ -580,6 +592,25 @@ class RemoteSelection implements Iterable<RemoteNode> {
         at: this.remote.time(options),
         method,
         ...(args === undefined ? {} : { args }),
+      });
+    }
+    return this;
+  }
+
+  setOption(name: string, value: unknown, options?: At): this {
+    const nodes = this.nodes.filter((node) => node.info.options[name]?.live);
+    for (const node of nodes) {
+      const init = { ...node.init, [name]: value as Json };
+      if (value === undefined) delete init[name];
+      node.init = init;
+    }
+    if (nodes.length > 0) {
+      this.remote.emit({
+        op: 'option',
+        target: { ids: nodes.map((node) => node.id) },
+        at: this.remote.time(options),
+        name,
+        value: (value ?? null) as Json,
       });
     }
     return this;

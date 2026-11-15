@@ -143,6 +143,13 @@ export class SelectionImpl implements Iterable<NodeImpl> {
     return this;
   }
 
+  setOption(name: string, value: unknown, options?: At): this {
+    const time = this.engine.resolveAt(options?.at);
+    for (const node of this.nodes)
+      if (node.hasLiveOption(name)) node.applyOption(name, value, time);
+    return this;
+  }
+
   /** Bypasses every selected node, or with `false` brings them back. */
   bypass(on = true, options?: At): this {
     const time = this.engine.resolveAt(options?.at);

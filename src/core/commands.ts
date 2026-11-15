@@ -100,6 +100,16 @@ export function execute(scope: ScopeImpl, command: Command): void {
       }
       return;
     }
+    case 'option': {
+      const at = requireTime(command);
+      if (typeof command.name !== 'string') {
+        throw new CrackedUpError('invalid-command', 'An "option" command needs a "name".');
+      }
+      for (const node of resolve(scope, command.target)) {
+        if (node.hasLiveOption(command.name)) node.applyOption(command.name, command.value, at);
+      }
+      return;
+    }
     case 'connect': {
       const end = resolveEdgeTarget(scope, command.to);
       for (const node of resolve(scope, command.target)) connect(node, end);

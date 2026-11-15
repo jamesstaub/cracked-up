@@ -113,6 +113,12 @@ export function linkRemote(scope: Scope, options: LinkOptions): Link {
       snapshotPending = true;
       queueFlush();
     }),
+    // A script's own `setOption` is already in its mirror; one made on the host is not.
+    scope.on('option:changed', () => {
+      if (applying) return;
+      snapshotPending = true;
+      queueFlush();
+    }),
     scope.on('node:removed', () => {
       if (applying) return;
       snapshotPending = true;

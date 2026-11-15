@@ -103,7 +103,8 @@ export const sampler = defineNode({
     buffer: {
       type: 'string | AudioBuffer | BufferRef',
       description:
-        'The sound to play. A string is looked up in engine.buffers by name; if nothing has that name it is loaded as a URL.',
+        'The sound to play. A string is looked up in engine.buffers by name; if nothing has that name it is loaded as a URL. It can be changed later with setOption: voices already sounding finish on the sound they started with, and the next trigger plays the new one.',
+      live: true,
     },
     choke: {
       type: 'boolean',
@@ -187,8 +188,17 @@ export const sampler = defineNode({
     const choke = init['choke'] !== false;
     const maxVoices =
       typeof init['voices'] === 'number' && init['voices'] >= 1 ? init['voices'] : 16;
-    const ref: BufferRef | null =
-      init['buffer'] === undefined ? null : context.buffer(init['buffer'] as BufferSource);
+    const resolve = (source: unknown): BufferRef | null =>
+      source === undefined || source === null ? null : context.buffer(source as BufferSource);
+    // The buffer over time: `sounds[i]` from `since[i]` on. More than one only while a change of
+    // buffer is scheduled ahead.
+    const since: number[] = [Number.NEGATIVE_INFINITY];
+    const sounds: (BufferRef | null)[] = [resolve(init['buffer'])];
+    const soundAt = (time: number): BufferRef | null => {
+      let index = since.length - 1;
+      while (index > 0 && since[index]! > time) index--;
+      return sounds[index]!;
+    };
 
     const stopVoicesBefore = (time: number) => {
       for (const voice of voices) if (voice.startTime <= time) stopVoice(voice, time);
@@ -212,7 +222,25 @@ export const sampler = defineNode({
         loopEnd() {},
         reverse() {},
       },
+      options: {
+        buffer(value, at) {
+          const next = resolve(value);
+          // Changes scheduled for later than this one are replaced by it; ones now in the past go.
+          while (since.length > 1 && since[since.length - 1]! >= at) {
+            since.pop();
+            sounds.pop();
+          }
+          since.push(at);
+          sounds.push(next);
+          const now = context.audio.currentTime;
+          while (since.length > 1 && since[1]! <= now) {
+            since.shift();
+            sounds.shift();
+          }
+        },
+      },
       trigger(options, at) {
+        const ref = soundAt(at);
         const buffer = ref?.buffer;
         if (!ref || !buffer) return;
         const number = (name: string) =>

@@ -14,7 +14,14 @@ import type { SyntaxNode, Tree } from '@lezer/common';
 import type { NodeTypeInfo, ParamMeta } from '../api';
 import { apiMember } from './api-docs';
 import type { ReceiverKind } from './api-docs';
-import type { ResolvedCatalog } from './catalog';
+import type {
+  ArgumentInfo,
+  FunctionInfo,
+  FunctionSignature,
+  MemberInfo,
+  ResolvedCatalog,
+  ReturnInfo,
+} from './catalog';
 
 // --- Tree helpers ---------------------------------------------------------------------------------
 
@@ -323,12 +330,15 @@ export function makesNode(scene: Scene, receiver: Receiver, name: string): boole
 
 /** What the expression before a dot is, as far as can be told. */
 export interface Receiver {
-  readonly kind: ReceiverKind | 'unknown';
+  /** `'host'`: what a function of the host's own returned, with the members the host listed. */
+  readonly kind: ReceiverKind | 'unknown' | 'host';
   /**
    * For a chain: the type of its last node. For a selection: the node types it can hold.
    * null when that cannot be worked out, meaning any type.
    */
   readonly types: readonly string[] | null;
+  /** For `'host'`: what the host said the value is. */
+  readonly host?: ReturnInfo;
 }
 
 const UNKNOWN: Receiver = { kind: 'unknown', types: null };
@@ -336,6 +346,20 @@ const of = (kind: ReceiverKind, types: readonly string[] | null = null): Receive
   kind,
   types,
 });
+
+/** What a host function's return value is, as a receiver. */
+function returned(info: ReturnInfo | undefined): Receiver {
+  if (!info) return UNKNOWN;
+  if (info.kind) return of(info.kind);
+  return info.members && info.members.length > 0
+    ? { kind: 'host', types: null, host: info }
+    : UNKNOWN;
+}
+
+/** A member of what a host function returned. */
+export function hostMember(receiver: Receiver, name: string): MemberInfo | undefined {
+  return receiver.host?.members?.find((member) => member.name === name);
+}
 
 /** The node types a selector can match, or null when it could be any. */
 export function selectorTypes(scene: Scene, selector: string): string[] | null {
@@ -352,9 +376,10 @@ export function selectorTypes(scene: Scene, selector: string): string[] | null {
     const className = /\.([\w-]+)/.exec(compound)?.[1];
     if (type !== undefined && typeInfo(scene, type)) found.add(type);
     else if (id !== undefined) {
-      const owner = scene.doc.ids.get(id);
-      if (!owner || !typeInfo(scene, owner.type)) return null;
-      found.add(owner.type);
+      // An id the script gives; failing that, one the host knows the type of.
+      const owner = scene.doc.ids.get(id)?.type ?? scene.catalog.idInfo.get(id)?.type;
+      if (owner === undefined || !typeInfo(scene, owner)) return null;
+      found.add(owner);
     } else if (className !== undefined) {
       const owners = scene.doc.classes.get(className);
       if (!owners) return null;
@@ -364,22 +389,33 @@ export function selectorTypes(scene: Scene, selector: string): string[] | null {
   return found.size > 0 ? [...found] : null;
 }
 
+/** Where a name used at `pos` is declared: the nearest declaration before it; failing that, the first. */
+function declarationOf(scene: Scene, name: string, pos: number): SyntaxNode | null {
+  const declared = scene.doc.definitions.get(name);
+  if (!declared || declared.length === 0) return null;
+  return [...declared].reverse().find((node) => node.from <= pos) ?? declared[0]!;
+}
+
+/** The expression a variable is declared with: the `x` of `const name = x`. */
+function declaredValue(definition: SyntaxNode): SyntaxNode | null {
+  if (definition.parent?.name !== 'VariableDeclaration') return null;
+  let value = definition.nextSibling;
+  while (value && value.name !== 'Equals') value = value.nextSibling;
+  return value?.nextSibling ?? null;
+}
+
 /** What a name refers to, from where it is declared. */
 function classifyName(scene: Scene, name: string, pos: number, depth: number): Receiver {
-  const declared = scene.doc.definitions.get(name);
-  if (!declared || declared.length === 0) {
+  const definition = declarationOf(scene, name, pos);
+  if (!definition) {
     // A name the host offers, such as `midi`, when the host has said what it is.
     const kind = scene.catalog.globals.get(name)?.kind;
     return kind ? of(kind) : UNKNOWN;
   }
-  // The nearest declaration before the use; failing that, the first.
-  const definition = [...declared].reverse().find((node) => node.from <= pos) ?? declared[0]!;
   const parent = definition.parent;
   if (!parent) return UNKNOWN;
   if (parent.name === 'VariableDeclaration') {
-    let value = definition.nextSibling;
-    while (value && value.name !== 'Equals') value = value.nextSibling;
-    value = value?.nextSibling ?? null;
+    const value = declaredValue(definition);
     return value ? classify(scene, value, depth + 1) : UNKNOWN;
   }
   if (parent.name === 'ParamList') {
@@ -434,9 +470,19 @@ export function classify(scene: Scene, node: SyntaxNode, depth = 0): Receiver {
       if (!object || property?.name !== 'PropertyName') return UNKNOWN;
       const owner = classify(scene, object, depth + 1);
       if (owner.kind === 'unknown') return UNKNOWN;
-      const member = apiMember(owner.kind, textOf(state, property));
+      const name = textOf(state, property);
+      if (owner.kind === 'host') {
+        const member = hostMember(owner, name);
+        return member?.returns && !member.signature ? of(member.returns) : UNKNOWN;
+      }
+      const member = apiMember(owner.kind, name);
       if (!member?.returns || member.signature) return UNKNOWN;
       if (member.returns === 'same') return owner;
+      // A chain's `nodes` is every node it made; its `tail` is the last.
+      if (owner.kind === 'chain' && name === 'nodes') {
+        const types = chainTypes(scene, object);
+        return of('selection', types.length > 0 ? types : null);
+      }
       return of(member.returns, member.returns === 'selection' ? owner.types : null);
     }
     case 'CallExpression': {
@@ -445,7 +491,12 @@ export function classify(scene: Scene, node: SyntaxNode, depth = 0): Receiver {
       if (!callee) return UNKNOWN;
       const first = list ? argumentsOf(list)[0] : undefined;
       if (!callee.object) {
-        if (callee.name !== '__') return UNKNOWN;
+        if (callee.name !== '__') {
+          const args = list ? argumentsOf(list) : [];
+          return returned(
+            hostCall(scene, { name: callee.name, receiver: null, args })?.signature.returns,
+          );
+        }
         if (!first) return of('chain');
         return of(
           'selection',
@@ -454,6 +505,10 @@ export function classify(scene: Scene, node: SyntaxNode, depth = 0): Receiver {
       }
       const owner = classify(scene, callee.object, depth + 1);
       if (owner.kind === 'unknown') return UNKNOWN;
+      if (owner.kind === 'host') {
+        const member = hostMember(owner, callee.name);
+        return member?.returns && member.signature ? of(member.returns) : UNKNOWN;
+      }
       if (makesNode(scene, owner, callee.name)) {
         return of(owner.kind === 'chain' ? 'chain' : 'inserts', [callee.name]);
       }
@@ -466,7 +521,17 @@ export function classify(scene: Scene, node: SyntaxNode, depth = 0): Receiver {
       const member = apiMember(owner.kind, callee.name);
       if (member?.signature) {
         if (!member.returns) return UNKNOWN;
-        if (member.returns === 'same') return owner;
+        if (member.returns === 'same') {
+          // `filter('lowpass')` keeps only the nodes a selector matches.
+          if (owner.kind === 'selection' && callee.name === 'filter' && isString(first)) {
+            const matched = selectorTypes(scene, stringValue(state, first));
+            if (matched) {
+              const kept = owner.types ? matched.filter((type) => owner.types!.includes(type)) : [];
+              return of('selection', kept.length > 0 ? kept : matched);
+            }
+          }
+          return owner;
+        }
         // A chain from a selection or a bus continues from something that is not a new node.
         return of(member.returns, null);
       }
@@ -477,6 +542,129 @@ export function classify(scene: Scene, node: SyntaxNode, depth = 0): Receiver {
     default:
       return UNKNOWN;
   }
+}
+
+/**
+ * The node types a chain expression makes, in order: `__().saw().lowpass()` gives saw, lowpass. A
+ * variable is followed to what it was declared with. Branches inside `split()` are not looked into.
+ */
+function chainTypes(scene: Scene, node: SyntaxNode, depth = 0, found: string[] = []): string[] {
+  if (depth > 60) return found;
+  if (node.name === 'ParenthesizedExpression') {
+    const inner = node.firstChild?.nextSibling;
+    return inner ? chainTypes(scene, inner, depth + 1, found) : found;
+  }
+  if (node.name === 'VariableName') {
+    const definition = declarationOf(scene, textOf(scene.state, node), node.from);
+    const value = definition ? declaredValue(definition) : null;
+    return value ? chainTypes(scene, value, depth + 1, found) : found;
+  }
+  if (node.name !== 'CallExpression') return found;
+  const callee = calleeOf(scene.state, node);
+  if (!callee?.object) return found;
+  const owner = classify(scene, callee.object);
+  if (owner.kind !== 'chain' && owner.kind !== 'inserts' && owner.kind !== 'bus') return found;
+  chainTypes(scene, callee.object, depth + 1, found);
+  if (makesNode(scene, owner, callee.name) && !found.includes(callee.name)) found.push(callee.name);
+  return found;
+}
+
+/** What an expression names as the nodes to act on: nodes of some types, or a bus. */
+export type Target =
+  /** `types` is null when they cannot be worked out, meaning any type. */
+  { readonly kind: 'nodes'; readonly types: readonly string[] | null } | { readonly kind: 'bus' };
+
+/**
+ * What an argument refers to: a selector string by the types it can match, a chain by the nodes it
+ * made, a selection by what it holds, a bus as itself.
+ */
+export function targetOf(scene: Scene, node: SyntaxNode | undefined): Target {
+  if (!node) return { kind: 'nodes', types: null };
+  if (isString(node)) {
+    return { kind: 'nodes', types: selectorTypes(scene, stringValue(scene.state, node)) };
+  }
+  const receiver = classify(scene, node);
+  if (receiver.kind === 'bus') return { kind: 'bus' };
+  if (receiver.kind === 'selection') return { kind: 'nodes', types: receiver.types };
+  if (receiver.kind === 'chain' || receiver.kind === 'inserts') {
+    const types = chainTypes(scene, node);
+    return { kind: 'nodes', types: types.length > 0 ? types : null };
+  }
+  return { kind: 'nodes', types: null };
+}
+
+// --- Calls of the host's own functions ------------------------------------------------------------
+
+/** A call of a function the host described, with the way of calling it that fits. */
+export interface HostCall {
+  readonly info: FunctionInfo;
+  readonly signature: FunctionSignature;
+}
+
+type Shape = 'string' | 'object' | 'array' | 'other';
+
+function shapeOf(node: SyntaxNode): Shape {
+  if (node.name === 'String' || node.name === 'TemplateString') return 'string';
+  if (node.name === 'ObjectExpression') return 'object';
+  if (node.name === 'ArrayExpression') return 'array';
+  // `f({ a` with nothing after it reads as the start of an assignment to a pattern, or of an arrow
+  // function's parameters.
+  const unfinished =
+    node.name === 'AssignmentExpression' ||
+    (node.name === 'ArrowFunction' && !node.getChild('Arrow'));
+  if (unfinished) {
+    const first = node.firstChild;
+    const pattern = first?.name === 'ParamList' ? first.firstChild?.nextSibling : first;
+    if (pattern?.name === 'ObjectPattern') return 'object';
+    if (pattern?.name === 'ArrayPattern') return 'array';
+  }
+  return 'other';
+}
+
+/** Whether an argument written this way can be an argument of this kind. Anything else could be. */
+function fits(shape: Shape, argument: ArgumentInfo | undefined): boolean {
+  if (!argument) return false;
+  if (shape === 'other' || argument.kind === 'value') return true;
+  if (argument.kind === 'options') return shape === 'object';
+  if (argument.kind === 'list') return shape === 'array';
+  return shape === 'string';
+}
+
+/**
+ * The host function a call is of, and which of its signatures the arguments written so far fit: the
+ * first with no argument of the wrong shape (a string where an object is expected, say), or else the
+ * one with the fewest. null for a method, a name the script declares itself, or a name the host did
+ * not describe.
+ */
+export function hostCall(
+  scene: Scene,
+  call: Pick<CallSite, 'name' | 'receiver' | 'args'>,
+): HostCall | null {
+  if (call.receiver !== null || scene.doc.definitions.has(call.name)) return null;
+  const info = scene.catalog.functions.get(call.name);
+  if (!info) return null;
+  const shapes = call.args.map(shapeOf);
+  let best = info.signatures[0]!;
+  let fewest = Infinity;
+  for (const signature of info.signatures) {
+    const wrong = shapes.filter((shape, index) => !fits(shape, signature.args[index])).length;
+    if (wrong < fewest) {
+      fewest = wrong;
+      best = signature;
+    }
+  }
+  return { info, signature: best };
+}
+
+/** The argument of a host call that another argument names with `of`, as written. */
+export function referredArgument(
+  host: HostCall,
+  call: Pick<CallSite, 'args'>,
+  name: string | undefined,
+): SyntaxNode | undefined {
+  if (name === undefined) return undefined;
+  const index = host.signature.args.findIndex((argument) => argument.name === name);
+  return index < 0 ? undefined : call.args[index];
 }
 
 function isParamName(scene: Scene, name: string): boolean {
@@ -521,6 +709,8 @@ export type CursorContext =
       readonly call: CallSite | null;
       /** The key it is the value of, when it is one. */
       readonly key: string | null;
+      /** True when it is an item of an array that is the argument: `f(['|'])`. */
+      readonly list?: boolean;
     }
   /** A name on its own: a helper, `__`, a variable. */
   | { readonly kind: 'name'; readonly from: number };
@@ -573,8 +763,12 @@ export function contextAt(scene: Scene, pos: number): CursorContext | null {
     const parent = node.parent;
     let call: CallSite | null = null;
     let key: string | null = null;
+    let list = false;
     if (parent?.name === 'ArgList') call = callHolding(scene, node);
-    else if (parent?.name === 'Property') {
+    else if (parent?.name === 'ArrayExpression') {
+      call = callHolding(scene, parent);
+      list = call !== null;
+    } else if (parent?.name === 'Property') {
       const name = parent.firstChild;
       if (name?.name === 'PropertyDefinition') key = textOf(state, name);
       const object = parent.parent;
@@ -586,6 +780,7 @@ export function contextAt(scene: Scene, pos: number): CursorContext | null {
       before: state.sliceDoc(node.from + 1, pos),
       call,
       key,
+      ...(list ? { list } : {}),
     };
   }
 
@@ -729,6 +924,23 @@ export type Entity =
       readonly value: string;
       readonly call: CallSite | null;
       readonly key: string | null;
+      /** True when it is an item of an array that is the argument. */
+      readonly list?: boolean;
+      readonly from: number;
+      readonly to: number;
+    }
+  | {
+      /** A function the host described: `slider` in `slider('#filter', 'frequency')`. */
+      readonly kind: 'function';
+      readonly name: string;
+      readonly from: number;
+      readonly to: number;
+    }
+  | {
+      /** A member of what a host function returned. */
+      readonly kind: 'hostMember';
+      readonly member: MemberInfo;
+      readonly owner: ReturnInfo;
       readonly from: number;
       readonly to: number;
     };
@@ -767,6 +979,12 @@ export function entityAt(scene: Scene, pos: number): Entity | null {
       // most likely that type.
       return isCalled ? typeEntity(scene, name, from, to) : null;
     }
+    if (receiver.kind === 'host') {
+      const member = hostMember(receiver, name);
+      return member && receiver.host
+        ? { kind: 'hostMember', member, owner: receiver.host, from, to }
+        : null;
+    }
     if (makesNode(scene, receiver, name)) {
       const type = typeEntity(scene, name, from, to, receiver.kind !== 'chain');
       if (type) return type;
@@ -784,6 +1002,7 @@ export function entityAt(scene: Scene, pos: number): Entity | null {
     // A name the script declares itself hides a helper of the same name.
     if (scene.doc.definitions.has(name)) return null;
     if (scene.catalog.helpers.has(name)) return { kind: 'helper', name, from, to };
+    if (scene.catalog.functions.has(name)) return { kind: 'function', name, from, to };
     if (scene.catalog.globals.has(name)) return { kind: 'global', name, from, to };
     return null;
   }
@@ -797,6 +1016,10 @@ export function entityAt(scene: Scene, pos: number): Entity | null {
     const parent = node.parent;
     if (parent?.name === 'ArgList') {
       return { kind: 'string', value, call: callHolding(scene, node), key: null, from, to };
+    }
+    if (parent?.name === 'ArrayExpression') {
+      const call = callHolding(scene, parent);
+      return call ? { kind: 'string', value, call, key: null, list: true, from, to } : null;
     }
     if (parent?.name === 'Property' && parent.firstChild?.name === 'PropertyDefinition') {
       const object = parent.parent;

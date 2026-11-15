@@ -6,7 +6,19 @@
 
 import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../api';
 import type { ApiMember, ApiOption } from './api-docs';
-import type { BufferEntry, GlobalInfo, HelperInfo } from './catalog';
+import type {
+  BufferEntry,
+  FunctionInfo,
+  FunctionSignature,
+  GlobalInfo,
+  HelperInfo,
+  IdEntry,
+  MemberInfo,
+  NamedEntry,
+  OptionKeyInfo,
+  ReturnInfo,
+  ValueInfo,
+} from './catalog';
 
 export interface DocRow {
   readonly name: string;
@@ -162,6 +174,142 @@ export function bufferDoc(entry: BufferEntry): Doc {
   return {
     signature: `'${entry.key}'`,
     kind: 'buffer',
+    ...(description ? { description } : {}),
+  };
+}
+
+// --- The host's own functions ------------------------------------------------------------------------
+
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/** One way of calling a host function, on a line: `slider(target, param, options?)`. */
+export function signatureText(name: string, signature: FunctionSignature): string {
+  const args = signature.args.map(
+    (argument) => `${text(argument.name)}${argument.optional ? '?' : ''}`,
+  );
+  return `${name}(${args.join(', ')})`;
+}
+
+/** A word or two for what a value is, as shown beside an argument. */
+export function valueDetail(value: ValueInfo): string {
+  switch (value.kind) {
+    case 'selector':
+      return 'selector or nodes';
+    case 'param':
+      return value.of ? `parameter of ${text(value.of)}` : 'parameter name';
+    case 'sequence':
+      return 'sequence name';
+    case 'bus':
+      return 'bus name';
+    case 'buffer':
+      return 'buffer name';
+    case 'name':
+      return 'string';
+    case 'options':
+      return (value.options ?? []).length > 0
+        ? `{ ${(value.options ?? []).map((option) => text(option.name)).join(', ')} }`
+        : 'object';
+    case 'list':
+      return value.items ? `list: ${valueDetail(value.items)}` : 'list';
+    default:
+      return '';
+  }
+}
+
+const quoted = (value: string | number | boolean): string =>
+  typeof value === 'string' ? `'${value}'` : String(value);
+
+/** The type and default of an option of a host function, as an option of the library's is shown. */
+export function hostOptionInfo(option: OptionKeyInfo): ApiOption {
+  const type =
+    text(option.type) ||
+    (option.values && option.values.length > 0
+      ? option.values.map(quoted).join(' | ')
+      : option.kind === 'boolean'
+        ? 'boolean'
+        : option.kind
+          ? valueDetail({ kind: option.kind, ...(option.of ? { of: option.of } : {}) })
+          : 'value');
+  return {
+    name: text(option.name),
+    type,
+    ...(typeof option.default === 'string' ? { default: option.default } : {}),
+    description: text(option.description),
+  };
+}
+
+/** A host function: every way of calling it, and every argument once. */
+export function functionDoc(info: FunctionInfo): Doc {
+  const rows = new Map<string, DocRow>();
+  for (const signature of info.signatures) {
+    for (const argument of signature.args) {
+      if (rows.has(argument.name)) continue;
+      rows.set(argument.name, {
+        name: text(argument.name),
+        detail: valueDetail(argument),
+        description: text(argument.description),
+      });
+    }
+  }
+  const returns = info.signatures.map((signature) => signature.returns).find(Boolean);
+  const note = returns ? returnNote(returns) : '';
+  return {
+    signature: info.signatures.map((signature) => signatureText(info.name, signature)).join('\n'),
+    kind: 'function',
+    description: text(info.description),
+    rows: [...rows.values()],
+    ...(note ? { note } : {}),
+  };
+}
+
+function returnNote(returns: ReturnInfo): string {
+  const members = (returns.members ?? []).map(
+    (member) => `.${text(member.signature) || member.name}`,
+  );
+  const what = text(returns.description) || (returns.name ? `Returns the ${returns.name}.` : '');
+  return [what, members.length > 0 ? `It has ${members.join(', ')}.` : '']
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** One way of calling a host function with one argument marked, for inside its brackets. */
+export function callDoc(info: FunctionInfo, signature: FunctionSignature, index: number): Doc {
+  const argument = signature.args[index];
+  const described = argument?.description
+    ? `${argument.name}: ${argument.description}`
+    : text(signature.description) || text(info.description);
+  const count = info.signatures.length;
+  return {
+    signature: signatureText(info.name, signature),
+    kind:
+      count > 1 ? `function · ${info.signatures.indexOf(signature) + 1} of ${count}` : 'function',
+    ...(described ? { description: described } : {}),
+    ...(argument ? { active: text(argument.name) } : {}),
+  };
+}
+
+export function hostMemberDoc(member: MemberInfo, owner: ReturnInfo): Doc {
+  const name = text(owner.name) || 'value';
+  return {
+    signature: text(member.signature) || text(member.name),
+    kind: member.signature ? `${name} method` : `${name} property`,
+    description: text(member.description),
+  };
+}
+
+/** A bus or sequence the host described. null when there is nothing to say. */
+export function namedDoc(entry: NamedEntry | undefined, kind: string): Doc | null {
+  if (!entry || !text(entry.description)) return null;
+  return { signature: `'${entry.name}'`, kind, description: text(entry.description) };
+}
+
+/** An id, with the type of its node when known. null when there is nothing to say. */
+export function idDoc(name: string, type: string | undefined, entry?: IdEntry): Doc | null {
+  const description = text(entry?.description);
+  if (!type && !description) return null;
+  return {
+    signature: `#${name}`,
+    kind: type ? `id of a ${type}` : 'id',
     ...(description ? { description } : {}),
   };
 }

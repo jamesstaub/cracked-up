@@ -7,7 +7,12 @@
  * nothing in the library's other entry points imports them.
  */
 export { createEditor } from './editor';
-export type { Editor, EditorOptions, ErrorPlace, SetValueOptions } from './editor';
+export type {
+  Editor,
+  EditorOptions,
+  ErrorPlace,
+  SetValueOptions,
+} from './editor';
 export { createSourcePanel } from './panel';
 export type { DefinitionTarget, SourcePanel, SourcePanelOptions } from './panel';
 export {
@@ -15,9 +20,28 @@ export {
   catalogFromEngine,
   catalogFromNodes,
   catalogFromRemoteState,
+  catalogFromScope,
+  catalogFromSnapshot,
   createCatalogStore,
 } from './catalog';
-export type { BufferEntry, CatalogStore, EditorCatalog, GlobalInfo, HelperInfo } from './catalog';
+export type {
+  ArgumentInfo,
+  ArgumentKind,
+  BufferEntry,
+  CatalogStore,
+  EditorCatalog,
+  FunctionInfo,
+  FunctionSignature,
+  GlobalInfo,
+  HelperInfo,
+  IdEntry,
+  MemberInfo,
+  NamedEntry,
+  OptionKeyInfo,
+  ReturnInfo,
+  ValueInfo,
+} from './catalog';
+export type { ReceiverKind } from './api-docs';
 export { builtinSources } from './sources';
 export type { SourceEntry, SourcePart, SourceResolver } from './sources';
 export { THEME_PROPERTIES, editorStyles, editorTheme } from './theme';

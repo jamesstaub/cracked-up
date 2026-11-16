@@ -12,6 +12,15 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **`sequence.options` is as given, and cannot change the sequence.** A sequence's `options` are
+  the options it was made with, not worked out: `{ steps: 16, step: '1/16' }` reads back with
+  `steps` as 16, and an array or a pattern string reads back as that array or string, so a host or
+  a script can tell how a sequence was declared. After `update` they are the merged options;
+  `setStep` changes a value in `steps` and leaves `options.steps` as declared. The object is now a
+  frozen copy, and an array of steps in it a frozen copy of the one given, so writing to either
+  throws in strict code and changing the array you passed no longer reaches the sequence at its
+  next `update`. A remote's sequences do the same.
+
 - **`node.buffer`.** The buffer store entry a sampler plays (`key`, `duration`, `slices`,
   `buffer`), or null: what a host needs to give `start`, `end`, `loopStart` and `loopEnd` their
   real range, 0 to `node.buffer.duration`, in place of the nominal 0 to 60 seconds of their

@@ -1270,6 +1270,17 @@ __.transport.sequence('hat', { steps: 'x.x.x.x.', step: '1/8' }, (ev) => {
   }
 });</code></pre>
         <p>
+          <code>seq.options</code> is the options the sequence was made with, as they were given, so
+          code that did not make a sequence can tell how it was declared. After
+          <code>update</code> it is the merged options. <code>setStep</code> does not change it, and
+          it cannot be written to: changes go through <code>update</code>.
+        </p>
+        <pre
+          data-static
+        ><code>const seq = __.transport.sequence('steps', { steps: 16, step: '1/16' }, fn);
+seq.options; // { steps: 16, step: '1/16' }
+seq.steps; // sixteen 1s</code></pre>
+        <p>
           <code>__.transport.sequences</code> is every named sequence of the scope, in the order
           they were first made. An app uses it to show a grid for each one after running a script:
         </p>

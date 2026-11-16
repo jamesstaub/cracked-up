@@ -18,7 +18,7 @@ Buses and the graph:
   between its mix and its level: `__.bus('drums').compressor({ id: 'glue', threshold: -18 })`. The
   bus stays routed where it was, and calls follow one another in signal order.
 - What an insert call returns (`BusInserts`) has every node type as a method, `to()` (routes the
-  bus), `chain()` (taps it), `bus` and `nodes`. An insert is an ordinary node of the scope; it needs
+  bus), `chain()` (starts a chain from it), `bus` and `nodes`. An insert is an ordinary node of the scope; it needs
   an input and an output, and can only be added from the scope that owns the bus.
 - `bus.insert()` returns the same `BusInserts` without adding anything, which is the way to a gain
   node, since `bus.gain` is the bus's level: `bus.insert().gain(0.5)`.
@@ -161,6 +161,9 @@ Demo and docs:
   interaction helpers to scripts.
 - A guide section on macros, with a simple and a larger example and a reference of the definition.
   The live demo gives scripts `define`, as the sandboxed demo does, so the examples run there.
+- The guide's part on buses is rewritten around one picture of a bus (input, inserts, level, output,
+  destination) and six routings, each with its graph drawn from the example's own code. The docs
+  say "a chain from the bus" for `bus.chain()` and "destination" for `bus.to()` throughout.
 - Docs sections for everything above, a reference of every sequencing, interaction and MIDI
   method, and a contents list that links to each part of a section and to every method, helper and
   node type.
@@ -205,7 +208,8 @@ Demo and docs:
 - **A rebuild keeps a sampler whose buffer changed.** `build()` and `apply()` used to replace a
   sampler when its `buffer` differed; it is now kept, in `updated`, and its buffer changed in
   place. Any other creation option that changes (`choke`, `voices`) still replaces it.
-- `bus.chain()` taps the bus's output, which is now after its inserts as well as its level.
+- `bus.chain()` takes its copy at the bus's output, which is now after its inserts as well as its
+  level.
   `bus.input` is a mix node of its own in front of the inserts.
 - `apply()` now sets the inserts of the scope's buses: a description without `inserts` leaves them
   with none.

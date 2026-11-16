@@ -297,8 +297,8 @@ export type Chain = ChainBase & {
  * destination. Every other bus is created by the caller and feeds `main` until told otherwise.
  *
  * Inside a bus the signal runs: mix of everything sent to it, then its inserts in order, then its
- * level (`gain`), then its output. The output goes to the bus's target (`to`) and to every chain
- * continued from it (`chain()`).
+ * level (`gain`), then its output. The output goes to the bus's destination (`to`), and a copy of it
+ * to every chain started from the bus (`chain()`).
  */
 interface BusBase {
   readonly name: string;
@@ -306,14 +306,14 @@ interface BusBase {
   /** The bus's level, applied after its inserts. To add a gain node as an insert: `insert().gain()`. */
   readonly gain: Param<number>;
   /**
-   * Where this bus sends its output. Default: the engine's `main` bus. `null` sends it nowhere, so it
-   * is heard only through what continues from it with `chain()`: use that when the chain is the bus's
-   * one way out, such as a bus that feeds a looper.
+   * Sets the bus's destination, where its output goes. Default: the engine's `main` bus. `null`
+   * sends it nowhere, so it is heard only through chains started from it with `chain()`, and not at
+   * all if there are none.
    */
   to(target: string | Bus | null): this;
   /**
-   * Starts a chain fed by this bus's output, after its inserts and level. A tap: the bus still goes
-   * to its target as well. For processing in series, add an insert instead.
+   * Starts a chain fed a copy of this bus's output, after its inserts and level. The bus is not
+   * changed: it still goes to its destination. For processing in series, add an insert instead.
    */
   chain(): Chain;
   /**

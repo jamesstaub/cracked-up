@@ -11,7 +11,7 @@ import type { Transaction } from './transaction';
 /**
  * A named mix point. Inside it the signal runs
  *
- *   sources -> entry -> insert, insert, ... -> node -> the bus's target, and chains from `chain()`
+ *   sources -> entry -> insert, insert, ... -> node -> the bus's destination, and chains from `chain()`
  *
  * `entry` is where everything sent to the bus is summed. `node` is a gain node that is not listed
  * among its scope's nodes: its gain is the bus's level, and its output is the bus's output. The

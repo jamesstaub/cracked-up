@@ -25,8 +25,8 @@ with it: old Cracked code will not run unchanged.
   give each script or track its own ids. Selections are immutable, so code in one callback cannot
   disturb another.
 - **Buses with inserts.** Chains mix into named buses. A node type called on a bus
-  (`__.bus('drums').compressor()`) puts that effect inside it, and `bus.chain()` taps it for
-  parallel effects and recording.
+  (`__.bus('drums').compressor()`) puts that effect inside it, `bus.to()` sets where its output goes, and `bus.chain()` starts a chain
+  from a copy of that output, for parallel effects and recording.
 - **A transport with tight timing.** Sequences, polyrhythm, swing, tempo changes, `every` and `at`,
   scheduled ahead of time on the audio clock. A playing sequence can be changed in place, read back
   and followed step by step by code that did not make it.

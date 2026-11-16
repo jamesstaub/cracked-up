@@ -343,7 +343,7 @@ describe('hover and signature help', () => {
     expect(hover("__.bus('drums').ga|in.set(0.5)")?.description).toContain('level of the bus');
     expect(hover("__.bus('drums').ins|ert()")?.signature).toBe('insert()');
     expect(hover("__.bus('drums').compressor().t|o('main')")?.description).toContain(
-      'Routes the bus',
+      'Sets the destination of the bus',
     );
     expect(hover("__.bus('drums').compressor({ thres|hold: -18 })")?.kind).toBe(
       'parameter of compressor',

@@ -447,14 +447,14 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'to',
       signature: 'to(target)',
       description:
-        "Where this bus sends its output: a bus name, or null for nowhere, so that it is heard only through what continues from it with chain(). Default: 'main'.",
+        "Sets the bus's destination, where its output goes: a bus name, or null for nowhere, so that it is heard only through chains started from it with chain(). Default: 'main'.",
       returns: 'same',
     },
     {
       name: 'chain',
       signature: 'chain()',
       description:
-        "Starts a chain fed by this bus's output, after its inserts. A tap: the bus still goes to its target as well. To process everything on the bus, add an insert instead: bus('drums').compressor().",
+        "Starts a chain fed a copy of this bus's output, after its inserts and level. The bus is not changed: it still goes to its destination, so the chain is heard as well as the bus once it ends somewhere, as in chain().reverb().to('main'). To process everything on the bus, add an insert instead: bus('drums').compressor().",
       returns: 'chain',
     },
     {
@@ -475,13 +475,14 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'to',
       signature: 'to(target)',
       description:
-        "Routes the bus the inserts are on: a bus name, or null for nowhere. Default: 'main'.",
+        "Sets the destination of the bus the inserts are on: a bus name, or null for nowhere. Default: 'main'.",
       returns: 'same',
     },
     {
       name: 'chain',
       signature: 'chain()',
-      description: "Starts a chain fed by the bus's output, after its inserts. A tap.",
+      description:
+        "Starts a chain fed a copy of the bus's output, after its inserts and level, as bus.chain() does. The bus is not changed.",
       returns: 'chain',
     },
     { name: 'bus', description: 'The bus the inserts are on.', returns: 'bus' },

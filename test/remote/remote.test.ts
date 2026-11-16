@@ -4,7 +4,7 @@ import { defineMacro } from '../../src';
 import type { MacroDefinition } from '../../src';
 import { createRemote, linkRemote } from '../../src/remote';
 import type { LinkOptions, Remote } from '../../src/remote';
-import { click, offlineEngine, ones, valueAt } from '../core/setup';
+import { click, makeBuffer, offlineEngine, ones, valueAt } from '../core/setup';
 
 /**
  * A host scope and a remote wired straight to each other. Every message is passed through
@@ -143,6 +143,49 @@ describe('remote sequences', () => {
     expect(audio[24000]).toBeCloseTo(1, 6);
     expect(audio[36000]).toBeCloseTo(0.5, 6);
     expect(audio[36001]).toBe(0);
+  });
+
+  it('lets the host follow a sequence the sandbox declared, ahead of its callback', async () => {
+    const { engine, scope, remote } = await linked(1);
+    engine.buffers.add(
+      'ramp',
+      makeBuffer(1, (_index, time) => time),
+    );
+    const starts = [0.1, 0.5, 0.3, 0.8];
+    const program = () =>
+      remote.build((__) => {
+        __().sampler({ id: 's', buffer: 'ramp' }).to('main');
+        __.transport.sequence('steps', { steps: 4, step: '1/8' }, () => __('#s').trigger());
+      });
+    program();
+    // The host's own sequence, found by the name the sandboxed script gave it.
+    const sequence = scope.transport.get('steps')!;
+    const heard: number[] = [];
+    sequence.on('step', (ev) => {
+      heard.push(ev.index);
+      scope.select('#s').set({ start: starts[ev.index]! }, { at: ev.time });
+    });
+    // A rebuild from the sandbox declares it again: the same sequence on the host, still followed.
+    program();
+    expect(scope.transport.get('steps')).toBe(sequence);
+
+    engine.transport.start();
+    const audio = await engine.render();
+    expect(heard).toEqual([0, 1, 2, 3]);
+    starts.forEach((start, index) => expect(valueAt(audio, index * 0.25)).toBeCloseTo(start, 4));
+  });
+
+  it("has no step listeners in the sandbox: they are the host's", async () => {
+    const { remote } = await linked(0.1);
+    const sequence = remote.transport.sequence('s', { steps: 'x.' }, () => undefined);
+    expect(() => sequence.on('step', () => undefined)).toThrow(/step listeners run on the host/);
+    const transport = remote.transport as unknown as { on(event: string, fn: () => void): void };
+    expect(() => transport.on('step', () => undefined)).toThrow(/step listeners run on the host/);
+    try {
+      sequence.on('step', () => undefined);
+    } catch (error) {
+      expect((error as RemoteError).code).toBe('unsupported');
+    }
   });
 
   it('edits steps, mutes and stops', async () => {

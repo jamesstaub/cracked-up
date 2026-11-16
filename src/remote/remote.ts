@@ -819,6 +819,11 @@ const BUS_MEMBERS = new Set([
 // Sequences
 // ---------------------------------------------------------------------------------------------------
 
+const NO_STEP_LISTENERS =
+  "A remote cannot listen for steps: step listeners run on the host. Here, use the sequence's " +
+  'callback; on the host, listen to the sequence the remote declared ' +
+  '(scope.transport.get(name).on("step", listener)).';
+
 class RemoteSequence {
   muted = false;
   steps: number[];
@@ -860,6 +865,11 @@ class RemoteSequence {
 
   stop(): void {
     this.remote.clearSequence(this.name);
+  }
+
+  /** Step listeners run on the host, in its scheduling pass: steps are not sent across for them. */
+  on(): never {
+    throw new CrackedUpError('unsupported', NO_STEP_LISTENERS);
   }
 }
 
@@ -1717,6 +1727,7 @@ class RemoteImpl {
         return transport;
       },
       on(event: string, listener: (bpm: number) => void) {
+        if (event === 'step') throw new CrackedUpError('unsupported', NO_STEP_LISTENERS);
         const entry = { event, listener };
         remote.transportListeners.add(entry);
         return () => {

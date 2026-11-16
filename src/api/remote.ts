@@ -20,6 +20,9 @@
  * - Sequences: the remote sends the sequence's options; the callback stays in the sandbox. The host's
  *   transport sends each event ahead of time, the sandbox runs the callback, and the commands it
  *   produces default to the event's time. The round trip must fit inside the transport's look-ahead.
+ *   Step listeners (`sequence.on('step')`, `transport.on('step')`) are the host's: added there to the
+ *   sequence the remote declared (`scope.transport.get(name)`), they run before the event is sent.
+ *   In the sandbox both throw `unsupported`; steps are not sent across for them.
  * - Custom macros defined in the sandbox: the inner graph and exposed parameters travel as data. The
  *   macro's methods, trigger and release run in the sandbox, so the host forwards calls to it.
  *

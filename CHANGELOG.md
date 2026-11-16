@@ -12,6 +12,29 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **Step listeners: following a sequence from code that did not make it.**
+  `sequence.on('step', listener)` calls the listener with the event the sequence's callback gets,
+  and returns a function that stops it. Listeners run before the callback for the same step, in
+  the order they were added, in the same scheduling pass and with the same event, whose time is
+  also the default time of what they do: a value set in a listener at `ev.time` is the one a
+  voice triggered by the callback reads. They hear every step the sequence comes to: rests
+  whatever `rests` says, steps `probability` drops, and the steps of a muted sequence, whose
+  callback is not called (`ev.sequence.muted` tells). A stopped sequence is heard no more, and
+  steps skipped because the scheduler fell behind (`late`) are not reported. Listeners stay
+  through `update`, `setStep`, `restart` and a later declaration of the same name, by
+  `sequence()` or a rebuild, since that is the same sequence; they are released when the sequence
+  is stopped, cleared, left out of a rebuild or its scope disposed. A build that fails leaves
+  them as they were before it, including on sequences it stopped. `transport.on('step',
+  listener)` is the same for every sequence of a scope, named or not and whenever made
+  (`engine.transport.on('step')`: of every scope), with `ev.sequence` saying which; it runs after
+  the sequence's own listeners, before the callback, and outlasts sequences that are stopped and
+  declared again. A listener that throws is reported as a `callback` error to the scope of the
+  sequence and to the engine, with the new `origin.kind` `'listener'`, where `origin.cancel()`
+  removes that listener and leaves the sequence; the other listeners and the callback still run.
+  A sequence nobody listens to does no more work than before. A sequence declared by a sandboxed
+  script is followed on the host, through `scope.transport.get(name)`; in the sandbox both forms
+  throw `unsupported`, and steps are not sent across for them.
+
 - **`set` with `glide`: following a moving control without clicks.** `param.set(value, { glide:
   0.02 })` moves to the value in a straight line over that many seconds, starting from the value
   the parameter has actually reached at `at`, part-way through a ramp or an earlier glide

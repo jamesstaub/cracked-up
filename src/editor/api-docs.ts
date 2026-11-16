@@ -182,7 +182,7 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'on',
       signature: 'on(event, listener)',
       description:
-        "Listens for 'tempo', 'start' or 'stop'. Returns a function that stops listening.",
+        "Listens for 'tempo', 'start' or 'stop', or with 'step' for every step of this scope's sequences, before each one's callback. Returns a function that stops listening. 'step' is not available in a sandbox.",
     },
   ],
   chain: [
@@ -487,6 +487,12 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       returns: 'same',
     },
     { name: 'stop', signature: 'stop()', description: 'Removes the sequence.' },
+    {
+      name: 'on',
+      signature: "on('step', listener)",
+      description:
+        'Calls the listener with the event of every step, rests and muted steps included, before the callback for that step. Returns a function that stops listening. Not available in a sandbox.',
+    },
   ],
   param: [
     {

@@ -1334,6 +1334,47 @@ for (const sequence of scope.transport.sequences) {
   drawGrid(sequence.name, sequence.steps, sequence.options);
 }</code></pre>
 
+        <h3 id="step-listeners">Following a sequence's steps</h3>
+        <p>
+          Code that did not make a sequence can follow it:
+          <code>sequence.on('step', listener)</code> calls the listener with the event the
+          sequence's own function gets, and returns a function that stops it. Listeners run before
+          that function for the same step, in the order they were added and with the same time, so a
+          value a listener sets at <code>ev.time</code> is in place when the function triggers a
+          voice that reads it. Here an app gives each step of a script's sequence its own place in
+          the sample:
+        </p>
+        <pre
+          data-static
+        ><code>await scope.build(script); // declares a sequence called 'steps' that triggers #sampler
+const starts = [0, 0.5, 0.25, 0.75];
+
+const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
+  scope.select('#sampler').set({ start: starts[ev.index] }, { at: ev.time });
+});</code></pre>
+        <p>
+          A listener hears every step the sequence comes to: rests too, even with
+          <code>rests: false</code>, steps that <code>probability</code> drops, and the steps of a
+          muted sequence, whose own function is not called (<code>ev.sequence.muted</code> tells).
+          Like that function it runs ahead of the sound; to draw a playhead when a step is heard,
+          keep <code>ev.time</code> and compare it with the audio clock.
+        </p>
+        <p>
+          Listeners stay with the sequence through <code>update</code>, <code>setStep</code>,
+          <code>restart</code> and a rebuild that declares the same name again, which is the same
+          sequence. They go when the sequence is stopped, cleared, left out of a rebuild or its
+          scope disposed, and a sequence of that name made afterwards is a new one. A build that
+          fails leaves them as they were. To follow sequences whatever becomes of them, listen on
+          the transport: <code>scope.transport.on('step', listener)</code> hears every sequence of
+          the scope, named or not, and <code>engine.transport.on('step', listener)</code> those of
+          every scope. <code>ev.sequence</code> says which one. These run after the sequence's own
+          listeners and still before its function.
+        </p>
+        <pre data-static><code>const stop = scope.transport.on('step', (ev) =&gt; {
+  const values = perStep[ev.sequence.name];
+  if (values) scope.select('#sampler').set({ start: values[ev.index] }, { at: ev.time });
+});</code></pre>
+
         <h3 id="callback-errors">When a callback throws</h3>
         <p>
           An error thrown inside the function of a sequence, an <code>every</code> or an
@@ -1349,8 +1390,11 @@ for (const sequence of scope.transport.sequences) {
         <pre data-static><code>scope.on('error', (error) =&gt; {
   if (error.code !== 'callback') return;
   const { scope, kind, name, sequence } = error.origin;
-  // kind: 'sequence', 'every' or 'at'. name and sequence are null unless it is a sequence.
+  // kind: 'sequence', 'every', 'at' or 'listener'. name and sequence are null for every and at.
   show(`${name ?? kind} in ${scope.name}: ${error.message}`);
+
+  // A step listener threw, not the sequence's function: cancel() removes that listener only.
+  if (kind === 'listener') return error.origin.cancel();
 
   // Stop calling it. A muted sequence keeps its place and its steps.
   if (sequence) sequence.muted = true;
@@ -2031,6 +2075,12 @@ remote.build((__) =&gt; {
           <li>
             There is no transport position to read, and a script cannot start or stop the transport.
             Sequence events carry the beat and bar.
+          </li>
+          <li>
+            Step listeners belong to the page. <code>sequence.on('step')</code> and
+            <code>transport.on('step')</code> throw in the sandbox. On the page,
+            <code>scope.transport.get(name).on('step', listener)</code> follows a sequence the
+            script declared, and runs before the step is sent to the script.
           </li>
           <li>
             <code>remote.build</code> is all or nothing like <code>scope.build</code>, but it

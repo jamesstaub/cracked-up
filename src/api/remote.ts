@@ -171,7 +171,13 @@ export interface RemoteBuffers {
   setSlices(key: string, boundaries: readonly number[]): void;
 }
 
-/** The part of the transport a remote script can use. Tempo changes are sent as `transport` commands. */
+/**
+ * The part of the transport a remote script can use. Tempo changes are sent as `transport` commands.
+ *
+ * Not here: the position, `start`, `stop` and `seek`, the list of `sequences` (`get(name)` finds
+ * one), and step listeners, which are the host's: `on('step')` here and on a remote's sequence
+ * throws `unsupported`.
+ */
 export interface RemoteTransport {
   bpm: number;
   swing: number;

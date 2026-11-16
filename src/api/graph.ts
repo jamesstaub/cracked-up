@@ -324,7 +324,9 @@ interface BusBase {
   insert(): BusInserts;
   /** The bus's inserts, in the order the signal passes through them. */
   readonly inserts: Selection;
+  /** The mix of everything sent to the bus, in front of its inserts. Read-only use. */
   readonly input: AudioNode;
+  /** What leaves the bus, after its inserts and its level. Read-only use. */
   readonly output: AudioNode;
 }
 
@@ -387,7 +389,7 @@ export interface NodeData {
 export type EdgeTarget = { node: string } | { node: string; param: string } | { bus: string };
 
 export interface EdgeData {
-  /** A node id, or a bus when the connection continues from a bus's mix (`bus.chain()`). */
+  /** A node id, or a bus when the connection continues from a bus's output (`bus.chain()`). */
   from: string | { bus: string };
   to: EdgeTarget;
 }

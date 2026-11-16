@@ -129,7 +129,8 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     {
       name: 'get',
       signature: 'get(name)',
-      description: 'A named sequence of this scope, or undefined.',
+      description:
+        "A named sequence of this scope, or undefined: get('kick').update({ steps: 'x.x.' }).",
       returns: 'sequence',
     },
     {
@@ -182,7 +183,7 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'on',
       signature: 'on(event, listener)',
       description:
-        "Listens for 'tempo', 'start' or 'stop', or with 'step' for every step of this scope's sequences, before each one's callback. Returns a function that stops listening. 'step' is not available in a sandbox.",
+        "Listens for 'tempo', 'start', 'stop' or 'late' (the scheduler fell behind and skipped events), or with 'step' for every step of this scope's sequences, before each one's callback. Returns a function that stops listening. 'step' and 'late' are not available in a sandbox.",
     },
   ],
   chain: [
@@ -248,7 +249,7 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'ramp',
       signature: 'ramp(param, target, options)',
       description:
-        "Moves a parameter to a value over time: ramp('frequency', 2000, { duration: 1 }).",
+        "Moves a parameter to a value over time, from the value it has reached: ramp('frequency', 2000, { duration: 1 }).",
       returns: 'same',
     },
     {
@@ -354,6 +355,11 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
   ],
   node: [
     { name: 'id', description: "Unique within the node's scope." },
+    {
+      name: 'autoId',
+      description:
+        'True when the node was made without an id and was given one from its type and position, such as lowpass-0. A rebuild matches such a node by its place among the nodes of its type.',
+    },
     { name: 'type', description: "The node type's name." },
     { name: 'classes', description: "The node's classes, as a Set." },
     { name: 'tags', description: "The node's tags." },
@@ -363,6 +369,32 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       signature: 'param(name)',
       description: 'The named parameter.',
       returns: 'param',
+    },
+    {
+      name: 'bypass',
+      description:
+        'Assign true to bypass the node: an effect passes its input through, a source is silent.',
+    },
+    {
+      name: 'insertOf',
+      description: 'The bus this node is an insert on, or null.',
+      returns: 'bus',
+    },
+    {
+      name: 'insideScope',
+      description:
+        'For a macro instance: the private scope holding its inner nodes. Otherwise null.',
+    },
+    {
+      name: 'buffer',
+      description:
+        "For a sampler: the buffer store entry it plays (key, duration, slices, buffer), or null. Its duration is the real range of start, end, loopStart and loopEnd. It follows setOption('buffer', ...).",
+    },
+    {
+      name: 'playheads',
+      signature: 'playheads(at?, into?)',
+      description:
+        'Where each sounding voice of a sampler is in its sound at an audio time (default: now), in seconds from the start of the buffer. For drawing a play cursor. Empty when nothing sounds, for other node types, and always in a sandbox.',
     },
     {
       name: 'connect',
@@ -477,7 +509,8 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     {
       name: 'update',
       signature: 'update(options)',
-      description: 'Changes options or the pattern in place, staying in time.',
+      description:
+        "Changes options or the pattern in place, staying in time, and leaves the callback as it is: update({ steps: 'x..x' }). What is not given stays as it was.",
       returns: 'same',
     },
     {
@@ -501,6 +534,18 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     },
     { name: 'meta', description: "The parameter's metadata: range, unit, curve, description." },
     {
+      name: 'normalized',
+      description:
+        "The base value as a position from 0 to 1 through the parameter's range and curve, for a control. Number parameters only.",
+    },
+    {
+      name: 'setNormalized',
+      signature: 'setNormalized(position, options?)',
+      description:
+        'Sets the base value from a position from 0 to 1. Takes { glide } like set, for following a fader.',
+      returns: 'same',
+    },
+    {
       name: 'set',
       signature: 'set(value, options?)',
       description:
@@ -510,7 +555,8 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     {
       name: 'ramp',
       signature: 'ramp(target, options)',
-      description: 'Moves to a value over time: ramp(2000, { duration: 1 }).',
+      description:
+        'Moves to a value over time: ramp(2000, { duration: 1 }). It starts from the value reached at that moment, part-way through an earlier ramp or glide included, unless from says otherwise.',
       returns: 'same',
     },
     {
@@ -534,7 +580,7 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     {
       name: 'reset',
       signature: 'reset(options?)',
-      description: 'Returns the base value to its default.',
+      description: 'Returns the base value to its default. Takes { glide } like set.',
       returns: 'same',
     },
   ],
@@ -814,7 +860,12 @@ export const RAMP_OPTIONS: readonly ApiOption[] = [
     default: "'linear'",
     description: 'Shape of the ramp.',
   },
-  { name: 'from', type: 'number', description: 'Start value. Default: the value at the time.' },
+  {
+    name: 'from',
+    type: 'number',
+    description:
+      'Start value. Default: the value the parameter has reached at the time, part-way through an earlier ramp or glide included.',
+  },
   AT,
 ];
 

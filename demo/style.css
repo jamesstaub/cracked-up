@@ -281,6 +281,10 @@ body.docs header {
   letter-spacing: 0.06em;
   color: var(--muted);
 }
+.docs-layout nav a.part {
+  padding-left: 12px;
+  color: var(--muted);
+}
 .docs-layout nav a.sub {
   padding-left: 12px;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -407,7 +411,9 @@ article td .alias,
 }
 @media (max-width: 760px) {
   .docs-layout {
-    grid-template-columns: 1fr;
+    /* minmax(0, ...) and not 1fr alone: a wide code example must scroll inside its own box, not
+       widen the column and the page with it. */
+    grid-template-columns: minmax(0, 1fr);
   }
   .docs-layout nav {
     position: static;

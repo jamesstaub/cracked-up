@@ -128,7 +128,24 @@ function referenceFor(info: NodeTypeInfo): HTMLElement[] {
   }
   const options = optionRows(info.options);
   if (options.length > 0) {
-    parts.push(element('p', 'Options, set once when the node is made:'));
+    // A live option is the exception to "set once": setOption changes it on the living node.
+    const live = Object.entries(info.options)
+      .filter(([, option]) => option.live)
+      .map(([name]) => name);
+    parts.push(
+      element(
+        'p',
+        live.length === 0
+          ? 'Options, set once when the node is made:'
+          : [
+              'Options, set when the node is made. ',
+              ...live.flatMap((name, index) => [index > 0 ? ', ' : '', code(name)]),
+              ' can be changed afterwards with ',
+              code('setOption'),
+              ':',
+            ],
+      ),
+    );
     parts.push(table(['Option', 'Accepts', 'Default', 'What it does'], options));
   }
   const triggerOptions = optionRows(info.triggerOptions);
@@ -311,9 +328,12 @@ function listMembers(toc: HTMLElement, title: string, sections: readonly MemberS
 function buildContents(types: readonly NodeTypeInfo[]): void {
   const toc = document.querySelector<HTMLElement>('#toc')!;
   toc.append(element('div', 'Guide', 'group'));
-  for (const heading of document.querySelectorAll<HTMLHeadingElement>('article > h2')) {
+  // Every section, and under it the parts of it that have an id of their own.
+  for (const heading of document.querySelectorAll<HTMLHeadingElement>(
+    'article > h2, article > h3[id]',
+  )) {
     if (heading.id === 'reference') continue;
-    const link = element('a', heading.textContent ?? '');
+    const link = element('a', heading.textContent ?? '', heading.tagName === 'H3' ? 'part' : '');
     link.href = `#${heading.id}`;
     toc.append(link);
   }

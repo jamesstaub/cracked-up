@@ -122,8 +122,10 @@ linkRemote(scope, ...)   &lt;-- commands ---   createRemote(...)  gives the scri
 
         <h2 id="one-script">One script, two ways to run it</h2>
         <p>
-          Write scripts as a function of <code>__</code>, and give them a <code>define</code>
-          function for their own node types. Then the same text runs either way:
+          Write scripts as a function of <code>__</code>, and give them a
+          <code>define</code> function for their own node types (<a href="./docs.html#macros"
+            >macros</a
+          >). Then the same text runs either way:
         </p>
         <pre data-static><code>// A script, as your users write it.
 define({
@@ -397,7 +399,10 @@ const link = linkRemote(scope, {
               </tr>
               <tr>
                 <td>Defining a node type</td>
-                <td><code>defineMacro</code>, registered with the engine</td>
+                <td>
+                  <a href="./docs.html#macros"><code>defineMacro</code></a
+                  >, registered with the engine
+                </td>
                 <td>
                   <code>remote.define</code>, same definition. A drive's <code>scale</code> must be
                   data such as <code>{ multiply: 2 }</code>, which also works directly

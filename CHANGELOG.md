@@ -159,6 +159,8 @@ Demo and docs:
 
 - `demo/inspect.html`, a patch with the inspector beside it. The live demo offers `midi` and the
   interaction helpers to scripts.
+- A guide section on macros, with a simple and a larger example and a reference of the definition.
+  The live demo gives scripts `define`, as the sandboxed demo does, so the examples run there.
 - Docs sections for everything above, a reference of every sequencing, interaction and MIDI
   method, and a contents list that links to each part of a section and to every method, helper and
   node type.

@@ -996,21 +996,43 @@ export const DEFINITION_OPTIONS: readonly ApiOption[] = [
     name: 'params',
     type: 'object',
     description:
-      'Its parameters by name: { default, min, max, unit, description, drives: [{ select, param }] }.',
+      'Its own parameters by name: { default, min, max, unit, curve, description, drives: [{ select, param, scale }] }. Each entry in drives is an inner selector and the parameter to set on what it finds; scale converts the value on the way, as { multiply, add } or a function (data only in a sandbox). drives: [] for one the macro only reads with macro.value.',
   },
   { name: 'shorthand', type: 'string', description: 'The parameter a bare argument sets.' },
   {
     name: 'build',
     type: 'function',
     description:
-      "build(__, init): makes the inner graph. Send to 'out' for the output; continue from __.bus('in').chain() for the input.",
+      "build(__, init, macro): makes the inner graph, in a scope of this instance alone. Send to 'out' for the output; continue from __.bus('in').chain() for the input. init holds the options the node was made with that are not parameters.",
   },
-  { name: 'trigger', type: 'function', description: 'trigger(__, options): what trigger() does.' },
-  { name: 'release', type: 'function', description: 'release(__, options): what release() does.' },
+  {
+    name: 'trigger',
+    type: 'function',
+    description:
+      "trigger(__, options, macro): what trigger() does. options is what the caller gave; with no time given, what it does happens at the trigger's time. macro.value(name) reads the macro's own parameters.",
+  },
+  {
+    name: 'release',
+    type: 'function',
+    description: 'release(__, options, macro): what release() does.',
+  },
   {
     name: 'methods',
     type: 'object',
-    description: 'Its own operations, reached with call(name, args).',
+    description:
+      'Its own operations by name, each (__, args, at, macro) => { ... }, reached with call(name, args).',
+  },
+  {
+    name: 'options',
+    type: 'object',
+    description:
+      'Documents the creation options build reads from init: { name: { type, default, description } }. Nothing is checked against it.',
+  },
+  {
+    name: 'triggerOptions',
+    type: 'object',
+    description:
+      'Documents the options trigger accepts, the same way: { name: { type, default, description } }.',
   },
   {
     name: 'category',

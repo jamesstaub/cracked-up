@@ -39,6 +39,8 @@ function mod(value: number, divisor: number): number {
 /** A scope that schedules through its own view of the transport, or null for the engine-wide view. */
 type Owner = object | null;
 
+type StepListener = (event: SequenceEvent) => void;
+
 interface Source {
   /** What scheduled it, for saying where an error came from. */
   readonly kind: 'sequence' | 'every' | 'at';
@@ -82,6 +84,11 @@ class SequenceImpl implements Source {
   private restartPending = false;
   /** Position of the step delivered most recently, so a change made at that moment does not repeat it. */
   private lastFired: number | null = null;
+  /**
+   * Step listeners in the order added, or null when there are none. Never changed in place: adding
+   * or removing makes a new array, so a pass over it is not disturbed and `save` keeps it by reference.
+   */
+  private listeners: readonly StepListener[] | null = null;
 
   constructor(
     private transport: TransportImpl,
@@ -160,7 +167,7 @@ class SequenceImpl implements Source {
 
   save(): () => void {
     const { raw, callback, values, stepBeats, offsetBeats, next, originBeats } = this;
-    const { restartPending, lastFired, muted } = this;
+    const { restartPending, lastFired, muted, listeners } = this;
     const steps = [...values];
     return () => {
       this.raw = raw;
@@ -175,6 +182,7 @@ class SequenceImpl implements Source {
       this.restartPending = restartPending;
       this.lastFired = lastFired;
       this.muted = muted;
+      this.listeners = listeners;
     };
   }
 
@@ -228,12 +236,15 @@ class SequenceImpl implements Source {
     const index = mod(relative, length);
     const value = this.values[index] ?? 0;
 
-    if (this.muted) return;
-    if (value === 0 && this.raw.rests === false) return;
+    // Whether the callback is called is settled first, as it is with nobody listening: step
+    // listeners hear the step either way.
+    let called = !this.muted && !(value === 0 && this.raw.rests === false);
     const probability = this.raw.probability;
-    if (value !== 0 && probability !== undefined && probability < 1) {
-      if (!this.transport.engine.random.chance(probability)) return;
+    if (called && value !== 0 && probability !== undefined && probability < 1) {
+      called = this.transport.engine.random.chance(probability);
     }
+    const heard = this.listeners !== null || this.transport.followed;
+    if (!called && !heard) return;
 
     const duration = (this.positionOf(n + 1) - this.positionOf(n)) * secondsPerBeat;
     const event: SequenceEvent = {
@@ -248,7 +259,36 @@ class SequenceImpl implements Source {
       sequence: this as unknown as Sequence,
       at: (fraction: number) => time + fraction * duration,
     };
+    if (heard) {
+      this.transport.tell(event, this, this.listeners);
+      // A listener may have stopped the sequence or the transport.
+      if (!called || !this.transport.playing(this)) return;
+    }
     this.transport.deliver(event, this.callback, this);
+  }
+
+  on(event: 'step', listener: StepListener): Unsubscribe {
+    if ((event as string) !== 'step') {
+      throw new RangeError(
+        `A sequence has one event to listen to, "step", not "${String(event)}".`,
+      );
+    }
+    if (typeof listener !== 'function') throw new TypeError('A step listener must be a function.');
+    if (this.transport.has(this) && !this.listeners?.includes(listener)) {
+      this.listeners = [...(this.listeners ?? []), listener];
+    }
+    return () => this.off(listener);
+  }
+
+  off(listener: StepListener): void {
+    if (!this.listeners?.includes(listener)) return;
+    const rest = this.listeners.filter((other) => other !== listener);
+    this.listeners = rest.length > 0 ? rest : null;
+  }
+
+  /** Lets go of the step listeners: the sequence has left the transport. */
+  release(): void {
+    this.listeners = null;
   }
 
   setStep(index: number, value: number): this {
@@ -456,7 +496,12 @@ export class TransportImpl {
   private serial = 0;
 
   private ticker = new Ticker();
-  private events = new Emitter<TransportEvents>();
+  private events = new Emitter<Omit<TransportEvents, 'step'>>();
+  /**
+   * The transport's `step` listeners with the owner of the view each was added through, in the
+   * order added, or null when there are none. Replaced, never changed in place, like a sequence's.
+   */
+  private stepListeners: readonly { owner: Owner; listener: StepListener }[] | null = null;
   private displayListeners = new Set<(event: SequenceEvent) => void>();
   private displayQueue: SequenceEvent[] = [];
   private frame: number | null = null;
@@ -825,6 +870,94 @@ export class TransportImpl {
     }
   }
 
+  // --- Step listeners ----------------------------------------------------------------------------
+
+  /** Whether anything listens for steps on the transport itself. */
+  get followed(): boolean {
+    return this.stepListeners !== null;
+  }
+
+  /** Whether a source is scheduled. */
+  has(source: Source): boolean {
+    return this.sources.includes(source);
+  }
+
+  /** Whether a source is scheduled and the transport running: whether its callback may be called. */
+  playing(source: Source): boolean {
+    return this.playState === 'started' && this.sources.includes(source);
+  }
+
+  /**
+   * Tells the step listeners of a step: the sequence's own, then the transport's that follow its
+   * owner. Runs before the sequence's callback, with the event's time as the default time.
+   */
+  tell(event: SequenceEvent, sequence: SequenceImpl, own: readonly StepListener[] | null): void {
+    const previous = this.engine.eventTime;
+    this.engine.eventTime = event.time;
+    try {
+      if (own !== null) {
+        for (const listener of own) {
+          this.hear(event, listener, sequence, () => sequence.off(listener));
+        }
+      }
+      const all = this.stepListeners;
+      if (all !== null) {
+        for (const entry of all) {
+          if (entry.owner !== null && entry.owner !== sequence.owner) continue;
+          this.hear(event, entry.listener, sequence, () => this.offStep(entry));
+        }
+      }
+    } finally {
+      this.engine.eventTime = previous;
+    }
+  }
+
+  /** Calls one step listener. If it throws, that is reported and everything else carries on. */
+  private hear(
+    event: SequenceEvent,
+    listener: StepListener,
+    sequence: SequenceImpl,
+    cancel: () => void,
+  ): void {
+    try {
+      listener(event);
+    } catch (thrown) {
+      const message = thrown instanceof Error ? thrown.message : String(thrown);
+      const scope = (sequence.owner as ScopeImpl | null) ?? this.engine.root;
+      const what = sequence.name === null ? 'a sequence' : `the sequence "${sequence.name}"`;
+      scope.report(
+        new CrackedUpError(
+          'callback',
+          `A step listener of ${what} in scope "${scope.name}" threw: ${message}`,
+          {
+            cause: thrown,
+            origin: {
+              scope: scope as unknown as Scope,
+              kind: 'listener',
+              sequence: sequence as unknown as Sequence,
+              name: sequence.name,
+              cancel,
+            },
+          },
+        ),
+      );
+    }
+  }
+
+  /** Listens for the steps of an owner's sequences, or with no owner of everyone's. */
+  onStep(owner: Owner, listener: StepListener): Unsubscribe {
+    if (typeof listener !== 'function') throw new TypeError('A step listener must be a function.');
+    const entry = { owner, listener };
+    this.stepListeners = [...(this.stepListeners ?? []), entry];
+    return () => this.offStep(entry);
+  }
+
+  private offStep(entry: { owner: Owner; listener: StepListener }): void {
+    if (!this.stepListeners?.includes(entry)) return;
+    const rest = this.stepListeners.filter((other) => other !== entry);
+    this.stepListeners = rest.length > 0 ? rest : null;
+  }
+
   // --- Sequences and scheduled callbacks ----------------------------------------------------------
   // These take the owner that is scheduling. Scripts and hosts reach them through a TransportView.
 
@@ -987,25 +1120,40 @@ export class TransportImpl {
       if (sequence) this.remove(sequence);
       return;
     }
-    this.sources = this.sources.filter((source) => source.owner !== owner);
+    this.sources = this.sources.filter((source) => {
+      if (source.owner !== owner) return true;
+      if (source instanceof SequenceImpl) source.release();
+      return false;
+    });
     this.named.delete(owner);
   }
 
   /** Removes everything scheduled by anyone. */
   clearAll(): void {
+    this.releaseAll();
     this.sources = [];
     this.named.clear();
+  }
+
+  private releaseAll(): void {
+    for (const source of this.sources) if (source instanceof SequenceImpl) source.release();
   }
 
   /** Forgets an owner that is going away, removing what it scheduled. */
   release(owner: Owner): void {
     this.clearOwned(owner);
     this.views.delete(owner);
+    if (owner !== null && this.stepListeners !== null) {
+      const rest = this.stepListeners.filter((entry) => entry.owner !== owner);
+      this.stepListeners = rest.length > 0 ? rest : null;
+    }
   }
 
   remove(source: Source): void {
     this.sources = this.sources.filter((other) => other !== source);
-    if (source instanceof SequenceImpl && source.name !== null) {
+    if (!(source instanceof SequenceImpl)) return;
+    source.release();
+    if (source.name !== null) {
       const names = this.named.get(source.owner);
       if (names?.get(source.name) === source) names.delete(source.name);
     }
@@ -1055,11 +1203,21 @@ export class TransportImpl {
 
   // --- Events and lifetime ------------------------------------------------------------------------
 
-  on<E extends keyof TransportEvents>(event: E, listener: TransportEvents[E]): Unsubscribe {
-    return this.events.on(event, listener);
+  on<E extends keyof TransportEvents>(
+    event: E,
+    listener: TransportEvents[E],
+    owner: Owner = null,
+  ): Unsubscribe {
+    if (event === 'step') return this.onStep(owner, listener as StepListener);
+    return this.events.on(
+      event as Exclude<E, 'step'>,
+      listener as TransportEvents[Exclude<E, 'step'>],
+    );
   }
 
   dispose(): void {
+    this.releaseAll();
+    this.stepListeners = null;
     this.ticker.stop();
     if (this.frame !== null) cancelAnimationFrame(this.frame);
     this.frame = null;
@@ -1251,6 +1409,6 @@ export class TransportView {
   }
 
   on<E extends keyof TransportEvents>(event: E, listener: TransportEvents[E]): Unsubscribe {
-    return this.impl.on(event, listener);
+    return this.impl.on(event, listener, this.owner);
   }
 }

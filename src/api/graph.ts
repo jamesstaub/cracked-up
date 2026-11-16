@@ -454,13 +454,20 @@ export interface GraphError {
 export interface CallbackOrigin {
   /** The scope whose view of the transport it was scheduled through. The root scope for `engine.transport`. */
   readonly scope: Scope;
-  /** What scheduled it: `transport.sequence` (or `steps`), `every` or `at`. */
-  readonly kind: 'sequence' | 'every' | 'at';
-  /** The sequence, when it is one. Null for `every` and `at`. */
+  /**
+   * What scheduled it: `transport.sequence` (or `steps`), `every` or `at`. 'listener' is a step
+   * listener (`sequence.on('step')` or `transport.on('step')`) and not the sequence's own
+   * callback: `scope` is then the scope of the sequence it was following.
+   */
+  readonly kind: 'sequence' | 'every' | 'at' | 'listener';
+  /** The sequence, when it is one, or the one a step listener was following. Null for `every` and `at`. */
   readonly sequence: import('./transport').Sequence | null;
   /** The sequence's name. Null for a sequence made without one, and for `every` and `at`. */
   readonly name: string | null;
-  /** Removes the sequence or repeating callback from the transport, so it is not called again. */
+  /**
+   * Removes the sequence or repeating callback from the transport, so it is not called again. For
+   * a step listener, removes the listener and leaves the sequence.
+   */
   cancel(): void;
 }
 

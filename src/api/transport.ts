@@ -109,7 +109,33 @@ export interface Sequence {
   update(options: Partial<SequenceOptions>): this;
   /** Restarts the pattern from its first step at the next step boundary. */
   restart(): this;
+  /** Removes the sequence. Its step listeners are released with it. */
   stop(): void;
+  /**
+   * Follows the sequence's steps from code that did not make it. The listener gets the event the
+   * callback gets, for every step the sequence comes to: rests too, whatever `rests` says, steps
+   * that `probability` drops, and steps passed while the sequence is `muted` (read
+   * `event.sequence.muted` to tell). It hears nothing once the sequence is stopped, and steps the
+   * scheduler skipped because it fell behind (the transport's `late` event) are not reported.
+   *
+   * Listeners run before the sequence's own callback for the same step, in the order they were
+   * added, in the same scheduling pass and with the same event, whose time is also the default
+   * time of what they do. So a value a listener sets at `event.time` is in place when the callback
+   * triggers a voice that reads it. The transport's own `step` listeners run after the sequence's
+   * and before the callback.
+   *
+   * Listeners stay through `update`, `setStep`, `restart` and a later declaration of the same
+   * name, which replaces the sequence in place: it is the same object. They are released when the
+   * sequence is stopped, cleared, dropped by a rebuild that no longer declares it, or when its
+   * scope is disposed; a sequence declared again after that is a new one, with no listeners.
+   * `transport.on('step', ...)` follows sequences whatever becomes of them. A rebuild that fails
+   * leaves the listeners as they were before it.
+   *
+   * A listener that throws is reported like a callback that throws, with `origin.kind` set to
+   * 'listener'; the other listeners and the callback still run. Adding the same function twice
+   * adds it once. On a sequence that has been stopped this adds nothing.
+   */
+  on(event: 'step', listener: (event: SequenceEvent) => void): Unsubscribe;
 }
 
 export interface ScheduledEvent {
@@ -145,6 +171,16 @@ export interface TransportEvents {
   tempo: (bpm: number) => void;
   /** The scheduler fell behind by more than the look-ahead and skipped events it could not play on time. */
   late: (info: { skipped: number; behindBy: number }) => void;
+  /**
+   * A sequence came to a step: `event.sequence` says which. Like `sequence.on('step')`, for every
+   * sequence of the scope whose view of the transport this is, named or not, those made later
+   * included; on the engine's own view (`engine.transport`), for the sequences of every scope. It
+   * runs ahead of the sound, before the sequence's callback for that step and after the
+   * sequence's own step listeners, for every step: rests, and steps of a muted sequence, too.
+   * Because it belongs to the transport and not to a sequence, it outlasts sequences that are
+   * stopped and declared again.
+   */
+  step: (event: SequenceEvent) => void;
 }
 
 export interface Transport {

@@ -225,167 +225,332 @@ __.transport.sequence('bass', { steps: [55, 0, 55, 82.4], step: '1/8' }, (ev) =>
   .gain(0.3)
   .to('main');</code></pre>
 
-        <h2 id="output">Where sound goes: <code>main</code></h2>
+        <h2 id="output">Where sound goes: <code>main</code> and other buses</h2>
         <p>
-          <code>main</code> is the engine's output. It is a <em>bus</em>: a named point where any
-          number of chains are mixed together. The engine creates <code>main</code> for you and
-          connects it to your speakers. It is the only bus that exists until you make another. You
-          never define it yourself, and it cannot be removed.
-        </p>
-        <p>
-          <code>main</code> is stereo. A mono sound sent to it is heard equally on both sides; use a
-          <code>panner</code> before it to place a sound left or right.
-        </p>
-        <p>
-          In the original Cracked library every chain ended with its own <code>.dac()</code> node.
-          Here every chain ends at the one shared <code>main</code>, which gives a single place to
-          set the overall level, and later to meter or record everything.
+          A chain is heard when it ends at a <em>bus</em>: a named point where chains are mixed.
+          <code>main</code> is the bus the engine makes and connects to your speakers. It is stereo
+          (a mono sound is heard on both sides; a <code>panner</code> places it) and cannot be
+          removed.
         </p>
         <pre><code>__().sine(220).gain(0.2).to('main');
 __.bus('main').gain.set(0.5); // overall level</code></pre>
         <p>
-          You can make more buses to group sounds, for example a shared effect. A new bus feeds
-          <code>main</code> until you route it somewhere else.
+          <code>__.bus('drums')</code> makes a bus of your own the first time it is called and
+          returns the same bus after that. A chain reaches it with <code>.to('drums')</code>.
+          Sending to a name no bus has is an error, so a mistyped name is caught at once.
         </p>
-        <pre><code>__.bus('drums').gain.set(0.8);
+
+        <h3 id="bus-model">What a bus is made of</h3>
+        <p>
+          Sound passes through a bus in a fixed order. Every picture here is drawn from the code
+          above it.
+        </p>
+        <pre data-graph><code>__.bus('drums').lowpass({ id: 'tone', frequency: 2000 });
+__.bus('drums').gain.set(0.8);
+
 __().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
-__().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
-__.transport.every('1/4', () => __('sampler').trigger());</code></pre>
-        <p>
-          Sending to a bus that does not exist is an error, so a mistyped name is caught at once.
-        </p>
-        <p>
-          <code>__.bus('drums')</code> makes the bus the first time it is called and returns the
-          same bus every time after, so it is also how you get hold of a bus to change it. These are
-          the things a bus can do. The sections below take them in turn, and
-          <a href="#bus-recipes">Buses in practice</a> puts them to use.
-        </p>
-        <div class="table-wrap">
+__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
+__.transport.steps('x.x.', () =&gt; __('#kick').trigger());
+__.transport.steps('..x.', () =&gt; __('#snare').trigger());</code></pre>
+        <ol>
+          <li><strong>Input.</strong> Everything sent to the bus, mixed.</li>
+          <li>
+            <strong>Inserts.</strong> Effects put inside the bus, in the order added. A new bus has
+            none.
+          </li>
+          <li><strong>Level.</strong> <code>bus.gain</code>, one fader for the whole bus.</li>
+          <li>
+            <strong>Output.</strong> It goes to the bus's one <em>destination</em> (the heavy line):
+            <code>main</code>, until you name another.
+          </li>
+        </ol>
+        <p>Three things can be done to a bus. Each changes a different part:</p>
+        <div class="table-wrap by-intent">
           <table>
             <thead>
               <tr>
-                <th>Call</th>
-                <th>What it does</th>
-                <th>Use it for</th>
+                <th>You write</th>
+                <th>What it changes</th>
+                <th>What it leaves alone</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><code>__.bus('drums')</code></td>
-                <td>Makes or finds the bus. Chains reach it with <code>.to('drums')</code></td>
-                <td>Grouping sounds so they can be treated as one</td>
-              </tr>
-              <tr>
-                <td><code>bus.gain</code></td>
-                <td>The level of the whole bus, a parameter</td>
+                <td><code>bus.lowpass(2000)</code><br />an <strong>insert</strong></td>
                 <td>
-                  A group fader: <code>bus.gain.set(0.8)</code>, a ramp for a fade, or
-                  <code>bus.gain.set(v, { glide: 0.02 })</code> to
-                  <a href="#following-a-fader">follow a control</a>
+                  The sound at the output. Everything after the bus gets the filtered sound, and no
+                  unfiltered sound is left
                 </td>
+                <td>Where the output goes</td>
               </tr>
               <tr>
-                <td><code>bus.compressor(...)</code>, or any effect type</td>
                 <td>
-                  Adds an <a href="#inserts">insert</a>: the effect goes inside the bus and all of
-                  its sound passes through
+                  <code>bus.to('other')</code>, <code>bus.to(null)</code><br />the
+                  <strong>destination</strong>
                 </td>
-                <td>Processing the group: compression, a filter, distortion</td>
+                <td>Where the output goes: another bus, or nowhere</td>
+                <td>The sound</td>
               </tr>
               <tr>
-                <td><code>bus.insert()</code></td>
-                <td>Starts a run of inserts without adding one</td>
+                <td><code>bus.chain()</code><br />a <strong>chain from the bus</strong></td>
                 <td>
-                  Inserting a <code>gain</code> node first, since <code>bus.gain</code> is the level
+                  Nothing in the bus. A new chain starts, fed a copy of the output (the dashed
+                  line), and goes wherever you end it
                 </td>
-              </tr>
-              <tr>
-                <td><code>bus.inserts</code></td>
-                <td>The bus's inserts as a selection, in signal order</td>
-                <td>Setting or bypassing all the effects of a group at once</td>
-              </tr>
-              <tr>
-                <td><code>bus.chain()</code></td>
-                <td>
-                  Starts a chain from the bus's output, a <a href="#bus-chain">tap</a>. The bus is
-                  still heard as before
-                </td>
-                <td>Something beside the bus: parallel effects, a recorder</td>
-              </tr>
-              <tr>
-                <td><code>bus.to('other')</code></td>
-                <td>Sends the bus's output to another bus in place of <code>main</code></td>
-                <td>Groups inside groups</td>
-              </tr>
-              <tr>
-                <td><code>bus.to(null)</code></td>
-                <td>Sends the bus's output nowhere; only its taps are heard</td>
-                <td>A bus that exists to feed a looper, or to be split into separate paths</td>
+                <td>The bus's sound and its destination</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h3 id="inserts">Effects on a bus: inserts</h3>
-        <p>
-          To process everything sent to a bus, call a node type on the bus. The node goes
-          <em>inside</em> the bus, in series, so all of the bus's sound passes through it and
-          nothing goes round it. The bus stays routed where it was, so there is no
-          <code>.to</code> to write at the end.
-        </p>
-        <pre><code>__.bus('drums').compressor({ id: 'glue', threshold: -18, ratio: 3 });
+        <h3 id="bus-cases">Six routings and their graphs</h3>
+
+        <h4 id="bus-plain">1. One fader for a group</h4>
+        <p>A bus with nothing done to it goes to <code>main</code>.</p>
+        <pre data-graph><code>__.bus('drums').gain.set(0.8);
 
 __().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
-__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.6).to('drums');
-__.transport.steps('x.x.', () => __('#kick').trigger());
-__.transport.steps('..x.', () => __('#snare').trigger());</code></pre>
+__().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
+__.transport.every('1/4', () =&gt; __('sampler').trigger());</code></pre>
+        <p class="heard">You hear the kick and the hat, both at 0.8 of their level.</p>
+
+        <h4 id="bus-insert">2. An effect on the whole group: an insert</h4>
         <p>
-          Calls can follow one another, and the signal passes through the inserts in the order they
-          were added:
+          Call an effect type on the bus and the effect goes inside it. There is no
+          <code>.to</code> to write: the bus's destination is unchanged.
         </p>
-        <pre><code>__.bus('drums')
+        <pre data-graph><code>__.bus('drums')
   .overdrive({ id: 'grit', drive: 0.4 })
-  .lowpass({ id: 'tone', frequency: 1200 })
-  .to('main');   // optional: this routes the bus, and 'main' is where it goes anyway
+  .lowpass({ id: 'tone', frequency: 1200 });
 
 __().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
-__.transport.every('1/4', () => __('#kick').trigger());</code></pre>
-        <p>
-          An insert is an ordinary node. It has an id, <code>__('#glue')</code> finds it, and it can
-          be set, ramped, <a href="#bypass">bypassed</a> and disposed like any other. Dispose the
-          last one and the bus is a plain mix point again. What it needs is an input and an output,
-          so a source or an lfo cannot be an insert.
+__.transport.every('1/4', () =&gt; __('#kick').trigger());</code></pre>
+        <p class="heard">
+          You hear only the distorted, filtered kick. No clean kick is left anywhere. More in
+          <a href="#inserts">Inserts in detail</a>.
         </p>
-        <p>The order inside a bus is fixed:</p>
-        <ol>
-          <li>the mix of everything sent to the bus,</li>
-          <li>its inserts, first to last,</li>
-          <li>its level, <code>bus.gain</code>,</li>
-          <li>
-            its output, which goes to the bus's target (<code>main</code> unless you called
-            <code>bus.to(...)</code>) and to every chain started with <code>bus.chain()</code>.
-          </li>
-        </ol>
+
+        <h4 id="bus-to-bus">3. A group inside a group: <code>bus.to('other')</code></h4>
         <p>
-          For an app that attaches an analyser of its own, <code>bus.input</code> is the first of
-          these, the mix in front of the inserts, and <code>bus.output</code> the last.
+          The hats get a fader of their own and stay part of the drums. <code>to</code> on a bus
+          sets its destination.
+        </p>
+        <pre data-graph><code>__.bus('drums').gain.set(0.8);
+__.bus('hats').to('drums');
+__.bus('hats').gain.set(0.5);
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'hat', buffer: 'hat' }).to('hats');
+__.transport.steps('x...', () =&gt; __('#kick').trigger());
+__.transport.steps('xxxx', () =&gt; __('#hat').trigger());</code></pre>
+        <p class="heard">
+          You hear the kick at 0.8 and the hat at 0.5 &times; 0.8. The hats reach main only through
+          drums, so an insert on drums would process them too.
+        </p>
+
+        <h4 id="bus-chain">
+          4. The group, and a processed copy beside it: <code>bus.chain()</code>
+        </h4>
+        <p>
+          The drums as they are, with a heavily compressed copy mixed in under them (parallel
+          compression). <code>bus.chain()</code> starts an ordinary chain fed a copy of the bus's
+          output. Like any chain, it is silent until it ends somewhere.
+        </p>
+        <pre data-graph><code>__.bus('drums')
+  .chain()
+  .compressor({ id: 'smash', threshold: -30, ratio: 12 })
+  .gain({ id: 'smash-level', gain: 0.5 })
+  .to('main');
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
+__.transport.steps('x.x.', () =&gt; __('#kick').trigger());
+__.transport.steps('..x.', () =&gt; __('#snare').trigger());</code></pre>
+        <p class="heard">
+          You hear two things added in main: the drums untouched (the heavy line) and the compressed
+          copy at half level (the dashed line). Delete the chain and the drums sound exactly as
+          before.
+        </p>
+
+        <h4 id="bus-insert-or-chain">5. Insert or chain: the same effect both ways</h4>
+        <p>
+          The two differ by <code>.chain()</code> and the <code>.to('main')</code> a chain needs.
+        </p>
+        <pre data-graph><code>__.bus('drums').overdrive({ id: 'crush', drive: 0.8 });
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__.transport.every('1/4', () =&gt; __('#kick').trigger());</code></pre>
+        <p class="heard">Insert: you hear the distorted kick, and no clean kick.</p>
+        <pre
+          data-graph
+        ><code>__.bus('drums').chain().overdrive({ id: 'crush', drive: 0.8 }).to('main');
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__.transport.every('1/4', () =&gt; __('#kick').trigger());</code></pre>
+        <p class="heard">
+          Chain from the bus: you hear the clean kick with the distorted kick on top. Without
+          <code>.to('main')</code>, the clean kick alone: the chain ends nowhere.
         </p>
         <p>
-          <code>gain</code> on a bus is that level, a parameter:
-          <code>__.bus('drums').gain.set(0.8)</code>. So a gain <em>node</em> cannot be added by
-          calling <code>gain(...)</code> on the bus itself. Start with <code>insert()</code>, which
-          returns the same thing an insert call does and has every node type as a method. After the
-          first insert you are already there:
+          <code>.to</code> does two jobs here. On a bus, or straight after an insert, it sets the
+          bus's destination. After <code>.chain()</code> it ends that chain, as on any chain.
+        </p>
+
+        <h4 id="bus-to-null">6. Heard only through its chains: <code>bus.to(null)</code></h4>
+        <p>
+          The lows of the drums dry and only the highs echoed: two paths side by side, which inserts
+          cannot do because they come one after another. So two chains from the bus, and
+          <code>to(null)</code> to stop the bus's own output, or the untreated drums would be heard
+          on top.
+        </p>
+        <pre data-graph><code>const drums = __.bus('drums').to(null);
+drums.chain().lowpass({ id: 'lows', frequency: 300 }).to('main');
+drums
+  .chain()
+  .highpass({ id: 'highs', frequency: 300 })
+  .tapedelay({ id: 'echo', time: 0.2 })
+  .to('main');
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'hat', buffer: 'hat' }).to('drums');
+__.transport.steps('x...', () =&gt; __('#kick').trigger());
+__.transport.steps('..x.', () =&gt; __('#hat').trigger());</code></pre>
+        <p class="heard">
+          You hear the two chains and nothing else. Take the chains away and there is silence: a bus
+          sent nowhere is heard only through chains from it.
+        </p>
+        <p>
+          <code>to(null)</code> has two uses: a bus heard only through two or more chains, as here,
+          and a bus not heard at all, such as one that only feeds a
+          <a href="#recording">recorder</a>. With one chain,
+          <code>bus.to(null).chain().lowpass(300).to('main')</code> is the insert
+          <code>bus.lowpass(300)</code> the long way round.
+        </p>
+
+        <h3 id="bus-choose">Which one do I want?</h3>
+        <div class="table-wrap by-intent">
+          <table>
+            <thead>
+              <tr>
+                <th>I want</th>
+                <th>Write</th>
+                <th>Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Several sounds on one fader</td>
+                <td><code>.to('drums')</code> on each, then <code>__.bus('drums').gain</code></td>
+                <td><a href="#bus-plain">1</a></td>
+              </tr>
+              <tr>
+                <td>An effect on the whole group, with no unprocessed sound left</td>
+                <td>An insert: <code>__.bus('drums').compressor()</code></td>
+                <td><a href="#bus-insert">2</a></td>
+              </tr>
+              <tr>
+                <td>A group that is part of a bigger group</td>
+                <td><code>__.bus('hats').to('drums')</code></td>
+                <td><a href="#bus-to-bus">3</a></td>
+              </tr>
+              <tr>
+                <td>
+                  The group as it is, plus something made from it: its reverb, a squashed copy
+                </td>
+                <td>
+                  A chain from the bus: <code>__.bus('drums').chain().reverb().to('main')</code>
+                </td>
+                <td><a href="#bus-chain">4</a></td>
+              </tr>
+              <tr>
+                <td>To record the group without changing what is heard</td>
+                <td>
+                  A chain from the bus that ends at the recorder:
+                  <code>__.bus('drums').chain().recorder()</code>
+                </td>
+                <td><a href="#bus-recipes">below</a></td>
+              </tr>
+              <tr>
+                <td>The group split into different paths, and heard only through them</td>
+                <td><code>to(null)</code>, and a chain from the bus for each path</td>
+                <td><a href="#bus-to-null">6</a></td>
+              </tr>
+              <tr>
+                <td>One effect shared by several sounds, each sending its own amount</td>
+                <td>A bus with the effect as an insert, and a <code>split</code> on each sound</td>
+                <td><a href="#bus-recipes">below</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="bus-recipes">Buses in practice</h3>
+        <p>
+          <strong>One reverb shared by several sounds.</strong> A bus whose only job is the effect:
+          a reverb insert with <code>mix: 1</code>, so the bus carries reverb and nothing else. Each
+          sound goes to <code>main</code> and also sends some of itself to the reverb bus, at its
+          own level.
+        </p>
+        <pre data-graph><code>__.bus('room').reverb({ id: 'space', seconds: 2, mix: 1 });
+
+__().sampler({ id: 'snare', buffer: 'snare' }).split(
+  (dry) =&gt; dry.to('main'),
+  (send) =&gt; send.gain({ id: 'snare-send', gain: 0.4 }).to('room'),
+);
+__().sampler({ id: 'hat', buffer: 'hat' }).split(
+  (dry) =&gt; dry.gain(0.5).to('main'),
+  (send) =&gt; send.gain({ id: 'hat-send', gain: 0.1 }).to('room'),
+);
+
+__.transport.steps('..x.', () =&gt; __('#snare').trigger());
+__.transport.steps('xxxx', () =&gt; __('#hat').trigger());</code></pre>
+        <p>
+          <strong>Compressed drums, and a crushed copy underneath.</strong> An insert and a chain
+          from the same bus. The copy is taken at the output, after the inserts and the level, so
+          the bitcrusher gets drums that are already compressed.
+        </p>
+        <pre data-graph><code>__.bus('drums')
+  .compressor({ id: 'glue', threshold: -18, ratio: 3 })
+  .chain()
+  .bitcrusher({ id: 'crush', bits: 4 })
+  .gain(0.3)
+  .to('main');
+
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
+__.transport.steps('x.x.', () =&gt; __('#kick').trigger());
+__.transport.steps('..x.', () =&gt; __('#snare').trigger());</code></pre>
+        <p>
+          <strong>Recording a group.</strong> A chain from the bus that ends at a recorder captures
+          what the bus puts out, inserts and level included. It adds nothing to what you hear,
+          because that chain goes nowhere else. See
+          <a href="#recording">Recording, looping and live input</a>.
+        </p>
+        <pre
+          data-static
+          data-graph
+        ><code>__.bus('drums').chain().recorder({ id: 'stem', into: 'stem:drums' });</code></pre>
+
+        <h3 id="inserts">Inserts in detail</h3>
+        <p>
+          An insert is an ordinary node: it has an id, <code>__('#glue')</code> finds it, and it can
+          be set, ramped, <a href="#bypass">bypassed</a> and disposed. It needs an input and an
+          output, so a source or an lfo cannot be one.
+        </p>
+        <p>
+          <code>bus.gain</code> is the bus's level, so a gain <em>node</em> is inserted through
+          <code>insert()</code>, which has every node type as a method. After a first insert you are
+          already there:
         </p>
         <pre data-static><code>__.bus('drums').insert().gain(0.5).compressor({ threshold: -18 });
 __.bus('drums').compressor({ threshold: -18 }).gain(0.5);   // here gain is the node type
 
 __.bus('drums').inserts;   // a selection of the bus's inserts, in order</code></pre>
         <p>
-          <code>bus.inserts</code> is a selection like any other, so one call reaches every effect
-          on the bus. In the other direction, <code>node.insertOf</code> is the bus a node is an
-          insert on, and null for any other node. An insert's place in its bus is not a connection:
-          it is not among the node's <code>inputs</code> and <code>outputs</code>.
+          <code>bus.inserts</code> is a selection, so one call reaches every effect on the bus.
+          <code>node.insertOf</code> is the bus a node is an insert on, or null. An insert's place
+          in its bus is not a connection: it is not among the node's <code>inputs</code> and
+          <code>outputs</code>.
         </p>
         <pre><code>__.bus('drums')
   .overdrive({ id: 'grit', drive: 0.6 })
@@ -398,138 +563,96 @@ __.transport.sequence('dry', { steps: [0, 1], step: '1 bar' }, (ev) =&gt; {
   __.bus('drums').inserts.bypass(ev.value === 1);
 });</code></pre>
         <p>
-          Outside <code>build</code>, each call adds another insert after the ones already there,
-          and giving an id that exists is an error, as it is in a chain. Inside
-          <a href="#rebuilding"><code>build</code></a
-          >, which is how a script that is run again and again should be run, the bus ends up with
-          exactly the inserts the script asked for, in the order it asked: an unchanged line keeps
-          its node and its state, a changed value is set in place, a line you delete takes its
-          insert out, and lines you swap are re-patched without making new nodes. A build that
-          <a href="#build-atomic">cannot be applied</a> leaves every bus with the inserts it had.
+          Inserts are added from the scope that owns the bus. A track's script, or one in a
+          <a href="#sandbox">sandbox</a>, can put a compressor on a bus it made but not on
+          <code>main</code>, which belongs to the engine: there,
+          <code>engine.bus('main').compressor()</code> does it.
+        </p>
+
+        <h3 id="bus-reference">Bus reference</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Call</th>
+                <th>What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>bus.gain</code></td>
+                <td>
+                  The level, a parameter: <code>bus.gain.set(0.8)</code>, a ramp for a fade, or
+                  <code>bus.gain.set(v, { glide: 0.02 })</code> to
+                  <a href="#following-a-fader">follow a control</a>
+                </td>
+              </tr>
+              <tr>
+                <td><code>bus.compressor(...)</code>, or any effect type</td>
+                <td>
+                  Adds an insert after those already there. What it returns takes the next insert,
+                  and has <code>to</code> and <code>chain</code>, which act on the bus
+                </td>
+              </tr>
+              <tr>
+                <td><code>bus.insert()</code></td>
+                <td>The same without adding one, for inserting a <code>gain</code> node</td>
+              </tr>
+              <tr>
+                <td><code>bus.inserts</code></td>
+                <td>The inserts as a selection, in signal order</td>
+              </tr>
+              <tr>
+                <td><code>bus.to('other')</code>, <code>bus.to(null)</code></td>
+                <td>
+                  Sets the destination, or removes it so that only chains from the bus are heard.
+                  <code>bus.to('main')</code> puts it back
+                </td>
+              </tr>
+
+              <tr>
+                <td><code>bus.chain()</code></td>
+                <td>
+                  Starts a chain fed a copy of the output, after inserts and level. Each call starts
+                  another. The bus is not changed
+                </td>
+              </tr>
+              <tr>
+                <td><code>bus.input</code>, <code>bus.output</code></td>
+                <td>The Web Audio nodes at the two ends, for an app's own analyser. Read only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Running code again.</strong> Outside <code>build</code>, each insert call adds
+          another insert. Inside <a href="#rebuilding"><code>build</code></a
+          >, a bus ends up as the script describes it this time: unchanged inserts keep their node
+          and state, changed values are set in place, and reordered ones are re-patched. A deleted
+          insert line takes the insert out, a deleted <code>to(...)</code> sends the bus back to
+          <code>main</code>, and a deleted chain from the bus removes its nodes. A build that
+          <a href="#build-atomic">cannot be applied</a> leaves every bus as it was.
         </p>
         <p>
-          Inserts can only be added from the scope the bus belongs to. A track's script can put a
-          compressor on a bus it made, but not on <code>main</code>, which belongs to the engine's
-          own scope; there, <code>engine.bus('main').compressor()</code> does it. The same holds for
-          a script in a <a href="#sandbox">sandbox</a>.
+          <strong>As data.</strong> The three are in three places. A chain from a bus is an edge
+          whose <code>from</code> is the bus. Inserts are listed per bus, in order, with no edges.
+          The destination is in the scope's snapshot, <code>null</code> after <code>to(null)</code>.
         </p>
-        <p>
-          As data, a scope's description lists the inserts of each bus by id, in order, beside its
-          nodes and connections, so a saved graph brings its inserts back when it is
-          <a href="#rebuilding">applied</a>. A <code>bus</code> command sets a bus's inserts from
-          nodes that exist, which is also the way to change their order:
-        </p>
-        <pre data-static><code>scope.describe().inserts;   // { drums: ['grit', 'tone'] }
+        <pre
+          data-static
+        ><code>scope.describe().edges;     // [{ from: 'kick', to: { bus: 'drums' } },            sent to the bus
+                            //  { from: { bus: 'drums' }, to: { node: 'smash' } }]  a chain from the bus
+scope.describe().inserts;   // { drums: ['grit', 'tone'] }
+scope.snapshot().buses;     // [{ name: 'drums', to: 'main', gain: 0.8 }]
 
 // The filter first, then the overdrive. An id left out stops being an insert.
 scope.dispatch([{ op: 'bus', name: 'drums', inserts: ['tone', 'grit'] }]);</code></pre>
         <p>
-          The <a href="#inspecting">inspector</a> draws a bus's inserts in a row leading into it. To
-          put something beside a bus and not inside it, use a tap, which is next; for which to
-          choose, see <a href="#bus-recipes">Buses in practice</a>.
+          <a href="#rebuilding">Applying</a> a saved description puts inserts and chains from buses
+          back on buses that exist. It does not make a bus or set its destination or level; the
+          snapshot has those. The <a href="#inspecting">inspector</a> draws a bus's inserts in a row
+          leading into it.
         </p>
-
-        <h3 id="bus-chain">Taps: <code>bus.chain()</code> and <code>bus.to(null)</code></h3>
-        <p>
-          <code>bus.chain()</code> starts a chain from the bus's output, after its inserts. It is a
-          <em>tap</em>: the bus still goes to its target as well, so what you chain from it is heard
-          in addition to the bus, not instead of it. Use it for something that runs in parallel: a
-          send to a reverb, a <a href="#recording">recorder</a> listening in. To change the bus's
-          own sound, use an <a href="#inserts">insert</a>.
-        </p>
-        <pre><code>// The drums, and a reverb of the drums beside them.
-__.bus('drums').chain().reverb({ seconds: 2 }).gain(0.3).to('main');
-
-__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
-__.transport.every('1/2', () => __('#snare').trigger());</code></pre>
-        <p>
-          <code>bus.to(null)</code> stops the bus feeding anything itself, which leaves its chains
-          as the only way out. That is the tool when the chain should replace the bus's output and
-          an insert cannot do the job: a <a href="#recording">looper</a> fed by a bus, which is
-          heard only through the looper, or a bus that splits into several different paths.
-        </p>
-        <pre
-          data-static
-        ><code>__.bus('loop-in').to(null).chain().looper({ id: 'loop', length: '1 bar' }).to('main');</code></pre>
-        <p>
-          Before inserts existed, <code>bus.to(null).chain()....to('main')</code> was also the way
-          to put an effect on a bus. It still works and sounds the same; an insert says it in one
-          line.
-        </p>
-
-        <h3 id="bus-recipes">Buses in practice</h3>
-        <p>
-          <strong>One reverb shared by several sounds.</strong> Make a bus whose only job is the
-          effect: a reverb <a href="#inserts">insert</a> with <code>mix: 1</code>, so the bus
-          carries reverb and nothing else. Each sound goes to <code>main</code> as usual and also
-          sends some of itself to the reverb bus, at its own level. One reverb is cheaper than one
-          per sound, and puts everything in the same room.
-        </p>
-        <pre><code>__.bus('room').reverb({ id: 'space', seconds: 2, mix: 1 });
-
-__().sampler({ id: 'snare', buffer: 'snare' }).split(
-  (dry) => dry.to('main'),
-  (send) => send.gain({ id: 'snare-send', gain: 0.4 }).to('room'),
-);
-__().sampler({ id: 'hat', buffer: 'hat' }).split(
-  (dry) => dry.gain(0.5).to('main'),
-  (send) => send.gain({ id: 'hat-send', gain: 0.1 }).to('room'),
-);
-
-__.transport.steps('..x.', () => __('#snare').trigger());
-__.transport.steps('xxxx', () => __('#hat').trigger());</code></pre>
-        <p>
-          <strong>Parallel compression.</strong> The drums are heard untouched, and a heavily
-          compressed copy is mixed in under them. This needs a <a href="#bus-chain">tap</a>, not an
-          insert, because the uncompressed sound must stay.
-        </p>
-        <pre><code>__.bus('drums')
-  .chain()
-  .compressor({ id: 'smash', threshold: -30, ratio: 12 })
-  .gain({ id: 'smash-level', gain: 0.5 })
-  .to('main');
-
-__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
-__().sampler({ id: 'snare', buffer: 'snare' }).to('drums');
-__.transport.steps('x.x.', () => __('#kick').trigger());
-__.transport.steps('..x.', () => __('#snare').trigger());</code></pre>
-        <p>
-          <strong>Groups inside groups.</strong> <code>bus.to('other')</code> sends one bus into
-          another. Here the hats have their own filter and level, and still pass through the drum
-          bus's compressor with everything else.
-        </p>
-        <pre><code>__.bus('drums').compressor({ id: 'glue', threshold: -18, ratio: 3 });
-__.bus('hats').highpass({ id: 'hat-tone', frequency: 6000 }).to('drums');
-__.bus('hats').gain.set(0.6);
-
-__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
-__().sampler({ id: 'hat', buffer: 'hat' }).to('hats');
-__.transport.steps('x...', () => __('#kick').trigger());
-__.transport.steps('xxxx', () => __('#hat').trigger());</code></pre>
-        <p>
-          <strong>Recording a group.</strong> A recorder on a tap captures exactly what the bus puts
-          out, inserts and level included, without changing what is heard. Two recorders triggered
-          together give stems that line up. See
-          <a href="#recording">Recording, looping and live input</a>.
-        </p>
-        <pre
-          data-static
-        ><code>__.bus('drums').chain().recorder({ id: 'stem', into: 'stem:drums' });</code></pre>
-        <p>Choosing between the three:</p>
-        <ul>
-          <li>
-            Everything on the bus should be changed: an
-            <a href="#inserts"><strong>insert</strong></a> (<code>bus.compressor()</code>).
-          </li>
-          <li>
-            Something should be added beside the bus, or should listen to it: a
-            <a href="#bus-chain"><strong>tap</strong></a> (<code>bus.chain()</code>).
-          </li>
-          <li>
-            The bus should be heard only through what follows it:
-            <code>bus.to(null)</code> and a tap.
-          </li>
-        </ul>
 
         <h2 id="connecting"><code>to</code>, <code>connect</code> and <code>modulate</code></h2>
         <p>
@@ -1596,10 +1719,10 @@ __.transport.every('4 bars', () =&gt; {
         <h3>Recording any part of your sound</h3>
         <p>
           Recorders and loopers take whatever is connected to them, not just a microphone. The usual
-          way to choose what gets captured is a bus: send any number of chains to it, and continue
-          from the bus into the recorder or looper. Nothing is captured until you
-          <code>trigger()</code> the recorder or looper, so a complete example needs three things:
-          the routing, something playing, and a trigger.
+          way to choose what gets captured is a bus: send any number of chains to it, and start a
+          <a href="#bus-chain">chain from the bus</a> into the recorder or looper. Nothing is
+          captured until you <code>trigger()</code> the recorder or looper, so a complete example
+          needs three things: the routing, something playing, and a trigger.
         </p>
         <pre><code>// ROUTING. Anything sent to 'loop-in' can be looped. to(null) stops the bus feeding the
 // output by itself, so its one way out is through the looper. Without it you would hear

@@ -358,6 +358,13 @@ article pre a.try {
   overflow-x: auto;
   margin: 10px 0;
 }
+/* A table read by its first column: on a narrow screen it keeps a width worth reading. */
+.table-wrap.by-intent td:first-child {
+  min-width: 150px;
+}
+.table-wrap.by-intent td {
+  min-width: 130px;
+}
 article table {
   border-collapse: collapse;
   width: 100%;
@@ -408,6 +415,105 @@ article td .alias,
   padding: 2px 12px;
   color: var(--muted);
   margin: 12px 0;
+}
+/* A routing picture, drawn under its example by demo/bus-graph.ts. A wide one scrolls in its box. */
+article pre[data-graph] {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+article .route {
+  overflow-x: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  margin: 0 0 4px;
+  min-height: 60px;
+  font-size: 13px;
+  color: var(--muted);
+}
+/* On a narrow screen most pictures are wider than their box. Say so, since nothing else does. */
+article .route.wide::after {
+  content: 'Scroll sideways for the rest of the picture.';
+  display: block;
+  position: sticky;
+  left: 0;
+  padding: 0 12px 8px;
+  font-size: 12px;
+}
+article .heard {
+  margin: 6px 0 22px;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+}
+.route-graph {
+  display: block;
+  font:
+    11px ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+.route-graph text {
+  fill: var(--text);
+}
+.route-graph text.sub,
+.route-graph text.part {
+  fill: var(--muted);
+}
+.route-graph .node rect,
+.route-graph .level rect {
+  fill: var(--panel);
+  stroke: var(--muted);
+}
+.route-graph .bus .frame {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.route-graph .bus.closed rect {
+  fill: var(--panel);
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.route-graph .bus .title,
+.route-graph .bus.closed text:first-of-type {
+  font-weight: 700;
+}
+.route-graph .port {
+  fill: var(--text);
+}
+.route-graph .edge {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.25;
+}
+.route-graph .edge.own {
+  stroke: var(--text);
+  stroke-width: 2.5;
+}
+.route-graph .edge.copy {
+  stroke: var(--accent);
+  stroke-width: 1.75;
+  stroke-dasharray: 6 4;
+}
+.route-graph .head {
+  fill: var(--muted);
+}
+.route-graph .head.own {
+  fill: var(--text);
+}
+.route-graph .head.copy {
+  fill: var(--accent);
+}
+.route-graph .label.own {
+  font-weight: 700;
+}
+.route-graph .label.copy {
+  fill: var(--accent);
+  font-weight: 700;
 }
 @media (max-width: 760px) {
   .docs-layout {

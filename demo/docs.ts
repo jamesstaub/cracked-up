@@ -5,11 +5,12 @@
 
 import { version } from '../package.json';
 import { createEngine } from '../src';
-import type { NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
+import type { Engine, NodeTypeInfo, OptionInfo, ParamMeta } from '../src';
 import { API } from '../src/editor/api-docs';
 import { INTERACTION_DOCS } from '../src/util';
+import { renderRoute, routeModel } from './bus-graph';
 import { exampleFor } from './examples';
-import { HELPER_GROUPS } from './helpers';
+import { HELPER_GROUPS, helpers, wrapUserCode } from './helpers';
 import { highlightBlocks } from './highlight';
 import {
   MIDI_EVENT_MEMBERS,
@@ -372,6 +373,46 @@ function addTryLinks(): void {
   }
 }
 
+/**
+ * Draws the routing picture of every example marked `data-graph`, under the example. The example is
+ * built for real, in a scope of its own on the silent engine, and the picture is drawn from that
+ * scope's snapshot. Nothing is played, so no user gesture is needed.
+ */
+async function drawRoutes(engine: Engine): Promise<void> {
+  let count = 0;
+  const holders: HTMLElement[] = [];
+  for (const block of document.querySelectorAll<HTMLPreElement>('article pre[data-graph]')) {
+    const source = block.querySelector('code')?.textContent ?? '';
+    const scope = engine.root.scope(`figure-${count++}`);
+    const holder = element('div', [], 'route');
+    try {
+      const program = new Function('__', ...Object.keys(helpers), wrapUserCode(source)) as (
+        ...values: unknown[]
+      ) => void;
+      await scope.build((api) => program(api, ...Object.values(helpers)));
+      holder.append(renderRoute(routeModel(scope.snapshot())));
+    } catch (error) {
+      holder.textContent = `This picture could not be drawn: ${String(error)}`;
+    }
+    scope.dispose();
+    block.after(holder);
+    holders.push(holder);
+  }
+  // A picture wider than its box scrolls inside it, and says so.
+  const mark = (): void => {
+    for (const holder of holders) {
+      const picture = holder.querySelector('svg');
+      const wide = !!picture && picture.clientWidth > holder.clientWidth;
+      holder.classList.toggle('wide', wide);
+      // Reachable by keyboard while it scrolls, and only then.
+      if (wide) holder.tabIndex = 0;
+      else holder.removeAttribute('tabindex');
+    }
+  };
+  mark();
+  window.addEventListener('resize', mark);
+}
+
 async function main(): Promise<void> {
   // The version shown is the one in package.json, so it cannot fall behind a release.
   const status = document.querySelector('#status');
@@ -386,6 +427,8 @@ async function main(): Promise<void> {
   buildMembers('interaction-reference', INTERACTION);
   buildMembers('midi-reference', MIDI);
   buildContents(types);
+  // Before highlighting, which rewrites each <code>; a picture is drawn from the example's text.
+  await drawRoutes(engine);
   // Before the links go in: highlighting rewrites each <code>, and a link reads its text.
   highlightBlocks(document.querySelector('article')!);
   addTryLinks();

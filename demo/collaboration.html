@@ -344,7 +344,9 @@ const link = linkRemote(scope, {
           <li>
             <strong>The page rejects something.</strong> A command that cannot be applied (an
             unknown bus, a method that does not exist) comes back to
-            <code>remote.on('error')</code>.
+            <code>remote.on('error')</code>. When it was part of a <code>remote.build</code>, the
+            page applies none of that build, and the sandbox goes back to the nodes, sequences and
+            callbacks it had before: a build is all or nothing on both sides.
           </li>
           <li>
             <strong>It loops forever.</strong> The frame stops answering and its sequences fall
@@ -421,8 +423,36 @@ const link = linkRemote(scope, {
                 <td><code>engine.buffers</code></td>
                 <td>
                   <code>remote.buffers.get(key)</code> for duration and slices;
-                  <code>load(url)</code> if <code>allow</code> permits
+                  <code>load(url)</code> and <code>setSlices(key, boundaries)</code> if
+                  <code>allow</code> permits
                 </td>
+              </tr>
+              <tr>
+                <td>
+                  A sampler's sound: <code>setOption('buffer', ...)</code>,
+                  <code>node.buffer</code>, <code>node.playheads()</code>
+                </td>
+                <td>Yes</td>
+                <td>
+                  <code>setOption</code> the same. <code>node.buffer</code> has the key, duration
+                  and slices, not the audio. <code>playheads()</code> is always empty
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Following steps: <code>sequence.on('step')</code>,
+                  <code>transport.on('step')</code>
+                </td>
+                <td>Yes</td>
+                <td>
+                  No, they throw. The page listens to the sequence a script declared, with
+                  <code>scope.transport.get(name).on('step', listener)</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>transport.sequences</code></td>
+                <td>Yes</td>
+                <td>No. <code>transport.get(name)</code> finds one by name</td>
               </tr>
               <tr>
                 <td>Native audio nodes, <code>defineNode</code>, worklets</td>
@@ -515,7 +545,10 @@ const link = linkRemote(scope, {
                 <td>
                   <code>set</code>, <code>ramp</code>, <code>offset</code>, <code>cancel</code>
                 </td>
-                <td>Change parameter values at a time</td>
+                <td>
+                  Change parameter values at a time. A <code>set</code> may carry a
+                  <code>glide</code>
+                </td>
               </tr>
               <tr>
                 <td>
@@ -528,7 +561,17 @@ const link = linkRemote(scope, {
                   <code>connect</code>, <code>disconnect</code>, <code>dispose</code>,
                   <code>bus</code>
                 </td>
-                <td>Change connections, remove nodes, make or route a bus of the scope</td>
+                <td>
+                  Change connections, remove nodes, make or route a bus of the scope and say which
+                  nodes are its inserts
+                </td>
+              </tr>
+              <tr>
+                <td><code>option</code></td>
+                <td>
+                  Changes a creation option that can change on a living node: today, the buffer a
+                  sampler plays
+                </td>
               </tr>
               <tr>
                 <td><code>inside</code></td>
@@ -560,6 +603,12 @@ const link = linkRemote(scope, {
             </tbody>
           </table>
         </div>
+        <p>
+          The commands of one <code>remote.build</code> travel together, as one message that carries
+          a build number. The page applies all of them or none, and answers with a
+          <code>built</code> message of the same number that says which. Commands sent outside a
+          build are applied one by one.
+        </p>
 
         <h2 id="checklist">Checklist</h2>
         <ul>
@@ -577,8 +626,8 @@ const link = linkRemote(scope, {
             <code>localStorage</code>).
           </li>
           <li>
-            <code>allow</code> refuses <code>loadBuffer</code> and <code>transport</code> unless you
-            mean to permit them.
+            <code>allow</code> refuses <code>loadBuffer</code>, <code>transport</code> and
+            <code>slices</code> unless you mean to permit them.
           </li>
           <li>There is a cap on nodes per script, and a ping to catch a frame that has stopped.</li>
           <li>Any project whose scripts the current user did not write runs sandboxed.</li>

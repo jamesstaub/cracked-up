@@ -24,12 +24,17 @@ with it: old Cracked code will not run unchanged.
 - **No global state.** Everything belongs to an engine you create on your own audio context. Scopes
   give each script or track its own ids. Selections are immutable, so code in one callback cannot
   disturb another.
+- **Buses with inserts.** Chains mix into named buses. A node type called on a bus
+  (`__.bus('drums').compressor()`) puts that effect inside it, and `bus.chain()` taps it for
+  parallel effects and recording.
 - **A transport with tight timing.** Sequences, polyrhythm, swing, tempo changes, `every` and `at`,
-  scheduled ahead of time on the audio clock.
+  scheduled ahead of time on the audio clock. A playing sequence can be changed in place, read back
+  and followed step by step by code that did not make it.
 - **Rebuilding in place.** Re-run changed code and only the difference is applied: what you did not
-  touch keeps sounding, and code that throws leaves the previous version playing.
+  touch keeps sounding. A build is all or nothing, so code that throws, or asks for anything that
+  cannot be done, leaves the previous version playing exactly as it was.
 - **Parameters with metadata**, so a host can build controls, and so values can be ramped,
-  offset and modulated.
+  offset and modulated, and can follow a fader without clicks (`set` with `glide`).
 - **Node types**: oscillators, a sampler with slices, filters, delays, distortion, envelopes,
   modulators, two synths, a recorder, a looper, live input, a multiband compressor and a tape delay.
   Define your own with `defineNode` and `defineMacro`.
@@ -41,7 +46,8 @@ with it: old Cracked code will not run unchanged.
 - **An editor** (`cracked-up/editor`): a code editor for an app to embed, built on CodeMirror 6.
   Completion and hover documentation for node types, parameters, selectors, buffers and helpers,
   and the source of any node type or helper on Cmd-click. It works from plain data, so it needs no
-  engine and behaves the same beside a sandbox.
+  engine and behaves the same beside a sandbox. A host can describe functions of its own for
+  completion, mark problems it finds in the text, and link its interface to the cursor.
 - **A graph inspector** (`cracked-up/inspect`): a live drawing of a scope's nodes, buses and
   connections for debugging, with a level meter on every output and the details of any node.
 - **Composing helpers** (`cracked-up/util`): Euclidean rhythms, pattern transforms, sieves, scales
@@ -94,7 +100,7 @@ That opens:
 | `cracked-up/nodes` | The built-in node definitions |
 | `cracked-up/worklets` | The AudioWorklet source, for hosts that must serve it themselves |
 | `cracked-up/global` | A ready-made engine and `__` for quick experiments |
-| `cracked-up/editor` | `createEditor`, `createSourcePanel` and the catalog functions. Needs CodeMirror 6, which you install (see below) |
+| `cracked-up/editor` | `createEditor`, `createSourcePanel` and the catalog functions (`catalogFromEngine`, `catalogFromNodes`, `catalogFromScope`, `catalogFromSnapshot`, `catalogFromRemoteState`, `createCatalogStore`). Needs CodeMirror 6, which you install (see below) |
 
 ```js
 import { createEngine } from 'cracked-up';
@@ -124,8 +130,9 @@ const editor = createEditor({
 });
 ```
 
-The docs page has the rest: the catalog, several editors on a page, sandboxed scripts, the source
-panel, and theming.
+The docs page has the rest: the catalog, several editors on a page, a catalog before there is an
+engine, sandboxed scripts, functions of your own, problems the host finds, the source panel, and
+theming.
 
 ## Development
 

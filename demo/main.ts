@@ -7,8 +7,8 @@
  * half-typed line never interrupts the sound. Named sequences are replaced in place and stay in time.
  */
 
-import { createEngine } from '../src';
-import type { Engine, NodeTypeInfo } from '../src';
+import { createEngine, defineMacro } from '../src';
+import type { Engine, MacroDefinition, NodeTypeInfo } from '../src';
 import { builtinHelpers, catalogFromEngine, createCatalogStore, createEditor } from '../src/editor';
 import type { EditorCatalog } from '../src/editor';
 import { toggleInspector } from '../src/inspect';
@@ -210,6 +210,7 @@ function run(target: Engine): void {
     program = new Function(
       '__',
       'engine',
+      'define',
       ...Object.keys(helpers),
       ...INTERACTION_NAMES,
       'midi',
@@ -234,8 +235,11 @@ function run(target: Engine): void {
   }
   const session = midi?.session() ?? null;
   const midiName = session?.midi ?? noMidi(midiProblem || 'midi is not set up.');
+  // A script's own node types: `define({ type, params, build })`, as in the sandboxed demo.
+  const define = (definition: MacroDefinition): void =>
+    target.registry.register(defineMacro(definition));
   scope
-    .build((api) => program(api, target, ...Object.values(helpers), ...names, midiName))
+    .build((api) => program(api, target, define, ...Object.values(helpers), ...names, midiName))
     .then((result) => {
       if (result.errors[0]) {
         listening.clear();
@@ -487,6 +491,12 @@ function catalogFor(target: Engine | null): EditorCatalog {
       {
         name: 'engine',
         description: 'The engine this page made: engine.buffers, engine.registry.',
+      },
+      {
+        name: 'define',
+        signature: 'define(definition)',
+        description:
+          'Defines a node type of your own, a macro: { type, params, build(__), trigger(__, options) }.',
       },
       {
         name: 'midi',

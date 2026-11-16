@@ -8,6 +8,7 @@ import type {
   Random,
   RenderOptions,
   ScopeApi,
+  SetOptions,
   Unsubscribe,
 } from '../api';
 import { builtinNodes } from '../nodes/builtin';
@@ -144,7 +145,7 @@ export class EngineImpl {
       Object.defineProperty(this.Selection.prototype, name, {
         configurable: true,
         writable: true,
-        value(this: SelectionImpl, value: ParamValue, options?: { at?: number }) {
+        value(this: SelectionImpl, value: ParamValue, options?: SetOptions) {
           return this.set({ [name]: value }, options);
         },
       });

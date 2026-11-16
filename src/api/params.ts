@@ -87,12 +87,30 @@ export interface At {
   at?: number;
 }
 
+export interface SetOptions extends At {
+  /**
+   * Seconds to take getting there, in place of an instant step. The move starts from the value the
+   * parameter has actually reached at `at`, part-way through a ramp or an earlier glide included,
+   * and replaces whatever was scheduled from then on, so it is safe to call again and again while
+   * the last move is still in flight: `param.set(level, { glide: 0.02 })` on every movement of a
+   * fader follows it without clicks. The base value is the target straight away, and `change`
+   * fires once, with the time the glide ends.
+   *
+   * Number parameters with rate `audio` glide. Any other parameter is set at `at` as if `glide`
+   * were not given, so one call serves a control bound to any parameter. 0 is an ordinary set.
+   */
+  glide?: number;
+}
+
 export interface RampOptions extends At {
   /** Seconds. */
   duration: number;
   /** Shape of the ramp. `exp` cannot reach exactly 0; the library substitutes a very small value. */
   curve?: 'linear' | 'exp';
-  /** Start value. Defaults to the parameter's value at `at`. */
+  /**
+   * Start value. Defaults to the value the parameter has reached at `at`: part-way through an
+   * earlier ramp or glide if one is still in flight then, which stops there.
+   */
   from?: number;
 }
 
@@ -130,12 +148,12 @@ export interface Param<T extends ParamValue = ParamValue> {
    */
   readonly value: T;
 
-  /** Sets the base value. */
-  set(value: T, options?: At): this;
+  /** Sets the base value: at once, or with `glide` over a short time from wherever it is. */
+  set(value: T, options?: SetOptions): this;
 
   /** Base value as 0..1 through the parameter's curve, for controls. Number parameters only. */
   readonly normalized: number;
-  setNormalized(position: number, options?: At): this;
+  setNormalized(position: number, options?: SetOptions): this;
 
   /** Ramps the base value. Number parameters with rate `audio` only. */
   ramp(target: number, options: RampOptions): this;
@@ -151,7 +169,7 @@ export interface Param<T extends ParamValue = ParamValue> {
   cancel(options?: At): this;
 
   /** Returns the base value to the metadata default. */
-  reset(options?: At): this;
+  reset(options?: SetOptions): this;
 
   /** Audio-rate sources currently connected to this parameter. */
   readonly modulators: readonly Modulation[];

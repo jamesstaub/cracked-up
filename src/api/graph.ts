@@ -5,7 +5,15 @@
  * subtree and its id namespace.
  */
 
-import type { At, OffsetOptions, Param, ParamValue, RampOptions, Unsubscribe } from './params';
+import type {
+  At,
+  OffsetOptions,
+  Param,
+  ParamValue,
+  RampOptions,
+  SetOptions,
+  Unsubscribe,
+} from './params';
 import type {
   NodeInit,
   NodeType,
@@ -177,8 +185,12 @@ export interface SelectionBase<K extends NodeType = NodeType> extends Iterable<N
   filter(predicate: (node: Node<K>, index: number) => boolean): Selection<K>;
   each(fn: (node: Node<K>, index: number) => void): this;
 
-  /** Sets base values on every selected node that has the parameter; others are skipped. */
-  set(values: ParamValuesOf<K>, options?: At): this;
+  /**
+   * Sets base values on every selected node that has the parameter; others are skipped. With
+   * `glide`, each audio-rate number parameter moves there smoothly from wherever it is (see
+   * `SetOptions`): `__('#level').set({ gain: 0.5 }, { glide: 0.02 })`.
+   */
+  set(values: ParamValuesOf<K>, options?: SetOptions): this;
   ramp(param: ParamNameOf<K>, target: number, options: RampOptions): this;
   offset(param: ParamNameOf<K>, amount: number, options?: OffsetOptions): this;
 
@@ -232,13 +244,13 @@ export type SelectionSetters<K extends NodeType> = [NodeType] extends [K]
   ? {
       readonly [P in Exclude<keyof AnyParams & string, keyof SelectionBase>]: (
         value: ParamValue,
-        options?: At,
+        options?: SetOptions,
       ) => Selection;
     }
   : {
       readonly [P in Exclude<keyof ParamsOf<K> & string, keyof SelectionBase>]: (
         value: ParamsOf<K>[P],
-        options?: At,
+        options?: SetOptions,
       ) => Selection<K>;
     };
 
@@ -473,7 +485,14 @@ export type Command =
   // Nodes
   | { op: 'trigger'; target: CommandTarget; at: number; options?: Readonly<Record<string, Json>> }
   | { op: 'release'; target: CommandTarget; at: number; pitch?: number }
-  | { op: 'set'; target: CommandTarget; at: number; values: Readonly<Record<string, ParamValue>> }
+  | {
+      op: 'set';
+      target: CommandTarget;
+      at: number;
+      values: Readonly<Record<string, ParamValue>>;
+      /** Seconds to glide there, as `SetOptions.glide`. */
+      glide?: number;
+    }
   | {
       op: 'ramp';
       target: CommandTarget;

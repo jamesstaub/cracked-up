@@ -31,6 +31,16 @@ export class Timeline<V> {
     this.events = this.events.filter((event) => event.time < time);
   }
 
+  /** Removes everything scheduled after the time, keeping what is scheduled at it. */
+  truncateAfter(time: number): void {
+    this.events = this.events.filter((event) => event.time <= time);
+  }
+
+  /** Removes what is scheduled at exactly the time. */
+  remove(time: number): void {
+    this.events = this.events.filter((event) => event.time !== time);
+  }
+
   /** Folds events that are already in the past into the starting value, to keep the list short. */
   prune(now: number): void {
     let count = 0;

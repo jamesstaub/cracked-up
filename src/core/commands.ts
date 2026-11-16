@@ -59,7 +59,7 @@ export function execute(scope: ScopeImpl, command: Command): void {
       const at = requireTime(command);
       for (const node of resolve(scope, command.target)) {
         for (const [name, value] of Object.entries(command.values)) {
-          node.findParam(name)?.applySet(value, at);
+          node.findParam(name)?.applySet(value, at, command.glide);
         }
       }
       return;

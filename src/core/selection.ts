@@ -7,6 +7,7 @@ import type {
   Param,
   ParamValue,
   RampOptions,
+  SetOptions,
   ReleaseOptions,
   Selection,
 } from '../api';
@@ -86,11 +87,11 @@ export class SelectionImpl implements Iterable<NodeImpl> {
 
   // --- Parameters ---------------------------------------------------------------------------------
 
-  set(values: Readonly<Record<string, ParamValue | undefined>>, options?: At): this {
+  set(values: Readonly<Record<string, ParamValue | undefined>>, options?: SetOptions): this {
     const at = this.engine.resolveAt(options?.at);
     for (const node of this.nodes) {
       for (const [name, value] of Object.entries(values)) {
-        if (value !== undefined) node.findParam(name)?.applySet(value, at);
+        if (value !== undefined) node.findParam(name)?.applySet(value, at, options?.glide);
       }
     }
     return this;

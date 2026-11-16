@@ -9,9 +9,11 @@ import type {
   ParamMeta,
   ParamValue,
   RampOptions,
+  SetOptions,
   Unsubscribe,
 } from '../api';
 import { fromNormalized, toNormalized } from '../util/curves';
+import { Automation } from './automation';
 import { CrackedUpError, Emitter } from './errors';
 import { Timeline } from './timeline';
 import type { NodeImpl } from './node';
@@ -45,6 +47,8 @@ export class ParamImpl {
   private baseLine: Timeline<ParamValue>;
   private offsetLine = new Timeline<number>(0);
   private target: ParamTarget;
+  /** What is scheduled on the AudioParam, when the target is one. */
+  private automation: Automation | null = null;
   /** For a macro's exposed parameter: finds the inner parameters it drives right now. */
   private links: (() => readonly ParamLink[]) | null = null;
   /** Offsets on an AudioParam are a separate constant signal added to it, so they never disturb the base. */
@@ -63,8 +67,10 @@ export class ParamImpl {
   /** Attaches the parameter to what the node's build returned, and applies the starting value. */
   bind(target: ParamTarget): void {
     this.target = target;
+    this.automation = null;
     if (isAudioParam(target)) {
       target.value = this.base as number;
+      this.automation = new Automation(target, this.base as number);
     } else if (target) {
       target(this.base, this.node.engine.now());
     }
@@ -105,34 +111,75 @@ export class ParamImpl {
     return isAudioParam(this.target) ? this.target : null;
   }
 
-  set(value: ParamValue, options?: At): this {
-    this.applySet(value, this.node.engine.resolveAt(options?.at));
+  set(value: ParamValue, options?: SetOptions): this {
+    this.applySet(value, this.node.engine.resolveAt(options?.at), options?.glide);
     return this;
   }
 
-  applySet(value: ParamValue, at: number): void {
+  applySet(value: ParamValue, at: number, glide?: number): void {
     this.node.scope.paramSet(this.node, this.name);
-    if (
-      this.later(
-        at,
-        () => this.check(value),
-        () => this.applySet(value, at),
-      )
-    )
-      return;
+    const check = (): void => {
+      this.check(value);
+      this.checkGlide(glide);
+    };
+    if (this.later(at, check, () => this.applySet(value, at, glide))) return;
     const next = this.coerce(value);
+    this.checkGlide(glide);
+    if (glide !== undefined && glide > 0 && this.applyGlide(next, at, glide)) return;
     const previous = this.base;
     this.base = next;
     this.baseLine.prune(this.node.engine.now());
     this.baseLine.set(at, next);
-    if (isAudioParam(this.target)) {
-      this.target.setValueAtTime(next as number, at);
-    } else if (this.target) {
+    if (this.automation) {
+      this.automation.prune(Math.min(at, this.node.engine.now()));
+      this.settle(this.automation.cut(at), at);
+      this.automation.set(next as number, at);
+    } else if (this.target && !isAudioParam(this.target)) {
       this.target(this.effectiveAt(at), at);
     }
     if (next !== previous) {
       this.emitChange({ param: this.asPublic(), value: next, previous, at });
     }
+  }
+
+  /**
+   * Moves to a value over `glide` seconds from the value the parameter has reached at `at`,
+   * replacing whatever was scheduled from then on. Returns false for a parameter that can only be
+   * set at once: one that is not a number, or not audio-rate.
+   */
+  private applyGlide(value: ParamValue, at: number, glide: number): boolean {
+    if (this.meta.kind !== 'number') return false;
+    const to = value as number;
+    const end = at + glide;
+    const automation = this.automation;
+    if (automation) {
+      automation.prune(Math.min(at, this.node.engine.now()));
+      const { value: reached } = automation.hold(at);
+      // An anchor: without one a ramp with nothing scheduled before it would start from time 0.
+      automation.set(reached, at);
+      automation.rampTo(to, end, 'linear');
+    } else if (this.links) {
+      // A macro's exposed parameter: glide each inner parameter it drives.
+      for (const link of this.links()) {
+        link.param.applySet(link.scale ? link.scale(to) : to, at, glide);
+      }
+    } else {
+      return false;
+    }
+    const previous = this.base;
+    this.base = to;
+    this.baseLine.prune(this.node.engine.now());
+    this.baseLine.truncateAfter(at);
+    this.baseLine.set(end, to);
+    if (to !== previous) {
+      this.emitChange({ param: this.asPublic(), value: to, previous, at: end });
+    }
+    return true;
+  }
+
+  /** After a ramp in flight was stopped: its target is no longer a value the parameter will have. */
+  private settle(held: { rampEnd: number | null }, at: number): void {
+    if (held.rampEnd !== null && held.rampEnd > at) this.baseLine.remove(held.rampEnd);
   }
 
   /** Tells this parameter's listeners and the scope's `param:changed` listeners. */
@@ -149,7 +196,7 @@ export class ParamImpl {
     return meta.choices.length > 1 ? Math.max(index, 0) / (meta.choices.length - 1) : 0;
   }
 
-  setNormalized(position: number, options?: At): this {
+  setNormalized(position: number, options?: SetOptions): this {
     const meta = this.meta;
     const clamped = Math.min(1, Math.max(0, position));
     if (meta.kind === 'number') return this.set(fromNormalized(clamped, meta), options);
@@ -168,8 +215,7 @@ export class ParamImpl {
     const check = (): void => this.checkRamp(target, options);
     if (this.later(at, check, () => this.applyRamp(target, at, options))) return;
     check();
-    const audio = this.audioParam;
-    if (this.meta.kind === 'number' && !audio && this.links) {
+    if (this.meta.kind === 'number' && !this.automation && this.links) {
       // A macro's exposed parameter: ramp each inner parameter it drives.
       const to = this.coerce(target) as number;
       const from = options.from;
@@ -189,22 +235,27 @@ export class ParamImpl {
       }
       return;
     }
-    if (!audio) return;
+    const automation = this.automation;
+    if (!automation) return;
     const to = target;
-    const from = options.from === undefined ? (this.base as number) : options.from;
+    automation.prune(Math.min(at, this.node.engine.now()));
+    // A ramp still in flight stops here, at the value it has reached, so its end cannot pull this
+    // one off course.
+    const held = automation.cut(at);
+    this.settle(held, at);
+    const from = options.from === undefined ? held.value : options.from;
     const end = at + options.duration;
-    audio.setValueAtTime(from, at);
+    automation.set(from, at);
     if (options.curve === 'exp') {
       // An exponential ramp cannot start at, end at, or cross zero.
       const floor = 1e-4;
       const safeFrom = Math.abs(from) < floor ? floor * (to < 0 ? -1 : 1) : from;
       const safeTo = Math.abs(to) < floor ? floor * (safeFrom < 0 ? -1 : 1) : to;
-      if (safeFrom !== from) audio.setValueAtTime(safeFrom, at);
-      if (Math.sign(safeFrom) === Math.sign(safeTo))
-        audio.exponentialRampToValueAtTime(safeTo, end);
-      else audio.linearRampToValueAtTime(to, end);
+      if (safeFrom !== from) automation.set(safeFrom, at);
+      if (Math.sign(safeFrom) === Math.sign(safeTo)) automation.rampTo(safeTo, end, 'exp');
+      else automation.rampTo(to, end, 'linear');
     } else {
-      audio.linearRampToValueAtTime(to, end);
+      automation.rampTo(to, end, 'linear');
     }
     const previous = this.base;
     this.base = to;
@@ -264,14 +315,14 @@ export class ParamImpl {
       )
     )
       return;
-    this.audioParam?.cancelScheduledValues(at);
+    this.automation?.cancel(at);
     this.offsetSource?.offset.cancelScheduledValues(at);
     this.baseLine.truncate(at);
     this.offsetLine.truncate(at);
     this.base = this.baseLine.valueAt(Number.POSITIVE_INFINITY);
   }
 
-  reset(options?: At): this {
+  reset(options?: SetOptions): this {
     return this.set(this.meta.default, options);
   }
 
@@ -330,6 +381,7 @@ export class ParamImpl {
     this.mods = [];
     this.events.clear();
     this.target = undefined;
+    this.automation = null;
   }
 
   /**
@@ -340,6 +392,13 @@ export class ParamImpl {
     const next = this.coerce(value);
     for (const link of this.links?.() ?? []) {
       link.param.check(link.scale && typeof next === 'number' ? link.scale(next) : next);
+    }
+  }
+
+  /** Throws what this glide time would throw. */
+  private checkGlide(glide: number | undefined): void {
+    if (glide !== undefined && !(glide >= 0 && Number.isFinite(glide))) {
+      throw this.error(`needs a glide of 0 or more seconds, got ${JSON.stringify(glide)}`);
     }
   }
 

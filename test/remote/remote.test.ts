@@ -190,6 +190,35 @@ describe('remote sequences', () => {
     engine.transport.bpm = 150;
     expect(remote.transport.bpm).toBe(150);
   });
+
+  it('shows the options a sequence was made with, as the host does', async () => {
+    const { scope, remote } = await linked(0.1);
+    const nothing = (): void => undefined;
+    const given = { steps: [1, 0, 1, 0], step: '1/8' as const };
+    const listed = remote.transport.sequence('listed', given, nothing);
+    const counted = remote.transport.sequence('counted', { steps: 16, step: '1/16' }, nothing);
+    const written = remote.transport.steps('written', 'x..x', nothing);
+    expect(listed.options).toEqual({ steps: [1, 0, 1, 0], step: '1/8' });
+    expect(counted.options).toEqual({ steps: 16, step: '1/16' });
+    expect(written.options).toEqual({ steps: 'x..x' });
+
+    expect(Object.isFrozen(listed.options)).toBe(true);
+    expect(Object.isFrozen(listed.options.steps)).toBe(true);
+    given.steps[0] = 9;
+    expect(listed.options.steps).toEqual([1, 0, 1, 0]);
+
+    listed.setStep(1, 3);
+    expect(listed.steps).toEqual([1, 3, 1, 0]);
+    expect(listed.options.steps).toEqual([1, 0, 1, 0]);
+    counted.update({ steps: [1, 1, 0] });
+    expect(counted.options).toEqual({ steps: [1, 1, 0], step: '1/16' });
+    expect(Object.isFrozen(counted.options)).toBe(true);
+
+    remote.flush();
+    for (const sequence of [listed, counted, written]) {
+      expect(scope.transport.get(sequence.name ?? '')?.options).toEqual(sequence.options);
+    }
+  });
 });
 
 describe('remote build', () => {

@@ -89,6 +89,19 @@ export interface Sequence {
   readonly name: string | null;
   /** The current steps. Writing through `setStep` or `update` takes effect from the next step. */
   readonly steps: readonly number[];
+  /**
+   * The options the sequence was made with, as they were given and not worked out: `steps` is the
+   * count, the array or the pattern string that was passed, where `steps` above is always the
+   * values. So code that did not make a sequence can tell how it was declared.
+   *
+   * After `update` these are the merged options: what was given before, with what `update` was
+   * given in place of it. `setStep` changes a value and not the options, so `options.steps` stays
+   * as declared while `steps` shows the change. A later `update` that does not give `steps` lays
+   * the pattern out from `options.steps` again.
+   *
+   * A frozen copy: changing a sequence is done through `update`. An array of steps is a frozen copy
+   * of the one given, so changing that array afterwards does not change the sequence either.
+   */
   readonly options: Readonly<SequenceOptions>;
   muted: boolean;
   setStep(index: number, value: number): this;

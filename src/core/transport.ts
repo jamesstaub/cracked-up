@@ -16,6 +16,7 @@ import type {
 } from '../api';
 import { durationToBeats } from '../util/duration';
 import { parsePattern } from '../util/pattern';
+import { keepSequenceOptions } from '../util/sequence-options';
 import type { EngineImpl } from './engine';
 import type { ScopeImpl } from './scope';
 import { CrackedUpError, Emitter } from './errors';
@@ -68,7 +69,8 @@ class SequenceImpl implements Source {
   name: string | null;
   muted = false;
 
-  private raw: SequenceOptions;
+  /** The options as given: a frozen copy, replaced whole and never changed in place. */
+  private raw: Readonly<SequenceOptions>;
   private callback: SequenceCallback;
   private values: number[] = [];
   private stepBeats = 0.25;
@@ -90,7 +92,7 @@ class SequenceImpl implements Source {
   ) {
     this.serial = serial;
     this.name = name;
-    this.raw = { ...options };
+    this.raw = keepSequenceOptions(options);
     this.callback = callback;
     this.layout();
   }
@@ -138,14 +140,14 @@ class SequenceImpl implements Source {
   }
 
   /** The options and callback as they are now, so a replacement can be undone. */
-  definition(): { options: SequenceOptions; callback: SequenceCallback } {
+  definition(): { options: Readonly<SequenceOptions>; callback: SequenceCallback } {
     return { options: this.raw, callback: this.callback };
   }
 
   /** Replaces the options and callback, as a named sequence does when its code is evaluated again. */
   replace(options: SequenceOptions, callback: SequenceCallback): void {
     const previous = this.raw;
-    this.raw = { ...options };
+    this.raw = keepSequenceOptions(options);
     try {
       this.layout();
     } catch (error) {

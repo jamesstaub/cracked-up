@@ -462,7 +462,11 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
   sequence: [
     { name: 'name', description: "The sequence's name, or null." },
     { name: 'steps', description: 'The current steps.' },
-    { name: 'options', description: 'The options the sequence was made with.' },
+    {
+      name: 'options',
+      description:
+        'The options the sequence was made with, as given (steps is the count, array or string passed), or as update last left them. Read-only.',
+    },
     { name: 'muted', description: 'Assign true to silence the sequence without stopping it.' },
     {
       name: 'setStep',

@@ -54,6 +54,7 @@ import type { Selectable, SelectableTree } from '../selector';
 import { fromNormalized, toNormalized } from '../util/curves';
 import { beatsToSeconds, durationToBeats } from '../util/duration';
 import { parsePattern } from '../util/pattern';
+import { keepSequenceOptions } from '../util/sequence-options';
 
 const COMMON_KEYS = new Set(['id', 'class', 'tags', 'bypass', 'modulates']);
 
@@ -780,14 +781,21 @@ const BUS_MEMBERS = new Set([
 class RemoteSequence {
   muted = false;
   steps: number[];
+  /** The options as given: a frozen copy, replaced whole by `update`. */
+  private kept: Readonly<SequenceOptions>;
 
   constructor(
     private readonly remote: RemoteImpl,
     readonly name: string,
-    public options: Readonly<SequenceOptions>,
+    options: SequenceOptions,
     readonly callback: SequenceCallback,
   ) {
     this.steps = stepsOf(options.steps);
+    this.kept = keepSequenceOptions(options);
+  }
+
+  get options(): Readonly<SequenceOptions> {
+    return this.kept;
   }
 
   setStep(index: number, value: number): this {
@@ -797,9 +805,9 @@ class RemoteSequence {
   }
 
   update(options: Partial<SequenceOptions>): this {
-    const next = { ...this.options, ...options };
+    const next = keepSequenceOptions({ ...this.kept, ...options });
     this.steps = stepsOf(next.steps);
-    this.options = next;
+    this.kept = next;
     this.remote.emit({ op: 'sequence', name: this.name, options: next });
     return this;
   }
@@ -1600,7 +1608,7 @@ class RemoteImpl {
       if (typeof callback !== 'function') {
         throw new TypeError('A sequence needs a callback function.');
       }
-      const created = new RemoteSequence(remote, name, { ...options }, callback);
+      const created = new RemoteSequence(remote, name, options, callback);
       remote.sequences.set(name, created);
       remote.declared?.add(name);
       remote.emit({ op: 'sequence', name, options: created.options });

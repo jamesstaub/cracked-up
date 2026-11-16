@@ -228,7 +228,7 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       name: 'set',
       signature: 'set(values, options?)',
       description:
-        'Sets parameter values on every selected node that has the parameter: set({ frequency: 200 }).',
+        'Sets parameter values on every selected node that has the parameter: set({ frequency: 200 }). With { glide: 0.02 } the value moves there smoothly from wherever it is, which is the way to follow a fader.',
       returns: 'same',
     },
     {
@@ -497,7 +497,8 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
     {
       name: 'set',
       signature: 'set(value, options?)',
-      description: 'Sets the base value.',
+      description:
+        'Sets the base value. With { glide: 0.02 } it moves there smoothly from wherever it is, which is the way to follow a fader.',
       returns: 'same',
     },
     {
@@ -826,6 +827,16 @@ export const RELEASE_OPTIONS: readonly ApiOption[] = [
 ];
 
 export const AT_OPTIONS: readonly ApiOption[] = [AT];
+
+export const SET_OPTIONS: readonly ApiOption[] = [
+  {
+    name: 'glide',
+    type: 'number',
+    description:
+      'Seconds to take getting there, starting from the value reached at the time, part-way through a ramp or an earlier glide included. Safe to repeat while the last is in flight: set(level, { glide: 0.02 }) on every movement of a fader follows it without clicks. Parameters that cannot be ramped are set at once.',
+  },
+  AT,
+];
 
 const MIDI_CHANNEL: ApiOption = {
   name: 'channel',

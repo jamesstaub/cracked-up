@@ -259,6 +259,11 @@ const local: [string, Step, Refusal][] = [
     { code: 'invalid-param', nodeId: 'sparelevel', message: /"gain" on gain "sparelevel"/ },
   ],
   [
+    'a set with a glide that cannot be',
+    withBad((__) => void __('#sparelevel').set({ gain: 0.1 }, { glide: -1 })),
+    { code: 'invalid-param', nodeId: 'sparelevel', message: /needs a glide of 0 or more seconds/ },
+  ],
+  [
     'a ramp to something that is not a number',
     withBad((__) => void __('#sparelevel').ramp('gain', Number.NaN, { duration: 0.1 })),
     { code: 'invalid-param', nodeId: 'sparelevel', message: /"gain" on gain "sparelevel"/ },

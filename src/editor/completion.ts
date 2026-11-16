@@ -46,6 +46,7 @@ import {
   MIDI_SEND_OPTIONS,
   OFFSET_OPTIONS,
   RAMP_OPTIONS,
+  SET_OPTIONS,
   RELEASE_OPTIONS,
   SEQUENCE_OPTIONS,
   START_OPTIONS,
@@ -335,7 +336,7 @@ export function keyOptions(scene: Scene, call: CallSite): KeyOption[] {
     const types = kind === 'selection' ? receiver.types : null;
     if (name === 'set' && index === 0)
       return fromParams(paramsOf(scene, types).values(), 'Parameters');
-    if (name === 'set' && index === 1) return fromOptions(AT_OPTIONS, 'Options');
+    if (name === 'set' && index === 1) return fromOptions(SET_OPTIONS, 'Options');
     if (name === 'trigger' && index === 0) {
       const merged: Record<string, OptionInfo> = {};
       const triggerable = typesOf(scene, types).filter((candidate) => candidate.triggerable);
@@ -370,6 +371,8 @@ export function keyOptions(scene: Scene, call: CallSite): KeyOption[] {
   if (kind === 'param') {
     if (name === 'ramp' && index === 1) return fromOptions(RAMP_OPTIONS, 'Options');
     if (name === 'offset' && index === 1) return fromOptions(OFFSET_OPTIONS, 'Options');
+    if (name === 'set' && index === 1) return fromOptions(SET_OPTIONS, 'Options');
+    if (name === 'reset' && index === 0) return fromOptions(SET_OPTIONS, 'Options');
     if (['set', 'clearOffset', 'cancel', 'reset'].includes(name)) {
       return fromOptions(AT_OPTIONS, 'Options');
     }

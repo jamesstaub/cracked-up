@@ -289,6 +289,45 @@ describe('the link', () => {
     expect(__('#from-host')).toHaveLength(1);
   });
 
+  it('carries a glide to the host, from a parameter, a selection and a setter', async () => {
+    const { engine, scope, remote, sent, errors, __ } = await linked(0.6);
+    __().sampler({ id: 'dc', buffer: 'ones' }).gain({ id: 'g', gain: 0 }).to('main');
+    __('#dc').trigger({ at: 0 });
+    remote.flush();
+    const gain = __('#g').param('gain');
+    const seen: number[] = [];
+    gain.on('change', ({ at }) => seen.push(at));
+    gain.set(1, { at: 0.1, glide: 0.1 });
+    expect(gain.value).toBe(1);
+    expect(seen[0]).toBeCloseTo(0.2, 9);
+    // Retargeted while the first is in flight, then again by the generated setter.
+    __('#g').set({ gain: 0 }, { at: 0.15, glide: 0.1 });
+    __('#g').gain(0.5, { at: 0.4, glide: 0.1 });
+    // What cannot glide is set at the time given.
+    __('#dc')
+      .param('speed')
+      .on('change', ({ at }) => seen.push(at));
+    __('#dc').set({ speed: 1.5 }, { at: 0.58, glide: 0.1 });
+    expect(seen[seen.length - 1]).toBe(0.58);
+    expect(() => gain.set(1, { glide: -1 })).toThrowError(/needs a glide of 0 or more seconds/);
+    expect(() => __('#g').set({ gain: 1 }, { glide: Number.NaN })).toThrowError(/needs a glide/);
+    remote.flush();
+    const sets = sent.flatMap((message) =>
+      message.type === 'commands' ? message.commands.filter((command) => command.op === 'set') : [],
+    );
+    expect(sets.map((command) => (command as { glide?: number }).glide)).toEqual([
+      0.1, 0.1, 0.1, 0.1,
+    ]);
+    expect(errors).toEqual([]);
+    expect(scope.select('#g').param('gain').value).toBe(0.5);
+    const audio = await engine.render();
+    expect(valueAt(audio, 0.15)).toBeCloseTo(0.5, 5);
+    expect(valueAt(audio, 0.2)).toBeCloseTo(0.25, 5);
+    expect(valueAt(audio, 0.3)).toBeCloseTo(0, 6);
+    expect(valueAt(audio, 0.45)).toBeCloseTo(0.25, 5);
+    expect(valueAt(audio, 0.55)).toBeCloseTo(0.5, 5);
+  });
+
   it('does not echo the remote’s own changes back', async () => {
     const { remote, received, __ } = await linked(0.1);
     __().sine({ id: 'osc' }).gain({ id: 'g' }).to('main');

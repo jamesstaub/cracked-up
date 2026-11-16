@@ -25,6 +25,7 @@ import type {
   ParamValue,
   Pattern,
   RampOptions,
+  SetOptions,
   ReleaseOptions,
   Remote,
   RemoteBuffers,
@@ -139,6 +140,27 @@ class RemoteParam {
     this.check(target);
   }
 
+  /** Throws what the host would say to this glide time. */
+  checkGlide(glide: number | undefined): void {
+    if (glide !== undefined && !(glide >= 0 && Number.isFinite(glide))) {
+      throw paramError(
+        this.meta,
+        this.node,
+        `needs a glide of 0 or more seconds, got ${JSON.stringify(glide)}`,
+      );
+    }
+  }
+
+  /**
+   * When a value set with this glide becomes the base value. The mirror cannot tell an audio-rate
+   * parameter of a macro from one it sets at once, so for those the time may be late by the glide.
+   */
+  arrival(at: number, glide: number | undefined): number {
+    return glide !== undefined && this.meta.kind === 'number' && this.meta.rate === 'audio'
+      ? at + glide
+      : at;
+  }
+
   checkOffset(amount: number): void {
     if (this.meta.kind !== 'number') {
       throw paramError(this.meta, this.node, 'cannot be offset: it is not a number');
@@ -148,15 +170,18 @@ class RemoteParam {
     }
   }
 
-  set(value: ParamValue, options?: At): this {
+  set(value: ParamValue, options?: SetOptions): this {
     this.check(value);
+    const glide = options?.glide;
+    this.checkGlide(glide);
     const at = this.node.remote.time(options);
-    this.assign(value, at);
+    this.assign(value, this.arrival(at, glide));
     this.node.remote.emit({
       op: 'set',
       target: this.node.target,
       at,
       values: { [this.name]: value },
+      ...(glide === undefined ? {} : { glide }),
     });
     return this;
   }
@@ -165,7 +190,7 @@ class RemoteParam {
     return this.meta.kind === 'number' ? toNormalized(this.value as number, this.meta) : 0;
   }
 
-  setNormalized(position: number, options?: At): this {
+  setNormalized(position: number, options?: SetOptions): this {
     if (this.meta.kind === 'number') this.set(fromNormalized(position, this.meta), options);
     return this;
   }
@@ -221,7 +246,7 @@ class RemoteParam {
     return this;
   }
 
-  reset(options?: At): this {
+  reset(options?: SetOptions): this {
     return this.set(this.meta.default, options);
   }
 
@@ -499,19 +524,35 @@ class RemoteSelection implements Iterable<RemoteNode> {
     return this;
   }
 
-  set(values: Readonly<Record<string, ParamValue | undefined>>, options?: At): this {
+  set(values: Readonly<Record<string, ParamValue | undefined>>, options?: SetOptions): this {
     const at = this.remote.time(options);
+    const glide = options?.glide;
     const given: Record<string, ParamValue> = {};
     for (const [name, value] of Object.entries(values)) {
       if (value === undefined) continue;
       given[name] = value;
-      for (const node of this.nodes) node.findParam(name)?.check(value);
+      for (const node of this.nodes) {
+        const param = node.findParam(name);
+        param?.check(value);
+        param?.checkGlide(glide);
+      }
     }
     for (const [name, value] of Object.entries(given)) {
-      for (const node of this.nodes) node.findParam(name)?.assign(value, at);
+      for (const node of this.nodes) {
+        const param = node.findParam(name);
+        param?.assign(value, param.arrival(at, glide));
+      }
     }
     const target = this.target;
-    if (target !== null) this.remote.emit({ op: 'set', target, at, values: given });
+    if (target !== null) {
+      this.remote.emit({
+        op: 'set',
+        target,
+        at,
+        values: given,
+        ...(glide === undefined ? {} : { glide }),
+      });
+    }
     return this;
   }
 
@@ -992,7 +1033,7 @@ class RemoteImpl {
       Object.defineProperty(this.Selection.prototype, name, {
         configurable: true,
         writable: true,
-        value(this: RemoteSelection, value: ParamValue, options?: At) {
+        value(this: RemoteSelection, value: ParamValue, options?: SetOptions) {
           return this.set({ [name]: value }, options);
         },
       });

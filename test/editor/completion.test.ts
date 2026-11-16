@@ -159,7 +159,8 @@ describe('completion inside an options object', () => {
     const all = labels(`${code}__('.loud').set({ | })`);
     expect(all).toContain('feedback');
     expect(all).toContain('attack');
-    expect(labels(`${code}__('#bass').set({ frequency: 1 }, { | })`)).toEqual(['at']);
+    expect(labels(`${code}__('#bass').set({ frequency: 1 }, { | })`)).toEqual(['glide', 'at']);
+    expect(labels(`${code}__('#bass').param('frequency').set(1, { | })`)).toEqual(['glide', 'at']);
   });
 
   it('offers sequence, ramp and release options', () => {

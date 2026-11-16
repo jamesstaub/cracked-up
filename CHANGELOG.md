@@ -12,6 +12,23 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 
 ### Added
 
+- **`set` with `glide`: following a moving control without clicks.** `param.set(value, { glide:
+  0.02 })` moves to the value in a straight line over that many seconds, starting from the value
+  the parameter has actually reached at `at`, part-way through a ramp or an earlier glide
+  included, and replacing whatever was scheduled from then on. It is safe to call again while the
+  last move is still in flight, which is what a fader does: each call carries on from where the
+  last one got to. The same option is taken by `selection.set(values, { glide })`, by the
+  generated setters (`.gain(0.5, { glide })`), by `setNormalized` and `reset`, by the `set`
+  command (`glide`), and by a remote, which sends it to the host. It works for any audio-rate
+  number parameter, a bus's level (`bus.gain`) and a panner's pan among them, and for a macro's
+  exposed parameter, whose inner parameters glide. A parameter that cannot be ramped (control
+  rate, boolean, choice) is set at `at` as if `glide` were not given; a `glide` that is negative
+  or not a number throws `invalid-param`. `param.value` is the target at once, and `change`
+  fires once, with the time the glide ends. Measured on a 220 Hz sine with the level swept 60
+  times a second, the sharpest corner in the output (largest second difference) is 3.7e-2 with
+  plain `set` and 8.2e-4 with a 20 ms glide; a steady tone is 8.3e-4. In the editor, `glide` is
+  offered among the options of `set`.
+
 - **`sequence.options` is as given, and cannot change the sequence.** A sequence's `options` are
   the options it was made with, not worked out: `{ steps: 16, step: '1/16' }` reads back with
   `steps` as 16, and an array or a pattern string reads back as that array or string, so a host or
@@ -289,6 +306,21 @@ Write changes under "Unreleased" as you make them, grouped under Added, Changed,
 - `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
 
 ### Fixed
+
+- **A ramp or a set made while a ramp is in flight.** A parameter now keeps track of what it has
+  scheduled, so it knows its value part-way through a ramp. Three things change:
+  - `ramp` without `from` starts from the value the parameter has at `at`, as its documentation
+    said. It used to start from the base value, which is the target of the last ramp or set made,
+    so a ramp issued during another jumped to that ramp's target first (and a ramp issued for a
+    time before a set that was scheduled earlier started from that later set's value). The ramp
+    that was in flight stops there. Before, its end stayed scheduled and bent the new ramp: the
+    value went flat or turned back towards the old target.
+  - `set` during a ramp stops the ramp, and the value stays where it was set. Before, the value
+    stepped and then carried on ramping from there to the ramp's target, while `param.value`
+    reported the value set.
+  - In both cases, what was scheduled to start later than `at` is kept, as before. A ramp given
+    `from`, a ramp or set made when no ramp is in flight, and `cancel` (which still drops a ramp
+    in flight whole and returns to the value before it) behave as they did.
 
 - The level parameters of `looper` (`gain`, `monitor`, `overdub`) and of `input` (`gain`) had no
   unit in their metadata; they now say `gain`, like every other level. Values and behaviour are

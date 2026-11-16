@@ -277,7 +277,11 @@ __.transport.every('1/4', () => __('sampler').trigger());</code></pre>
               <tr>
                 <td><code>bus.gain</code></td>
                 <td>The level of the whole bus, a parameter</td>
-                <td>A group fader: <code>bus.gain.set(0.8)</code>, or a ramp for a fade</td>
+                <td>
+                  A group fader: <code>bus.gain.set(0.8)</code>, a ramp for a fade, or
+                  <code>bus.gain.set(v, { glide: 0.02 })</code> to
+                  <a href="#following-a-fader">follow a control</a>
+                </td>
               </tr>
               <tr>
                 <td><code>bus.compressor(...)</code>, or any effect type</td>
@@ -616,6 +620,13 @@ __.transport.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
                 <td>The same, for one parameter. There is a setter for every parameter name</td>
               </tr>
               <tr>
+                <td><code>.set({ frequency: 800 }, { glide: 0.02 })</code></td>
+                <td>
+                  Moves there over a short time from wherever the value is now. For
+                  <a href="#following-a-fader">following a control</a>
+                </td>
+              </tr>
+              <tr>
                 <td><code>.ramp('frequency', 2000, { duration: 2 })</code></td>
                 <td>Glides the base value to a target over a number of seconds</td>
               </tr>
@@ -632,6 +643,40 @@ __.transport.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
         </div>
         <pre><code>__().saw(110).lowpass({ id: 'filter', frequency: 200, q: 6 }).gain(0.2).to('main');
 __('#filter').ramp('frequency', 3000, { duration: 4 });</code></pre>
+        <h3 id="following-a-fader">Following a fader</h3>
+        <p>
+          A plain <code>set</code> is an instant step. One step is fine, but a fader or a knob sends
+          a stream of them, dozens a second, and a stream of steps in a level or a pan is heard as
+          crackle (zipper noise). Give <code>set</code> a <code>glide</code>, in seconds, and the
+          value moves to the target in a straight line instead, starting from the value it has
+          actually reached at that moment. That makes it safe to call again while the last move is
+          still on its way: each call takes over from wherever the last one got to, with no jump.
+        </p>
+        <pre><code>const level = __.bus('drums').gain;
+fader.addEventListener('input', () => {
+  level.set(Number(fader.value), { glide: 0.02 });
+});
+
+// The same option on a selection and on a setter:
+__('#pan').set({ pan: -0.5 }, { glide: 0.02 });
+__('#filter').frequency(1200, { glide: 0.05 });</code></pre>
+        <p>
+          About 20 milliseconds is enough to remove the crackle and too short to feel as lag. The
+          parameter's <code>value</code> is the target straight away, and <code>change</code> fires
+          once, with the time the glide ends. Like every operation it takes <code>at</code>, and
+          inside a sequence callback it starts at the step's time. A glide replaces whatever was
+          scheduled for the parameter from its time on. Parameters that cannot be ramped (anything
+          that is not an audio-rate number: a sampler's <code>speed</code>, a switch, a choice) are
+          simply set, so one line of code can serve a control bound to any parameter.
+        </p>
+        <p>
+          <code>ramp</code> is for a move you plan: a fade over four seconds, a sweep with an
+          exponential curve, a start value of your own with <code>from</code>. Without
+          <code>from</code> it also starts from the value reached, so a ramp begun while another
+          ramp or a glide is in flight carries on from there, and the earlier one stops. A plain
+          <code>set</code> during a ramp or a glide stops it too, and the value stays where you set
+          it.
+        </p>
         <p>
           The one exception to the setter rule is a parameter called <code>release</code> (on the
           compressor): <code>.release()</code> already means "release the note", so that parameter

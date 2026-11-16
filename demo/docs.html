@@ -257,7 +257,8 @@ __.transport.every('1/4', () => __('sampler').trigger());</code></pre>
         <p>
           <code>__.bus('drums')</code> makes the bus the first time it is called and returns the
           same bus every time after, so it is also how you get hold of a bus to change it. These are
-          the things a bus can do; the sections below take them in turn.
+          the things a bus can do. The sections below take them in turn, and
+          <a href="#bus-recipes">Buses in practice</a> puts them to use.
         </p>
         <div class="table-wrap">
           <table>
@@ -297,6 +298,11 @@ __.transport.every('1/4', () => __('sampler').trigger());</code></pre>
                 <td>
                   Inserting a <code>gain</code> node first, since <code>bus.gain</code> is the level
                 </td>
+              </tr>
+              <tr>
+                <td><code>bus.inserts</code></td>
+                <td>The bus's inserts as a selection, in signal order</td>
+                <td>Setting or bypassing all the effects of a group at once</td>
               </tr>
               <tr>
                 <td><code>bus.chain()</code></td>
@@ -361,6 +367,10 @@ __.transport.every('1/4', () => __('#kick').trigger());</code></pre>
           </li>
         </ol>
         <p>
+          For an app that attaches an analyser of its own, <code>bus.input</code> is the first of
+          these, the mix in front of the inserts, and <code>bus.output</code> the last.
+        </p>
+        <p>
           <code>gain</code> on a bus is that level, a parameter:
           <code>__.bus('drums').gain.set(0.8)</code>. So a gain <em>node</em> cannot be added by
           calling <code>gain(...)</code> on the bus itself. Start with <code>insert()</code>, which
@@ -372,17 +382,51 @@ __.bus('drums').compressor({ threshold: -18 }).gain(0.5);   // here gain is the 
 
 __.bus('drums').inserts;   // a selection of the bus's inserts, in order</code></pre>
         <p>
+          <code>bus.inserts</code> is a selection like any other, so one call reaches every effect
+          on the bus. In the other direction, <code>node.insertOf</code> is the bus a node is an
+          insert on, and null for any other node. An insert's place in its bus is not a connection:
+          it is not among the node's <code>inputs</code> and <code>outputs</code>.
+        </p>
+        <pre><code>__.bus('drums')
+  .overdrive({ id: 'grit', drive: 0.6 })
+  .lowpass({ id: 'tone', frequency: 900 });
+__().sampler({ id: 'kick', buffer: 'kick' }).to('drums');
+__.transport.every('1/4', () =&gt; __('#kick').trigger());
+
+// Every second bar, the drums without their effects.
+__.transport.sequence('dry', { steps: [0, 1], step: '1 bar' }, (ev) =&gt; {
+  __.bus('drums').inserts.bypass(ev.value === 1);
+});</code></pre>
+        <p>
           Outside <code>build</code>, each call adds another insert after the ones already there,
-          and giving an id that exists is an error, as it is in a chain. Inside <code>build</code>,
-          which is how a script that is run again and again should be run, the bus ends up with
+          and giving an id that exists is an error, as it is in a chain. Inside
+          <a href="#rebuilding"><code>build</code></a
+          >, which is how a script that is run again and again should be run, the bus ends up with
           exactly the inserts the script asked for, in the order it asked: an unchanged line keeps
           its node and its state, a changed value is set in place, a line you delete takes its
-          insert out, and lines you swap are re-patched without making new nodes.
+          insert out, and lines you swap are re-patched without making new nodes. A build that
+          <a href="#build-atomic">cannot be applied</a> leaves every bus with the inserts it had.
         </p>
         <p>
           Inserts can only be added from the scope the bus belongs to. A track's script can put a
           compressor on a bus it made, but not on <code>main</code>, which belongs to the engine's
-          own scope; there, <code>engine.bus('main').compressor()</code> does it.
+          own scope; there, <code>engine.bus('main').compressor()</code> does it. The same holds for
+          a script in a <a href="#sandbox">sandbox</a>.
+        </p>
+        <p>
+          As data, a scope's description lists the inserts of each bus by id, in order, beside its
+          nodes and connections, so a saved graph brings its inserts back when it is
+          <a href="#rebuilding">applied</a>. A <code>bus</code> command sets a bus's inserts from
+          nodes that exist, which is also the way to change their order:
+        </p>
+        <pre data-static><code>scope.describe().inserts;   // { drums: ['grit', 'tone'] }
+
+// The filter first, then the overdrive. An id left out stops being an insert.
+scope.dispatch([{ op: 'bus', name: 'drums', inserts: ['tone', 'grit'] }]);</code></pre>
+        <p>
+          The <a href="#inspecting">inspector</a> draws a bus's inserts in a row leading into it. To
+          put something beside a bus and not inside it, use a tap, which is next; for which to
+          choose, see <a href="#bus-recipes">Buses in practice</a>.
         </p>
 
         <h3 id="bus-chain">Taps: <code>bus.chain()</code> and <code>bus.to(null)</code></h3>
@@ -390,7 +434,8 @@ __.bus('drums').inserts;   // a selection of the bus's inserts, in order</code><
           <code>bus.chain()</code> starts a chain from the bus's output, after its inserts. It is a
           <em>tap</em>: the bus still goes to its target as well, so what you chain from it is heard
           in addition to the bus, not instead of it. Use it for something that runs in parallel: a
-          send to a reverb, a <a href="#recording">recorder</a> listening in.
+          send to a reverb, a <a href="#recording">recorder</a> listening in. To change the bus's
+          own sound, use an <a href="#inserts">insert</a>.
         </p>
         <pre><code>// The drums, and a reverb of the drums beside them.
 __.bus('drums').chain().reverb({ seconds: 2 }).gain(0.3).to('main');
@@ -415,10 +460,10 @@ __.transport.every('1/2', () => __('#snare').trigger());</code></pre>
         <h3 id="bus-recipes">Buses in practice</h3>
         <p>
           <strong>One reverb shared by several sounds.</strong> Make a bus whose only job is the
-          effect: a reverb insert with <code>mix: 1</code>, so the bus carries reverb and nothing
-          else. Each sound goes to <code>main</code> as usual and also sends some of itself to the
-          reverb bus, at its own level. One reverb is cheaper than one per sound, and puts
-          everything in the same room.
+          effect: a reverb <a href="#inserts">insert</a> with <code>mix: 1</code>, so the bus
+          carries reverb and nothing else. Each sound goes to <code>main</code> as usual and also
+          sends some of itself to the reverb bus, at its own level. One reverb is cheaper than one
+          per sound, and puts everything in the same room.
         </p>
         <pre><code>__.bus('room').reverb({ id: 'space', seconds: 2, mix: 1 });
 
@@ -435,8 +480,8 @@ __.transport.steps('..x.', () => __('#snare').trigger());
 __.transport.steps('xxxx', () => __('#hat').trigger());</code></pre>
         <p>
           <strong>Parallel compression.</strong> The drums are heard untouched, and a heavily
-          compressed copy is mixed in under them. This needs a tap, not an insert, because the
-          uncompressed sound must stay.
+          compressed copy is mixed in under them. This needs a <a href="#bus-chain">tap</a>, not an
+          insert, because the uncompressed sound must stay.
         </p>
         <pre><code>__.bus('drums')
   .chain()
@@ -473,12 +518,12 @@ __.transport.steps('xxxx', () => __('#hat').trigger());</code></pre>
         <p>Choosing between the three:</p>
         <ul>
           <li>
-            Everything on the bus should be changed: an <strong>insert</strong>
-            (<code>bus.compressor()</code>).
+            Everything on the bus should be changed: an
+            <a href="#inserts"><strong>insert</strong></a> (<code>bus.compressor()</code>).
           </li>
           <li>
             Something should be added beside the bus, or should listen to it: a
-            <strong>tap</strong> (<code>bus.chain()</code>).
+            <a href="#bus-chain"><strong>tap</strong></a> (<code>bus.chain()</code>).
           </li>
           <li>
             The bus should be heard only through what follows it:
@@ -628,7 +673,10 @@ __.transport.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
               </tr>
               <tr>
                 <td><code>.ramp('frequency', 2000, { duration: 2 })</code></td>
-                <td>Glides the base value to a target over a number of seconds</td>
+                <td>
+                  Moves the base value to a target over a number of seconds, from the value it has
+                  <a href="#ramp-in-flight">reached</a>
+                </td>
               </tr>
               <tr>
                 <td><code>.offset('frequency', 500, { duration: 0.1 })</code></td>
@@ -652,7 +700,7 @@ __('#filter').ramp('frequency', 3000, { duration: 4 });</code></pre>
           actually reached at that moment. That makes it safe to call again while the last move is
           still on its way: each call takes over from wherever the last one got to, with no jump.
         </p>
-        <pre><code>const level = __.bus('drums').gain;
+        <pre data-static><code>const level = __.bus('drums').gain;
 fader.addEventListener('input', () => {
   level.set(Number(fader.value), { glide: 0.02 });
 });
@@ -660,6 +708,17 @@ fader.addEventListener('input', () => {
 // The same option on a selection and on a setter:
 __('#pan').set({ pan: -0.5 }, { glide: 0.02 });
 __('#filter').frequency(1200, { glide: 0.05 });</code></pre>
+        <p>In the live demo the pointer can stand in for the fader:</p>
+        <pre><code>__().saw(110)
+  .lowpass({ id: 'filter', frequency: 600, q: 6 })
+  .gain({ id: 'level', gain: 0.2 })
+  .to('main');
+
+// Down is quieter, right is brighter. Each move carries on from wherever the last one got to.
+mouseMovement(({ x, y }) =&gt; {
+  __('#level').set({ gain: 0.3 * (1 - y) }, { glide: 0.02 });
+  __('#filter').frequency(200 + x * 4000, { glide: 0.05 });
+});</code></pre>
         <p>
           About 20 milliseconds is enough to remove the crackle and too short to feel as lag. The
           parameter's <code>value</code> is the target straight away, and <code>change</code> fires
@@ -668,14 +727,18 @@ __('#filter').frequency(1200, { glide: 0.05 });</code></pre>
           scheduled for the parameter from its time on. Parameters that cannot be ramped (anything
           that is not an audio-rate number: a sampler's <code>speed</code>, a switch, a choice) are
           simply set, so one line of code can serve a control bound to any parameter.
+          <code>setNormalized</code> and <code>reset</code> on a parameter take
+          <code>glide</code> as well. A glide that is negative or not a number is an error.
         </p>
-        <p>
+        <p id="ramp-in-flight">
           <code>ramp</code> is for a move you plan: a fade over four seconds, a sweep with an
           exponential curve, a start value of your own with <code>from</code>. Without
           <code>from</code> it also starts from the value reached, so a ramp begun while another
           ramp or a glide is in flight carries on from there, and the earlier one stops. A plain
           <code>set</code> during a ramp or a glide stops it too, and the value stays where you set
-          it.
+          it. In each case, what was scheduled to start later is kept. A ramp whose duration or
+          <code>from</code> is not a finite number is refused with an error that names the
+          parameter.
         </p>
         <p>
           The one exception to the setter rule is a parameter called <code>release</code> (on the
@@ -701,6 +764,15 @@ __('#filter').frequency(1200, { glide: 0.05 });</code></pre>
 __.transport.sequence('hat', { steps: 4, step: '1/8' }, (ev) => {
   __('#hat').trigger({ speed: 1 + ev.index * 0.2, velocity: 0.6 });
 });</code></pre>
+        <p>
+          A sampler's trigger has three options of its own: <code>slice</code> plays one
+          <a href="#buffers">slice</a> of the buffer, <code>duration</code> stops the voice after
+          that many seconds, and <code>velocity</code> is the level of that hit. Any parameter can
+          be given for one hit as well, such as <code>speed</code>, <code>start</code> or
+          <code>reverse</code>. The reference lists them under
+          <a href="#node-sampler"><code>sampler</code></a
+          >.
+        </p>
         <p>
           An <strong>oscillator</strong> runs from the moment it is made and is heard straight away,
           as a drone. <code>release()</code> closes its gate and <code>trigger()</code> opens it. To
@@ -760,6 +832,13 @@ __().sampler({ id: 's', buffer: 'snare' }).to('main');
 __.transport.sequence('slices', { steps: [0, 1, 2], step: '1/8' }, (ev) => {
   __('#s').trigger({ slice: ev.value });
 });</code></pre>
+        <p>
+          The rest of this section is about working on a sound: its
+          <a href="#slice-editing">slices</a>, <a href="#loop-points">loop points</a>,
+          <a href="#swap-buffer">giving a sampler another sound</a>, and what an app needs to
+          <a href="#waveform-editor">draw and edit</a> one.
+          <a href="#slicing">Slicing a drum break</a> shows what slices are for.
+        </p>
 
         <h3 id="slice-editing">Changing slices</h3>
         <p>
@@ -790,6 +869,13 @@ __.transport.sequence('slices', { steps: 4, step: '1/8' }, (ev) =&gt; {
           <code>ref.slices</code> beside it. In a sandbox, a script sets them with
           <code>remote.buffers.setSlices(key, boundaries)</code>.
         </p>
+        <p>
+          These helpers are listed with the others under
+          <a href="#helper-sliceGrid">Sounds and slices</a>, with <code>normalizeSlices</code>,
+          which puts a list from anywhere in order and inside the sound.
+          <code>sliceByTempo</code> and <code>sliceByOnsets</code>, which make a list from the
+          music, are shown under <a href="#slicing">Slicing a drum break</a>.
+        </p>
 
         <h3 id="loop-points">Loop points</h3>
         <p>
@@ -809,14 +895,20 @@ __.transport.every('1/2', () =&gt; __('#held').trigger({ duration: 0.3 }));</cod
           Loop points are kept inside the region, and inside the slice when a trigger plays one. A
           <code>loopEnd</code> at or before <code>loopStart</code> (both are 0 unless you set them)
           means the whole region repeats. With <code>reverse</code>, the voice plays down from
-          <code>end</code> and goes round between the same two points.
+          <code>end</code> and goes round between the same two points. Both points can also be given
+          to one <code>trigger</code>. Their real range, like that of <code>start</code> and
+          <code>end</code>, is the length of the sound:
+          <a href="#waveform-editor"><code>node.buffer.duration</code></a
+          >.
         </p>
 
         <h3 id="swap-buffer">Another sound for the same sampler</h3>
         <p>
           <code>setOption('buffer', ...)</code> points a sampler at another sound and leaves the
           node, its connections and its parameter values as they are. A voice that is sounding
-          finishes on the sound it started with; the next trigger plays the new one.
+          finishes on the sound it started with; the next trigger plays the new one. It accepts what
+          the option accepts when the node is made, takes <code>at</code> like any other operation,
+          and on a selection changes every sampler in it.
         </p>
         <pre><code>__().sampler({ id: 'drum', buffer: 'kick' }).to('main');
 __.transport.sequence('drum', { steps: 8, step: '1/8' }, (ev) =&gt; {
@@ -885,6 +977,14 @@ node.setOption('buffer', 'rimshot');</code></pre>
           <a href="#sandbox">sandbox</a>, <code>setOption</code>, the loop points and
           <code>remote.buffers.setSlices</code> all work, <code>node.buffer</code> has the key,
           duration and slices, and <code>playheads</code> is always empty.
+        </p>
+        <p>
+          <a href="#helper-waveformPeaks"><code>waveformPeaks</code></a
+          >, <a href="#helper-createWaveformCache"><code>createWaveformCache</code></a> and
+          <a href="#helper-detectOnsets"><code>detectOnsets</code></a> take an
+          <code>AudioBuffer</code> or plain channel data with a sample rate, so they also work in a
+          Worker. Asked for <code>rms: true</code>, the first two give the RMS level of each column
+          beside its lowest and highest value.
         </p>
 
         <h2 id="slicing">Slicing a drum break</h2>
@@ -1280,8 +1380,14 @@ __.transport.sequence('hat', { steps: 'x.xx', step: '1/8', swing: 0.6 }, (ev) =>
           losing its place. <code>__.transport.every('1/4', fn)</code> calls a function at a regular
           interval with no pattern, and <code>__.transport.at('2 bars', fn)</code> calls one once.
         </p>
+        <p>
+          A sequence that is playing can be <a href="#changing-a-pattern">changed</a>, read back and
+          <a href="#step-listeners">followed step by step</a> by code that did not make it, and a
+          function that throws is <a href="#callback-errors">reported</a> without stopping the
+          music.
+        </p>
 
-        <h3 id="sequence-update">Changing a pattern while it plays</h3>
+        <h3 id="changing-a-pattern">Changing a pattern while it plays</h3>
         <p>
           <code>__.transport.sequence</code> returns the sequence. Its <code>update</code> changes
           the pattern, or any other option, and leaves your function as it is. The sequence keeps
@@ -1316,18 +1422,28 @@ __.transport.sequence('hat', { steps: 'x.x.x.x.', step: '1/8' }, (ev) => {
 });</code></pre>
         <p>
           <code>seq.options</code> is the options the sequence was made with, as they were given, so
-          code that did not make a sequence can tell how it was declared. After
-          <code>update</code> it is the merged options. <code>setStep</code> does not change it, and
-          it cannot be written to: changes go through <code>update</code>.
+          code that did not make a sequence can tell how it was declared: a count reads back as the
+          count, and an array or a pattern string as that array or string, where
+          <code>seq.steps</code> is always the values. After <code>update</code> it is the merged
+          options. <code>setStep</code> does not change it, and it cannot be written to: it is a
+          frozen copy, an array of steps included, and changes go through <code>update</code>.
         </p>
         <pre
           data-static
         ><code>const seq = __.transport.sequence('steps', { steps: 16, step: '1/16' }, fn);
 seq.options; // { steps: 16, step: '1/16' }
-seq.steps; // sixteen 1s</code></pre>
+seq.steps; // sixteen 1s
+
+seq.update({ steps: [1, 0, 0, 1] });
+seq.options; // { steps: [1, 0, 0, 1], step: '1/16' }
+seq.setStep(1, 1);
+seq.options.steps; // still [1, 0, 0, 1]
+seq.steps; // [1, 1, 0, 1]</code></pre>
         <p>
           <code>__.transport.sequences</code> is every named sequence of the scope, in the order
-          they were first made. An app uses it to show a grid for each one after running a script:
+          they were first made. Sequences without a name, <code>every</code> and <code>at</code> are
+          not in it. An app uses it to show a grid for each one after running a script, and
+          <a href="#step-listeners">a step listener</a> to light the step that is playing:
         </p>
         <pre data-static><code>await scope.build(script);
 for (const sequence of scope.transport.sequences) {
@@ -1357,7 +1473,8 @@ const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
           <code>rests: false</code>, steps that <code>probability</code> drops, and the steps of a
           muted sequence, whose own function is not called (<code>ev.sequence.muted</code> tells).
           Like that function it runs ahead of the sound; to draw a playhead when a step is heard,
-          keep <code>ev.time</code> and compare it with the audio clock.
+          keep <code>ev.time</code> and compare it with the audio clock. Steps the transport had to
+          skip because the page fell behind (its <code>late</code> event) are not reported.
         </p>
         <p>
           Listeners stay with the sequence through <code>update</code>, <code>setStep</code>,
@@ -1369,6 +1486,13 @@ const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
           the scope, named or not, and <code>engine.transport.on('step', listener)</code> those of
           every scope. <code>ev.sequence</code> says which one. These run after the sequence's own
           listeners and still before its function.
+        </p>
+        <p>
+          A listener that throws is reported like a function that throws, as described
+          <a href="#callback-errors">below</a>, and the other listeners and the sequence's function
+          still run. Adding the same function twice adds it once. Step listeners belong to the page:
+          for a script in a <a href="#sandbox">sandbox</a>, the page listens to the sequence the
+          script declared.
         </p>
         <pre data-static><code>const stop = scope.transport.on('step', (ev) =&gt; {
   const values = perStep[ev.sequence.name];
@@ -1405,6 +1529,11 @@ const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
 // script has been changed and built without an error:
 await scope.build(script);
 for (const sequence of scope.transport.sequences) sequence.muted = false;</code></pre>
+        <p>
+          For a <a href="#step-listeners">step listener</a>, <code>origin.sequence</code> and
+          <code>origin.name</code> are those of the sequence it was following. The error's message
+          names the sequence and the scope.
+        </p>
 
         <h3>Every sequencing method</h3>
         <p>
@@ -1792,15 +1921,18 @@ result.unchanged; // [saw]</code></pre>
         <p>
           The live demo runs your code through <code>build</code> on every key up. A rebuild sets
           every parameter back to what the code says, so a value changed from a sequence callback
-          lasts until the next rebuild.
+          lasts until the next rebuild. A <code>set</code> or <code>ramp</code> the code itself
+          makes after asking for a node has the last word on every run, the first and the ones after
+          it alike.
         </p>
         <h3 id="build-atomic">When a build cannot be applied</h3>
         <p>
           <code>build</code> returns a promise. If everything the function asked for can be done, it
           is done and the promise resolves with what changed. If anything cannot, the promise
           rejects with the first error and <em>nothing</em> has changed: not the nodes, their
-          values, the connections, the buses with their inserts and routes, the sequences, nor the
-          tempo, and the scope has emitted no <code>param:changed</code>, <code>node:added</code> or
+          values, the connections, the buses with their <a href="#inserts">inserts</a> and routes,
+          the sequences with their <a href="#step-listeners">step listeners</a>, nor the tempo, and
+          the scope has emitted no <code>param:changed</code>, <code>node:added</code> or
           <code>node:removed</code>. An app can tell its user that the last version that worked is
           still the one playing, and that is exactly true.
         </p>
@@ -1858,6 +1990,12 @@ result.unchanged; // [saw]</code></pre>
           inside the function, buffers loaded there, and node types registered there. A listener of
           the transport's <code>tempo</code> event hears a tempo the function set, and then the old
           one again.
+        </p>
+        <p>
+          A build of another scope started inside the function is part of the outer build: it is
+          applied when the outer one succeeds and not at all when it is refused. For a node a build
+          adds, the scope emits <code>node:added</code> first and its
+          <code>param:changed</code> after.
         </p>
         <p>
           <code>scope.apply(graph)</code> does the same from data instead of code:
@@ -2080,7 +2218,21 @@ remote.build((__) =&gt; {
             Step listeners belong to the page. <code>sequence.on('step')</code> and
             <code>transport.on('step')</code> throw in the sandbox. On the page,
             <code>scope.transport.get(name).on('step', listener)</code> follows a sequence the
-            script declared, and runs before the step is sent to the script.
+            script declared, and runs before the step is sent to the script. See
+            <a href="#step-listeners">Following a sequence's steps</a>.
+          </li>
+          <li>
+            <code>__.transport.sequences</code> is not there.
+            <code>__.transport.get(name)</code> is, and a sequence's <code>options</code>,
+            <code>update</code> and <code>setStep</code> work as they do next to the engine.
+          </li>
+          <li>
+            A sampler's play positions exist only where the audio is:
+            <code>playheads()</code> is always empty, and <code>node.buffer</code> has the key,
+            duration and slices without the audio.
+            <a href="#swap-buffer"><code>setOption('buffer', ...)</code></a
+            >, the <a href="#loop-points">loop points</a> and <code>set</code> with
+            <a href="#following-a-fader"><code>glide</code></a> work the same.
           </li>
           <li>
             <code>remote.build</code> is all or nothing like <code>scope.build</code>, but it
@@ -2125,7 +2277,10 @@ remote.build((__) =&gt; {
         <p>
           <code>remote.buffers.get(key)</code> gives a loaded buffer's duration and slice
           boundaries, and <code>remote.buffers.load(url)</code> asks the page to load one, which the
-          page may refuse.
+          page may refuse. <code>remote.buffers.setSlices(key, boundaries)</code> replaces a
+          buffer's <a href="#slice-editing">slices</a>. That reaches the page as a
+          <code>slices</code> command, and <code>setOption</code> as an <code>option</code> command;
+          like <code>loadBuffer</code>, the page can refuse either in <code>allow</code>.
         </p>
         <p>
           The frame keeps a script away from your page, not from the network or the processor. Give
@@ -2141,9 +2296,10 @@ remote.build((__) =&gt; {
         <p>
           <code>cracked-up/editor</code> is a code editor for cracked-up scripts, for an app to
           embed. It is the editor in the <a href="./index.html">live demo</a>. It completes node
-          types, parameters, selectors, buffer and bus names, helpers and the arguments of functions
-          an app adds, shows what each is when you hover, and shows the source of a node type or
-          helper when you Cmd-click it (Ctrl-click outside macOS), or press F12 on it.
+          types (after a chain, and after a bus for its <a href="#inserts">inserts</a>), parameters,
+          selectors, buffer and bus names, helpers and the arguments of functions an app adds, shows
+          what each is when you hover, and shows the source of a node type or helper when you
+          Cmd-click it (Ctrl-click outside macOS), or press F12 on it.
         </p>
         <p>
           It is built on <a href="https://codemirror.net/">CodeMirror 6</a>, which is not bundled
@@ -2185,7 +2341,7 @@ async function run() {
   }
 }</code></pre>
 
-        <h3>The catalog</h3>
+        <h3 id="editor-catalog">The catalog</h3>
         <p>
           The editor needs no engine. Everything it knows comes from a catalog, which is plain data:
           the node types (as <code>engine.registry.list()</code> gives them), the helpers, the
@@ -2229,7 +2385,7 @@ const bass = createEditor({ parent: bassElement, doc: bassCode, catalog });
 engine.buffers.on('ready', () =&gt; catalog.set(catalogFromEngine(engine)));
 catalog.update({ ids: idsOfEveryTrack() });   // both editors follow</code></pre>
 
-        <h3>Before there is an engine</h3>
+        <h3 id="editor-before-engine">Before there is an engine</h3>
         <p>
           An audio context cannot start until someone clicks, and an editor is often on screen
           before that. <code>catalogFromNodes</code> makes the catalog from node definitions alone:
@@ -2250,7 +2406,7 @@ catalog.set(catalogFromNodes([...builtinNodes, myMacro], { buses: ['drums'] }));
           definitions.
         </p>
 
-        <h3>With sandboxed scripts</h3>
+        <h3 id="editor-sandbox">With sandboxed scripts</h3>
         <p>
           When scripts run in a <a href="#sandbox">sandbox</a>, the editor still lives in the page,
           and it behaves the same, because it only ever reads the catalog.
@@ -2271,9 +2427,14 @@ editor.setCatalog(catalogFromRemoteState(link.state()));</code></pre>
           <code>catalogFromScope(scope)</code> gives the same names and the scope's sequences, to
           merge into a catalog after a script has run:
           <code>catalogFromEngine(engine, catalogFromScope(scope))</code>.
+          <code>catalogFromSnapshot(snapshot)</code> reads the ids, classes and buses from a
+          snapshot you already hold (<code>scope.snapshot()</code>, or one sent from another page).
+          Each of these lists every id with its node type, which is what lets
+          <a href="#editor-functions">a function of your own</a> complete the parameters of the node
+          a selector names.
         </p>
 
-        <h3>Functions of your own</h3>
+        <h3 id="editor-functions">Functions of your own</h3>
         <p>
           An app often puts functions of its own in scope of scripts, beside the library's. List one
           in <code>globals</code> and its name is completed with its description. Describe it in
@@ -2394,7 +2555,7 @@ editor.setCatalog({ ...catalogFromEngine(engine), functions: [dial] });</code></
           the same name that the script declares takes over, and the editor then says nothing.
         </p>
 
-        <h3>Text the host controls</h3>
+        <h3 id="editor-text">Text the host controls</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -2446,7 +2607,10 @@ editor.setCatalog({ ...catalogFromEngine(engine), functions: [dial] });</code></
               </tr>
               <tr>
                 <td><code>setDiagnostics(list)</code>, <code>clearDiagnostics()</code></td>
-                <td>Marks problems in the text. See below.</td>
+                <td>
+                  Marks problems in the text. See
+                  <a href="#editor-diagnostics">Problems the host finds</a>.
+                </td>
               </tr>
               <tr>
                 <td><code>reveal(place, options?)</code></td>
@@ -2482,7 +2646,7 @@ editor.setCatalog({ ...catalogFromEngine(engine), functions: [dial] });</code></
           move focus out of the editor with the keyboard.
         </p>
 
-        <h3>Problems the host finds</h3>
+        <h3 id="editor-diagnostics">Problems the host finds</h3>
         <p>
           <code>showError</code> is for the one error that stopped a script. For everything else an
           app notices, such as a selector that matches no node or a name that is not a sequence,
@@ -2507,14 +2671,14 @@ createEditor({ parent, onCursor: (cursor) =&gt; highlightControlDeclaredOn(curso
           types, and one whose text is deleted goes with it; a problem that names a line the text
           has not got is left out. <code>editor.diagnostics</code> is the list as it stands, each
           with its <code>from</code>, <code>to</code>, <code>line</code> and
-          <code>column</code> now. Each editor has its own list. The severities are
-          <code>'error'</code>, <code>'warning'</code> and <code>'info'</code>, coloured by
-          <code>--cu-error-text</code>, <code>--cu-warning-text</code> and
-          <code>--cu-info-text</code>. This is built from the CodeMirror packages listed above;
-          <code>@codemirror/lint</code> is not needed.
+          <code>column</code> now. Each editor has its own list, and <code>setValue</code> with
+          <code>{ history: 'reset' }</code> empties it. The severities are <code>'error'</code>,
+          <code>'warning'</code> and <code>'info'</code>, coloured by <code>--cu-error-text</code>,
+          <code>--cu-warning-text</code> and <code>--cu-info-text</code>. This is built from the
+          CodeMirror packages listed above; <code>@codemirror/lint</code> is not needed.
         </p>
 
-        <h3>Go to definition and the source panel</h3>
+        <h3 id="editor-definition">Go to definition and the source panel</h3>
         <p>
           Cmd-click or F12 on a node type or a helper asks the editor for its definition. A type the
           script defines itself (<code>define({ type: 'blip', ... })</code>) is in the document, so
@@ -2558,7 +2722,7 @@ panel.show({ kind: 'type', name: 'tapedelay' });   // from a menu of your own, s
           the <code>sources</code> option replaces where it comes from.
         </p>
 
-        <h3>Styles and themes</h3>
+        <h3 id="editor-themes">Styles and themes</h3>
         <p>
           The editor brings its styles with it and does not need this site's stylesheet. It adds one
           <code>&lt;style&gt;</code> element to the document, or to the shadow root it is in; pass
@@ -2602,7 +2766,10 @@ panel.show({ kind: 'type', name: 'tapedelay' });   // from a menu of your own, s
           conversions. They make no sound themselves. They give you numbers and lists to use in your
           patterns and parameters. In the live demo and the sandboxed demo you call them by name. In
           your own project, import them from <code>cracked-up/util</code> (or from
-          <code>cracked-up/global</code>, next to <code>__</code>).
+          <code>cracked-up/global</code>, next to <code>__</code>). One group is for sounds rather
+          than notes: waveform data, onsets and slice boundaries, described under
+          <a href="#slice-editing">Changing slices</a> and
+          <a href="#waveform-editor">drawing and editing a sound</a>.
         </p>
         <pre><code>__.transport.bpm = 100;
 __().triangle({ id: 'lead', gate: 'closed' }).lowpass(2400).gain(0.25).to('main');
@@ -2630,7 +2797,39 @@ __.transport.sequence('hat', { steps: 'x', step: '1/16' }, () =&gt; {
   if (third()) __('#hat').trigger();
 });</code></pre>
 
-        <h3>Random choices that repeat</h3>
+        <h3 id="pattern-transforms">Patterns from patterns</h3>
+        <p>
+          The helpers under <a href="#helper-rotate">Changing patterns</a> and
+          <a href="#helper-and">Combining patterns</a> take a pattern, as an array or a string, and
+          return a new array. They can be nested, so one rhythm gives the others, and a sequence
+          takes the result as its <code>steps</code>:
+        </p>
+        <pre><code>__().sampler({ id: 'kick', buffer: 'kick' }).to('main');
+__().sampler({ id: 'snare', buffer: 'snare' }).gain(0.5).to('main');
+__().sampler({ id: 'hat', buffer: 'hat' }).gain(0.3).to('main');
+
+const kick = euclid(3, 8);            // [1, 0, 0, 1, 0, 0, 1, 0]
+const snare = rotate(kick, 2);        // the same rhythm from its third step: [0, 1, 0, 0, 1, 0, 1, 0]
+const hat = invert(or(kick, snare));  // wherever neither of them plays
+// Three bars of the kick, then one bar of it backwards.
+const kicks = concat(repeat(kick, 3), reverse(kick));
+
+__.transport.sequence('kick', { steps: kicks, step: '1/8' }, (ev) =&gt; {
+  if (ev.value) __('#kick').trigger();
+});
+__.transport.sequence('snare', { steps: snare, step: '1/8' }, (ev) =&gt; {
+  if (ev.value) __('#snare').trigger();
+});
+__.transport.sequence('hat', { steps: hat, step: '1/8' }, (ev) =&gt; {
+  if (ev.value) __('#hat').trigger();
+});</code></pre>
+        <p>
+          To change a pattern that is already playing, give the new one to
+          <a href="#changing-a-pattern"><code>sequence.update</code></a
+          >.
+        </p>
+
+        <h3 id="random-seeds">Random choices that repeat</h3>
         <p>
           Every helper that makes a random choice takes an optional last argument: where to get its
           random numbers. Leave it out and the choice is different on every run. Pass a

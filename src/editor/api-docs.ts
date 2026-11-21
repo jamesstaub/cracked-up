@@ -185,6 +185,12 @@ export const API: Readonly<Record<ReceiverKind, readonly ApiMember[]>> = {
       description:
         "Listens for 'tempo', 'start', 'stop' or 'late' (the scheduler fell behind and skipped events), or with 'step' for every step of this scope's sequences, before each one's callback. Returns a function that stops listening. 'step' and 'late' are not available in a sandbox.",
     },
+    {
+      name: 'onDisplay',
+      signature: 'onDisplay(listener)',
+      description:
+        "Calls the listener on an animation frame once a sequence's step is heard, with the step's event: for playheads, which a sequence's callback is too early to move. Only steps whose callback ran. Returns a function that stops it. Not in an offline render or a sandbox.",
+    },
   ],
   chain: [
     {

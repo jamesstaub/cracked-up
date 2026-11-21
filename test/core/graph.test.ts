@@ -44,6 +44,27 @@ describe('chains', () => {
     expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(1, 6);
   });
 
+  it("a selection's chain is a branch: the selected node keeps its connections, and a second path leaves it", async () => {
+    const engine = await offlineEngine(0.2);
+    constant(engine, 0.2, 'a').gain({ id: 'dry', gain: 0.5 }).to('main');
+    engine.select('#a').chain().gain({ id: 'wet', gain: 0.25 }).to('main');
+    const outputs = engine
+      .select('#a')
+      .first()
+      ?.outputs.map((edge) => (edge.to as { id?: string }).id);
+    expect(outputs).toEqual(['dry', 'wet']);
+    expect(valueAt(await engine.render(), 0.1)).toBeCloseTo(0.75, 6);
+  });
+
+  it('a chain from a selection that finds nothing is fed by nothing, and says nothing', async () => {
+    const engine = await offlineEngine(0.2);
+    const errors: string[] = [];
+    engine.on('error', (error) => errors.push(error.message));
+    engine.select('#missing').chain().gain({ id: 'lonely' }).to('main');
+    expect(engine.select('#lonely').first()?.inputs).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
   it('chains started in any order do not affect each other', async () => {
     const engine = await offlineEngine(0.2);
     const first = constant(engine, 0.2, 'a');

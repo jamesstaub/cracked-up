@@ -164,6 +164,10 @@ Demo and docs:
 - The guide's part on buses is rewritten around one picture of a bus (input, inserts, level, output,
   destination) and six routings, each with its graph drawn from the example's own code. The docs
   say "a chain from the bus" for `bus.chain()` and "destination" for `bus.to()` throughout.
+- Guide sections on branching from existing nodes with a selection's `chain()`, and on
+  `transport.onDisplay` for drawing what is heard (it reports only steps whose callback ran, and
+  never in an offline render or a sandbox). `onDisplay` is in the editor's completion and the
+  sequencing reference, and has tests of its own.
 - Docs sections for everything above, a reference of every sequencing, interaction and MIDI
   method, and a contents list that links to each part of a section and to every method, helper and
   node type.

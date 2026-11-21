@@ -692,6 +692,11 @@ scope.dispatch([{ op: 'bus', name: 'drums', inserts: ['tone', 'grit'] }]);</code
           because a string there is a bus name, while a string given to <code>connect</code> is a
           selector.
         </p>
+        <p>
+          To start a new path from a node made earlier, select it and call
+          <a href="#selection-chain"><code>chain()</code></a
+          >.
+        </p>
         <pre><code>// Two oscillators into one filter.
 __().lowpass({ id: 'filter', frequency: 600 }).gain(0.2).to('main');
 __().saw(110).connect('#filter');
@@ -769,6 +774,35 @@ __.transport.sequence('beat', { steps: [1, 2], step: '1/4' }, (ev) => {
         <p>
           Classes and tags are set when a node is made:
           <code>{ class: 'drums loud', tags: { role: 'send' } }</code>.
+        </p>
+
+        <h3 id="selection-chain">Branching from nodes you have made: <code>chain()</code></h3>
+        <p>
+          <code>__('#tone').chain()</code> starts a chain from nodes that already exist: the first
+          node you add after it is fed by every selected node. The selected nodes keep the
+          connections they had, because an output can go to any number of places, so this is how a
+          second path leaves the middle of a first one. Here the filtered saw is heard dry, and a
+          copy of the same filter's output goes through an echo beside it:
+        </p>
+        <pre><code>__().saw({ id: 'lead', frequency: 220 }).lowpass({ id: 'tone', frequency: 900 }).gain(0.2).to('main');
+
+// A second path from the filter, written as its own statement.
+__('#tone').chain().delay({ time: 0.3, feedback: 0.4, mix: 1 }).gain(0.1).to('main');</code></pre>
+        <p>
+          With several nodes selected the new node is fed by all of them, so
+          <code>__('.drums').chain().reverb().to('main')</code> mixes every drum into one reverb.
+          The chain belongs to the scope the selection was made in, and is declared again on each
+          <a href="#rebuilding">build</a> like any other statement. A selection that finds nothing
+          starts a chain fed by nothing, as <code>__()</code> does, and no error says so: check the
+          selector if a branch is silent. A selected node that
+          <a href="#connecting">modulates</a> feeds the parameter it modulates on the new node, as
+          it would in the chain it came from.
+        </p>
+        <p>
+          Within one statement, <code>.split()</code> makes parallel branches that join again. Use
+          <code>chain()</code> on a selection when the branch does not join the first path, or when
+          it is written somewhere else, such as a later line or a different part of a script that an
+          app edits.
         </p>
 
         <h2 id="parameters">Changing parameters</h2>
@@ -1580,7 +1614,7 @@ seq.steps; // [1, 1, 0, 1]</code></pre>
           <code>__.transport.sequences</code> is every named sequence of the scope, in the order
           they were first made. Sequences without a name, <code>every</code> and <code>at</code> are
           not in it. An app uses it to show a grid for each one after running a script, and
-          <a href="#step-listeners">a step listener</a> to light the step that is playing:
+          <a href="#display"><code>onDisplay</code></a> to light the step that is playing:
         </p>
         <pre data-static><code>await scope.build(script);
 for (const sequence of scope.transport.sequences) {
@@ -1610,8 +1644,9 @@ const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
           <code>rests: false</code>, steps that <code>probability</code> drops, and the steps of a
           muted sequence, whose own function is not called (<code>ev.sequence.muted</code> tells).
           Like that function it runs ahead of the sound; to draw a playhead when a step is heard,
-          keep <code>ev.time</code> and compare it with the audio clock. Steps the transport had to
-          skip because the page fell behind (its <code>late</code> event) are not reported.
+          use <a href="#display"><code>onDisplay</code></a
+          >, which waits for it. Steps the transport had to skip because the page fell behind (its
+          <code>late</code> event) are not reported.
         </p>
         <p>
           Listeners stay with the sequence through <code>update</code>, <code>setStep</code>,
@@ -1635,6 +1670,35 @@ const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
   const values = perStep[ev.sequence.name];
   if (values) scope.select('#sampler').set({ start: values[ev.index] }, { at: ev.time });
 });</code></pre>
+
+        <h3 id="display">Drawing what is heard: <code>onDisplay</code></h3>
+        <p>
+          A sequence's function and its step listeners run a little ahead of the sound, so that it
+          can be scheduled exactly. That is too early to draw.
+          <code>transport.onDisplay(listener)</code> calls the listener on an animation frame once a
+          step is heard: when the audio clock, less the output device's own delay, has reached the
+          step's <code>ev.time</code>. It is given the same event the sequence's function was given,
+          and returns a function that stops it. Use it to move a playhead or light the step that is
+          playing.
+        </p>
+        <pre data-static><code>const stop = engine.transport.onDisplay((ev) =&gt; {
+  grid(ev.sequence.name).light(ev.index);
+});</code></pre>
+        <p>
+          It reports only the steps whose function ran. A rest left out with
+          <code>rests: false</code>, a step that <code>probability</code> dropped and the steps of a
+          muted sequence are not shown, and neither are <code>every</code> and <code>at</code>.
+          Events are queued only while something listens, so a step scheduled before the listener
+          was added is not reported. Several steps heard since the last frame are reported together
+          on that frame, in time order.
+        </p>
+        <p>
+          It is a page feature. It needs <code>requestAnimationFrame</code> and a live audio
+          context, so it never calls back during an offline render or where there are no animation
+          frames, and a script in a <a href="#sandbox">sandbox</a>
+          does not have it. A listener that throws is logged to the console and the others still
+          run. Listeners are removed when the engine is disposed.
+        </p>
 
         <h3 id="callback-errors">When a callback throws</h3>
         <p>

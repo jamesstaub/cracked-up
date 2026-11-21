@@ -190,7 +190,7 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
       },
     };
   },
-});`}],native:[]},delay:{parts:[{file:`src/nodes/delays.ts`,line:85,endLine:93,code:`export const delay = echo('delay', {
+});`}],native:[]},delay:{parts:[{file:`src/nodes/delays.ts`,line:94,endLine:102,code:`export const delay = echo('delay', {
   description:
     'An echo: the sound repeats after a set time, and each repeat is quieter (and, with the cutoff turned down, duller) than the last.',
   time: { default: 0.25, min: 0.001, description: 'Time between echoes, in seconds.' },
@@ -198,7 +198,7 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
   feedback: { default: 0.4, max: 0.95 },
   cutoff: 20000,
   mix: 0.5,
-});`},{label:`echo(), which builds it`,file:`src/nodes/delays.ts`,line:14,endLine:83,code:`function echo<K extends string>(type: K, spec: EchoSpec): NodeDefinition<K> {
+});`},{label:`echo(), which builds it`,file:`src/nodes/delays.ts`,line:15,endLine:92,code:`function echo<K extends string>(type: K, spec: EchoSpec): NodeDefinition<K> {
   const params: Record<string, ParamMetaInput> = {
     time: {
       default: spec.time.default,
@@ -244,11 +244,16 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
       const tone = new BiquadFilterNode(audio, { type: 'lowpass', Q: -3.0103 });
       const feedback = new GainNode(audio);
       const mix = createMix(audio);
+      // Shut when the node is silenced, so the delay line empties (see tail.ts). The loop passes
+      // through the outer one, so the repeats stop being written back in as well.
+      const into = new GainNode(audio);
+      const out = new GainNode(audio);
 
       input.connect(mix.dry).connect(output);
-      input.connect(delay);
-      delay.connect(mix.wet).connect(output);
-      delay.connect(tone).connect(feedback).connect(delay);
+      input.connect(into).connect(delay);
+      delay.connect(out);
+      out.connect(mix.wet).connect(output);
+      out.connect(tone).connect(feedback).connect(delay);
 
       return {
         input,
@@ -259,15 +264,18 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
           cutoff: tone.frequency,
           mix: mix.handler,
         },
+        silence(at) {
+          closeFor([into, out], at, heldBy(delay, 5));
+        },
         dispose() {
-          for (const node of [input, output, delay, tone, feedback, mix.dry, mix.wet]) {
+          for (const node of [input, output, into, out, delay, tone, feedback, mix.dry, mix.wet]) {
             node.disconnect();
           }
         },
       };
     },
   });
-}`}],native:[`GainNode`,`DelayNode`,`BiquadFilterNode`]},comb:{parts:[{file:`src/nodes/delays.ts`,line:95,endLine:108,code:`export const comb = echo('comb', {
+}`}],native:[`GainNode`,`DelayNode`,`BiquadFilterNode`]},comb:{parts:[{file:`src/nodes/delays.ts`,line:104,endLine:117,code:`export const comb = echo('comb', {
   description:
     'A very short echo that repeats so fast it blurs into a pitched ring: the sound is coloured with a note whose pitch is 1 divided by the time. Good for metallic or plucked-string tones.',
   time: {
@@ -280,7 +288,7 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
   feedback: { default: 0.84, max: 0.98 },
   cutoff: 3000,
   mix: 1,
-});`},{label:`echo(), which builds it`,file:`src/nodes/delays.ts`,line:14,endLine:83,code:`function echo<K extends string>(type: K, spec: EchoSpec): NodeDefinition<K> {
+});`},{label:`echo(), which builds it`,file:`src/nodes/delays.ts`,line:15,endLine:92,code:`function echo<K extends string>(type: K, spec: EchoSpec): NodeDefinition<K> {
   const params: Record<string, ParamMetaInput> = {
     time: {
       default: spec.time.default,
@@ -326,11 +334,16 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
       const tone = new BiquadFilterNode(audio, { type: 'lowpass', Q: -3.0103 });
       const feedback = new GainNode(audio);
       const mix = createMix(audio);
+      // Shut when the node is silenced, so the delay line empties (see tail.ts). The loop passes
+      // through the outer one, so the repeats stop being written back in as well.
+      const into = new GainNode(audio);
+      const out = new GainNode(audio);
 
       input.connect(mix.dry).connect(output);
-      input.connect(delay);
-      delay.connect(mix.wet).connect(output);
-      delay.connect(tone).connect(feedback).connect(delay);
+      input.connect(into).connect(delay);
+      delay.connect(out);
+      out.connect(mix.wet).connect(output);
+      out.connect(tone).connect(feedback).connect(delay);
 
       return {
         input,
@@ -341,15 +354,18 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
           cutoff: tone.frequency,
           mix: mix.handler,
         },
+        silence(at) {
+          closeFor([into, out], at, heldBy(delay, 5));
+        },
         dispose() {
-          for (const node of [input, output, delay, tone, feedback, mix.dry, mix.wet]) {
+          for (const node of [input, output, into, out, delay, tone, feedback, mix.dry, mix.wet]) {
             node.disconnect();
           }
         },
       };
     },
   });
-}`}],native:[`GainNode`,`DelayNode`,`BiquadFilterNode`]},delayline:{parts:[{file:`src/nodes/delays.ts`,line:110,endLine:133,code:`export const delayline = defineNode({
+}`}],native:[`GainNode`,`DelayNode`,`BiquadFilterNode`]},delayline:{parts:[{file:`src/nodes/delays.ts`,line:119,endLine:156,code:`export const delayline = defineNode({
   type: 'delayline',
   category: 'delay',
   description:
@@ -369,10 +385,24 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
   build(context) {
     // Nothing but the delay lies between input and output. A loop made through this node therefore
     // always has a delay in it, which browsers require: Firefox silences a loop that has a way round.
+    // (the gates are for silencing: shut, they let the line empty; see tail.ts)
+    const into = new GainNode(context.audio);
     const node = new DelayNode(context.audio, { maxDelayTime: 5 });
-    return { input: node, output: node, params: { time: node.delayTime } };
+    const out = new GainNode(context.audio);
+    into.connect(node).connect(out);
+    return {
+      input: into,
+      output: out,
+      params: { time: node.delayTime },
+      silence(at) {
+        closeFor([into, out], at, heldBy(node, 5));
+      },
+      dispose() {
+        for (const each of [into, node, out]) each.disconnect();
+      },
+    };
   },
-});`}],native:[`DelayNode`]},overdrive:{parts:[{file:`src/nodes/distortion.ts`,line:60,endLine:118,code:`export const overdrive = defineNode({
+});`}],native:[`GainNode`,`DelayNode`]},overdrive:{parts:[{file:`src/nodes/distortion.ts`,line:60,endLine:118,code:`export const overdrive = defineNode({
   type: 'overdrive',
   category: 'distortion',
   description:
@@ -510,7 +540,7 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
       },
     };
   },
-});`}],native:[`GainNode`,`OscillatorNode`]},adsr:{parts:[{file:`src/nodes/envelopes.ts`,line:11,endLine:160,code:`export const adsr = defineNode({
+});`}],native:[`GainNode`,`OscillatorNode`]},adsr:{parts:[{file:`src/nodes/envelopes.ts`,line:11,endLine:165,code:`export const adsr = defineNode({
   type: 'adsr',
   category: 'envelope',
   description:
@@ -652,6 +682,11 @@ var e={gain:{parts:[{file:`src/nodes/basic.ts`,line:5,endLine:24,code:`export co
       },
       release(_options, at) {
         releaseAt(at, context.value('release', at) as number);
+      },
+      silence(at) {
+        holdAt(at);
+        gain.setValueAtTime(0, at);
+        segments[segments.length - 1] = { t0: at, v0: 0, t1: at, v1: 0 };
       },
       dispose() {
         gain.cancelScheduledValues(0);
@@ -1130,7 +1165,7 @@ export const smooth = defineNode({
       .gain({ id: 'dry', gain: 1 - mix })
       .to('out');
   },
-});`}],native:[]},noise:{parts:[{file:`src/nodes/noise.ts`,line:45,endLine:107,code:`export const noise = defineNode({
+});`}],native:[]},noise:{parts:[{file:`src/nodes/noise.ts`,line:45,endLine:112,code:`export const noise = defineNode({
   type: 'noise',
   category: 'source',
   description:
@@ -1184,6 +1219,11 @@ export const smooth = defineNode({
       release(_options, at) {
         gate.gain.setValueAtTime(0, at);
       },
+      silence(at) {
+        // back to how it was made: a gate made closed shuts, one made open stays open
+        gate.gain.cancelScheduledValues(at);
+        gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
+      },
       dispose() {
         source.stop();
         source.disconnect();
@@ -1192,7 +1232,7 @@ export const smooth = defineNode({
       },
     };
   },
-});`}],native:[`AudioBufferSourceNode`,`GainNode`]},sine:{parts:[{file:`src/nodes/oscillators.ts`,line:75,endLine:75,code:"export const sine = oscillator('sine', 'sine', `A pure tone with no overtones. ${gateNote}`);"},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:70,code:`function oscillator<K extends string>(
+});`}],native:[`AudioBufferSourceNode`,`GainNode`]},sine:{parts:[{file:`src/nodes/oscillators.ts`,line:80,endLine:80,code:"export const sine = oscillator('sine', 'sine', `A pure tone with no overtones. ${gateNote}`);"},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:75,code:`function oscillator<K extends string>(
   type: K,
   wave: OscillatorType,
   description: string,
@@ -1251,6 +1291,11 @@ export const smooth = defineNode({
         release(_options, at) {
           gate.gain.setValueAtTime(0, at);
         },
+        silence(at) {
+          // Back to how it was made: a gate made closed shuts, one made open stays open (a drone).
+          gate.gain.cancelScheduledValues(at);
+          gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
+        },
         dispose() {
           osc.stop();
           osc.disconnect();
@@ -1258,11 +1303,11 @@ export const smooth = defineNode({
       };
     },
   });
-}`}],native:[`OscillatorNode`,`GainNode`]},saw:{parts:[{file:`src/nodes/oscillators.ts`,line:76,endLine:80,code:`export const saw = oscillator(
+}`}],native:[`OscillatorNode`,`GainNode`]},saw:{parts:[{file:`src/nodes/oscillators.ts`,line:81,endLine:85,code:`export const saw = oscillator(
   'saw',
   'sawtooth',
   \`A bright, buzzy wave with every overtone. \${gateNote}\`,
-);`},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:70,code:`function oscillator<K extends string>(
+);`},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:75,code:`function oscillator<K extends string>(
   type: K,
   wave: OscillatorType,
   description: string,
@@ -1321,6 +1366,11 @@ export const smooth = defineNode({
         release(_options, at) {
           gate.gain.setValueAtTime(0, at);
         },
+        silence(at) {
+          // Back to how it was made: a gate made closed shuts, one made open stays open (a drone).
+          gate.gain.cancelScheduledValues(at);
+          gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
+        },
         dispose() {
           osc.stop();
           osc.disconnect();
@@ -1328,11 +1378,11 @@ export const smooth = defineNode({
       };
     },
   });
-}`}],native:[`OscillatorNode`,`GainNode`]},square:{parts:[{file:`src/nodes/oscillators.ts`,line:81,endLine:85,code:`export const square = oscillator(
+}`}],native:[`OscillatorNode`,`GainNode`]},square:{parts:[{file:`src/nodes/oscillators.ts`,line:86,endLine:90,code:`export const square = oscillator(
   'square',
   'square',
   \`A hollow wave with the odd overtones. \${gateNote}\`,
-);`},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:70,code:`function oscillator<K extends string>(
+);`},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:75,code:`function oscillator<K extends string>(
   type: K,
   wave: OscillatorType,
   description: string,
@@ -1390,6 +1440,11 @@ export const smooth = defineNode({
         },
         release(_options, at) {
           gate.gain.setValueAtTime(0, at);
+        },
+        silence(at) {
+          // Back to how it was made: a gate made closed shuts, one made open stays open (a drone).
+          gate.gain.cancelScheduledValues(at);
+          gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
         },
         dispose() {
           osc.stop();
@@ -1398,11 +1453,11 @@ export const smooth = defineNode({
       };
     },
   });
-}`}],native:[`OscillatorNode`,`GainNode`]},triangle:{parts:[{file:`src/nodes/oscillators.ts`,line:86,endLine:90,code:`export const triangle = oscillator(
+}`}],native:[`OscillatorNode`,`GainNode`]},triangle:{parts:[{file:`src/nodes/oscillators.ts`,line:91,endLine:95,code:`export const triangle = oscillator(
   'triangle',
   'triangle',
   \`A soft wave, between sine and square. \${gateNote}\`,
-);`},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:70,code:`function oscillator<K extends string>(
+);`},{label:`oscillator(), which builds it`,file:`src/nodes/oscillators.ts`,line:4,endLine:75,code:`function oscillator<K extends string>(
   type: K,
   wave: OscillatorType,
   description: string,
@@ -1460,6 +1515,11 @@ export const smooth = defineNode({
         },
         release(_options, at) {
           gate.gain.setValueAtTime(0, at);
+        },
+        silence(at) {
+          // Back to how it was made: a gate made closed shuts, one made open stays open (a drone).
+          gate.gain.cancelScheduledValues(at);
+          gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
         },
         dispose() {
           osc.stop();
@@ -1563,7 +1623,7 @@ export const smooth = defineNode({
       },
     };
   },
-});`}],native:[]},looper:{parts:[{file:`src/nodes/recording.ts`,line:169,endLine:289,code:`export const looper = defineNode({
+});`}],native:[]},looper:{parts:[{file:`src/nodes/recording.ts`,line:169,endLine:297,code:`export const looper = defineNode({
   type: 'looper',
   category: 'io',
   description:
@@ -1574,6 +1634,7 @@ export const smooth = defineNode({
       default: 1,
       min: 0,
       max: 2,
+      unit: 'gain',
       rate: 'audio',
       description: 'Level of the loop playback.',
     },
@@ -1581,6 +1642,7 @@ export const smooth = defineNode({
       default: 1,
       min: 0,
       max: 2,
+      unit: 'gain',
       rate: 'audio',
       description: 'Level of the input passed straight through. 0 lets only the loop out.',
     },
@@ -1588,6 +1650,7 @@ export const smooth = defineNode({
       default: 0.7,
       min: 0,
       max: 1,
+      unit: 'gain',
       rate: 'audio',
       description:
         'Level at which layers after the first are recorded. Below 1 so that layers stacked on each other do not add up to distortion. Read when a layer starts.',
@@ -1658,6 +1721,11 @@ export const smooth = defineNode({
       release(_options, at) {
         record.set(0, record.frame(at + latency));
       },
+      silence(at) {
+        // Stops recording and playback; the loop is kept, and call('play') brings it back.
+        record.set(0, record.frame(at));
+        gate('play').set(0, record.frame(at));
+      },
       methods: {
         undo(_args, at) {
           gate('undo').pulse(record.frame(at));
@@ -1683,14 +1751,14 @@ export const smooth = defineNode({
       },
     };
   },
-});`}],native:[]},input:{parts:[{file:`src/nodes/recording.ts`,line:291,endLine:380,code:`export const input = defineNode({
+});`}],native:[]},input:{parts:[{file:`src/nodes/recording.ts`,line:299,endLine:388,code:`export const input = defineNode({
   type: 'input',
   category: 'io',
   description:
     'Live audio from a microphone or audio interface. The browser asks the person for permission the first time; until they answer, and if they refuse, the node is silent. Live engines only: an offline render has no microphone.',
   shorthand: 'gain',
   params: {
-    gain: { default: 1, min: 0, max: 4, rate: 'audio', description: 'Input level.' },
+    gain: { default: 1, min: 0, max: 4, unit: 'gain', rate: 'audio', description: 'Input level.' },
   },
   options: {
     deviceId: {
@@ -1772,7 +1840,7 @@ export const smooth = defineNode({
       },
     };
   },
-});`}],native:[`GainNode`]},reverb:{parts:[{file:`src/nodes/reverb.ts`,line:32,endLine:108,code:`export const reverb = defineNode({
+});`}],native:[`GainNode`]},reverb:{parts:[{file:`src/nodes/reverb.ts`,line:33,endLine:117,code:`export const reverb = defineNode({
   type: 'reverb',
   category: 'delay',
   description:
@@ -1835,20 +1903,28 @@ export const smooth = defineNode({
       else ref.ready.then(use, () => {}); // the buffer store reports load failures
     }
 
+    // Shut when the node is silenced, for as long as the tail lasts, so it empties (see tail.ts).
+    const into = new GainNode(audio);
+    const out = new GainNode(audio);
     input.connect(mix.dry).connect(output);
-    input.connect(convolver).connect(mix.wet).connect(output);
+    input.connect(into).connect(convolver).connect(out).connect(mix.wet).connect(output);
 
     return {
       input,
       output,
       params: { mix: mix.handler },
+      silence(at) {
+        closeFor([into, out], at, (convolver.buffer?.duration ?? 0) + 0.05);
+      },
       dispose() {
         disposed = true;
-        for (const node of [input, output, convolver, mix.dry, mix.wet]) node.disconnect();
+        for (const node of [input, output, into, out, convolver, mix.dry, mix.wet]) {
+          node.disconnect();
+        }
       },
     };
   },
-});`}],native:[`GainNode`,`ConvolverNode`]},sampler:{parts:[{file:`src/nodes/sampler.ts`,line:40,endLine:215,code:`/**
+});`}],native:[`GainNode`,`ConvolverNode`]},sampler:{parts:[{file:`src/nodes/sampler.ts`,line:93,endLine:356,code:`/**
  * Plays a buffer. Every trigger starts a new one-shot voice, so there is nothing to stop or rewind
  * between hits, and voices clean up after themselves when they end.
  */
@@ -1861,7 +1937,8 @@ export const sampler = defineNode({
     buffer: {
       type: 'string | AudioBuffer | BufferRef',
       description:
-        'The sound to play. A string is looked up in engine.buffers by name; if nothing has that name it is loaded as a URL.',
+        'The sound to play. A string is looked up in engine.buffers by name; if nothing has that name it is loaded as a URL. It can be changed later with setOption: voices already sounding finish on the sound they started with, and the next trigger plays the new one.',
+      live: true,
     },
     choke: {
       type: 'boolean',
@@ -1902,7 +1979,8 @@ export const sampler = defineNode({
       max: 60,
       unit: 'seconds',
       rate: 'control',
-      description: 'Where in the buffer playback begins.',
+      description:
+        "Where in the buffer playback begins. The sound's own length is the real upper limit.",
     },
     end: {
       default: 0,
@@ -1912,7 +1990,29 @@ export const sampler = defineNode({
       rate: 'control',
       description: 'Where playback stops. At or before start means the end of the buffer.',
     },
-    loop: { default: false, description: 'Repeats the region until released.' },
+    loop: {
+      default: false,
+      description:
+        'Repeats until released: the whole region, or the part of it between loopStart and loopEnd.',
+    },
+    loopStart: {
+      default: 0,
+      min: 0,
+      max: 60,
+      unit: 'seconds',
+      rate: 'control',
+      description:
+        'With loop on, where in the buffer each repeat begins. Playback still begins at start. Kept inside the region.',
+    },
+    loopEnd: {
+      default: 0,
+      min: 0,
+      max: 60,
+      unit: 'seconds',
+      rate: 'control',
+      description:
+        'With loop on, where in the buffer playback jumps back to loopStart. At or before loopStart means the whole region repeats.',
+    },
     reverse: { default: false, description: 'Plays the region backwards.' },
     gain: { default: 1, min: 0, max: 2, unit: 'gain', description: 'Output level.' },
   },
@@ -1923,8 +2023,17 @@ export const sampler = defineNode({
     const choke = init['choke'] !== false;
     const maxVoices =
       typeof init['voices'] === 'number' && init['voices'] >= 1 ? init['voices'] : 16;
-    const ref: BufferRef | null =
-      init['buffer'] === undefined ? null : context.buffer(init['buffer'] as BufferSource);
+    const resolve = (source: unknown): BufferRef | null =>
+      source === undefined || source === null ? null : context.buffer(source as BufferSource);
+    // The buffer over time: \`sounds[i]\` from \`since[i]\` on. More than one only while a change of
+    // buffer is scheduled ahead.
+    const since: number[] = [Number.NEGATIVE_INFINITY];
+    const sounds: (BufferRef | null)[] = [resolve(init['buffer'])];
+    const soundAt = (time: number): BufferRef | null => {
+      let index = since.length - 1;
+      while (index > 0 && since[index]! > time) index--;
+      return sounds[index]!;
+    };
 
     const stopVoicesBefore = (time: number) => {
       for (const voice of voices) if (voice.startTime <= time) stopVoice(voice, time);
@@ -1936,14 +2045,37 @@ export const sampler = defineNode({
         gain: out.gain,
         // Voices already sounding follow speed changes; the rest are read when a voice starts.
         speed(value, at) {
-          for (const voice of voices) voice.source.playbackRate.setValueAtTime(value as number, at);
+          for (const voice of voices) {
+            voice.source.playbackRate.setValueAtTime(value as number, at);
+            noteRate(voice, value as number, at, context.audio.sampleRate);
+          }
         },
         start() {},
         end() {},
         loop() {},
+        loopStart() {},
+        loopEnd() {},
         reverse() {},
       },
+      options: {
+        buffer(value, at) {
+          const next = resolve(value);
+          // Changes scheduled for later than this one are replaced by it; ones now in the past go.
+          while (since.length > 1 && since[since.length - 1]! >= at) {
+            since.pop();
+            sounds.pop();
+          }
+          since.push(at);
+          sounds.push(next);
+          const now = context.audio.currentTime;
+          while (since.length > 1 && since[1]! <= now) {
+            since.shift();
+            sounds.shift();
+          }
+        },
+      },
       trigger(options, at) {
+        const ref = soundAt(at);
         const buffer = ref?.buffer;
         if (!ref || !buffer) return;
         const number = (name: string) =>
@@ -1972,6 +2104,15 @@ export const sampler = defineNode({
         const reverse = flag('reverse');
         const loop = flag('loop');
         const from = reverse ? total - end : start;
+        // The part that repeats, in seconds of the buffer the voice plays: the loop points where
+        // they fall inside the region, or all of it.
+        let repeats: readonly [number, number] | null = loop ? [from, from + length] : null;
+        if (loop) {
+          const inside = (time: number) => Math.min(Math.max(time, start), end);
+          const first = inside(number('loopStart'));
+          const last = inside(number('loopEnd'));
+          if (last > first) repeats = reverse ? [total - last, total - first] : [first, last];
+        }
 
         if (choke) {
           stopVoicesBefore(at);
@@ -1980,9 +2121,10 @@ export const sampler = defineNode({
           if (oldest) stopVoice(oldest, at);
         }
 
+        const speed = number('speed');
         const source = new AudioBufferSourceNode(context.audio, {
           buffer: reverse ? reversed(buffer) : buffer,
-          playbackRate: number('speed'),
+          playbackRate: speed,
         });
         const velocity = typeof options['velocity'] === 'number' ? options['velocity'] : 1;
         const level = velocity === 1 ? null : new GainNode(context.audio, { gain: velocity });
@@ -1993,15 +2135,26 @@ export const sampler = defineNode({
           source.connect(out);
         }
 
-        if (loop) {
+        if (repeats) {
           source.loop = true;
-          source.loopStart = from;
-          source.loopEnd = from + length;
+          source.loopStart = repeats[0];
+          source.loopEnd = repeats[1];
           source.start(at, from);
         } else {
           source.start(at, from, length);
         }
-        const voice: Voice = { source, startTime: at, stopTime: Infinity };
+        const voice: Voice = {
+          source,
+          startTime: at,
+          stopTime: Infinity,
+          from,
+          length,
+          loop: repeats,
+          reverse,
+          total,
+          times: [at],
+          rates: [speed],
+        };
         if (typeof options['duration'] === 'number') stopVoice(voice, at + options['duration']);
         voices.add(voice);
         source.onended = () => {
@@ -2012,6 +2165,17 @@ export const sampler = defineNode({
       },
       release(_options, at) {
         stopVoicesBefore(at);
+      },
+      silence(at) {
+        // every voice, those due to start later too (a voice stopped before it starts is never heard)
+        for (const voice of voices) stopVoice(voice, at);
+      },
+      buffer: () => sounds[sounds.length - 1] ?? null,
+      playheads(at, into) {
+        for (const voice of voices) {
+          const position = positionOf(voice, at);
+          if (!Number.isNaN(position)) into.push(position);
+        }
       },
       dispose() {
         for (const voice of voices) {
@@ -2650,6 +2814,290 @@ export function randomEnvelope(length: number, source?: RandomSource): number[] 
   // Four zeros in a row is next to impossible, but dividing by it would give NaN.
   if (sum === 0) return parts.map(() => length / 4);
   return parts.map((part) => (part * length) / sum);
+}`}],native:[]},waveformPeaks:{parts:[{file:`src/util/waveform.ts`,line:155,endLine:170,code:`/**
+ * Reduces a sound, or a range of it, to the lowest and highest sample in each of \`buckets\` equal
+ * parts, for drawing a waveform: one bucket per pixel column, a line from \`min\` to \`max\`.
+ *
+ * Every sample in the range is read once, so the time taken grows with the length of the range
+ * (times the number of channels for \`'mix'\`) and not with the number of buckets. For a long sound
+ * that is redrawn often, as on zoom and scroll, use \`createWaveformCache\`, which gives the same
+ * numbers faster.
+ *
+ * A range that reaches outside the sound gives 0 for the buckets outside. When there are more
+ * buckets than samples, neighbouring buckets repeat a sample.
+ */
+export function waveformPeaks(source: AudioSource, options: WaveformOptions): Waveform {
+  const audio = audioData(source);
+  return reduce(audio, options, reduceRaw, viewOf(audio, options.channel ?? 'mix'));
+}`}],native:[]},createWaveformCache:{parts:[{file:`src/util/waveform.ts`,line:225,endLine:287,code:`/**
+ * Prepares a sound for being drawn again and again at different zooms. \`peaks()\` gives what
+ * \`waveformPeaks\` gives (the same lowest and highest values exactly; RMS to within rounding), in a
+ * time that grows with the number of buckets and hardly at all with the length of the sound.
+ *
+ * It keeps the reduction of every block of \`blockSize\` frames, then of every two blocks, every
+ * four, and so on. A bucket is put together from the largest blocks that fit inside it, and from
+ * the samples themselves at its two ends, so at most \`2 * blockSize\` samples are read per bucket.
+ * The levels for a channel (or for the mix) are made the first time it is asked for: one pass over
+ * the sound. They take about \`24 / blockSize\` bytes per frame: 1.3 MB for five minutes at 48 kHz.
+ *
+ * The cache does not notice the samples changing. Make a new one when the sound does (the buffer
+ * store's \`ready\` event says when).
+ */
+export function createWaveformCache(
+  source: AudioSource,
+  options: { blockSize?: number } = {},
+): WaveformCache {
+  const audio = audioData(source);
+  const blockSize = Math.max(16, Math.floor(options.blockSize ?? 256));
+  const built = new Map<number | 'mix', { view: View; levels: Level[] }>();
+
+  return {
+    peaks(request) {
+      const channel = request.channel ?? 'mix';
+      let entry = built.get(channel);
+      if (!entry) {
+        const view = viewOf(audio, channel);
+        entry = { view, levels: buildLevels(view, blockSize) };
+        built.set(channel, entry);
+      }
+      const levels = entry.levels;
+      const range = (view: View, a: number, b: number, into: Reduction): void => {
+        let p = a;
+        while (p < b) {
+          if (p % blockSize !== 0 || p + blockSize > b) {
+            // Not on a block, or less than a block left: read samples up to the next block or the end.
+            const next = Math.min(b, (Math.floor(p / blockSize) + 1) * blockSize);
+            reduceRaw(view, p, next, into);
+            p = next;
+            continue;
+          }
+          // The largest block that starts here and ends inside the range.
+          let k = 0;
+          while (
+            k + 1 < levels.length &&
+            p % levels[k + 1]!.size === 0 &&
+            p + levels[k + 1]!.size <= b
+          ) {
+            k++;
+          }
+          const level = levels[k]!;
+          const index = p / level.size;
+          if (level.min[index]! < into.min) into.min = level.min[index]!;
+          if (level.max[index]! > into.max) into.max = level.max[index]!;
+          into.squares += level.squares[index]!;
+          p += level.size;
+        }
+      };
+      return reduce(audio, request, range, entry.view);
+    },
+  };
+}`}],native:[]},sliceGrid:{parts:[{file:`src/util/slices.ts`,line:26,endLine:33,code:`/**
+ * Slice boundaries for a sound cut into equal parts: \`count\` slices need \`count + 1\` boundaries, in
+ * seconds. \`offset\` moves the whole grid later, for a sound whose first hit is not at its start.
+ */
+export function sliceGrid(seconds: number, count: number, offset = 0): number[] {
+  const slices = Math.min(MAX_SLICES, Math.max(1, Math.floor(count)));
+  return Array.from({ length: slices + 1 }, (_, index) => offset + (seconds * index) / slices);
+}`}],native:[]},sliceByTempo:{parts:[{file:`src/util/slices.ts`,line:35,endLine:56,code:`/**
+ * Slice boundaries for a sound played to a steady beat: one every \`step\` at \`bpm\`, from \`offset\`
+ * (where the first hit is) to the end of the sound, which is the last boundary.
+ */
+export function sliceByTempo(
+  seconds: number,
+  bpm: number,
+  step: Duration = '1/16',
+  offset = 0,
+): number[] {
+  const length = beatsToSeconds(durationToBeats(step), bpm);
+  if (!(length > 0) || !Number.isFinite(length)) {
+    throw new RangeError(\`sliceByTempo needs a tempo and a step longer than nothing.\`);
+  }
+  const boundaries: number[] = [];
+  // The last step may be cut short by the end, but not to less than a click.
+  for (let i = 0; i < MAX_SLICES && offset + i * length < seconds - MIN_SLICE; i++) {
+    boundaries.push(offset + i * length);
+  }
+  boundaries.push(seconds);
+  return boundaries;
+}`}],native:[]},detectOnsets:{parts:[{file:`src/util/onsets.ts`,line:25,endLine:137,code:`/**
+ * Finds where sounds begin: the times, in seconds, at which the level jumps. For cutting a recording
+ * at its hits (\`sliceByOnsets\`) or showing them.
+ *
+ * It measures energy in steps of about 3 ms, over the whole signal and over its high frequencies
+ * alone (so a hi-hat over a ringing kick is found), and reports a time when the 12 ms that follow
+ * are louder than the 23 ms before by more than the sensitivity asks. The time is then moved to the
+ * first sample that rises above what came just before. Before the start of the sound counts as
+ * silence, so a sound that begins at once has an onset at its start, and so, at the default
+ * sensitivity and above, does one that fades in from nothing, near where it becomes audible.
+ *
+ * The same input always gives the same answer. All channels are averaged first. It reads every
+ * sample three times and keeps two numbers per 3 ms, so a five-minute sound takes tens of
+ * milliseconds. A sound that swells slowly out of another has no onset to find; a low note below
+ * about 30 Hz can be mistaken for hits at the highest sensitivity.
+ */
+export function detectOnsets(source: AudioSource, options: OnsetOptions = {}): number[] {
+  const { sampleRate, channels } = audioData(source);
+  const total = channels[0]?.length ?? 0;
+  const sensitivity = Math.min(1, Math.max(0, options.sensitivity ?? 0.5));
+  const minGap = Math.max(0, options.minGap ?? 0.05);
+  const first = Math.min(total, Math.max(0, Math.round((options.start ?? 0) * sampleRate)));
+  const last = Math.min(
+    total,
+    Math.max(first, Math.round((options.end ?? total / sampleRate) * sampleRate)),
+  );
+  const hop = Math.max(8, Math.round(sampleRate * 0.0029));
+  // What comes just before \`start\` is read too, so a sound already going there is not an onset.
+  const origin = Math.max(0, first - BEHIND * hop);
+  const hops = Math.ceil((last - origin) / hop);
+  if (hops === 0 || channels.length === 0) return [];
+
+  const scale = 1 / channels.length;
+  const sample = (index: number): number => {
+    let value = 0;
+    for (let c = 0; c < channels.length; c++) value += channels[c]![index]!;
+    return value * scale;
+  };
+
+  // Running totals of energy per hop: of the signal, and of its sample-to-sample difference, which
+  // is the signal with its low frequencies turned down.
+  const full = new Float64Array(hops + 1);
+  const high = new Float64Array(hops + 1);
+  let before = 0;
+  for (let k = 0; k < hops; k++) {
+    let energy = 0;
+    let edges = 0;
+    const end = Math.min(last, origin + (k + 1) * hop);
+    for (let i = origin + k * hop; i < end; i++) {
+      const value = sample(i);
+      energy += value * value;
+      edges += (value - before) * (value - before);
+      before = value;
+    }
+    full[k + 1] = full[k]! + energy;
+    high[k + 1] = high[k]! + edges;
+  }
+
+  /** Mean energy per hop of hops \`from\` up to \`to\`. Hops before the start are silence. */
+  const mean = (sums: Float64Array, from: number, to: number): number =>
+    (sums[Math.min(hops, Math.max(0, to))]! - sums[Math.min(hops, Math.max(0, from))]!) /
+    (to - from);
+
+  const loudest = (sums: Float64Array): number => {
+    let most = 0;
+    for (let k = 0; k < hops; k++) most = Math.max(most, mean(sums, k, k + AHEAD));
+    return most;
+  };
+  const jump = 10 ** ((15 - 12 * sensitivity) / 10);
+  const gate = 10 ** (-(20 + 40 * sensitivity) / 10);
+  const bands = [full, high].map((sums) => ({ sums, loudest: loudest(sums) }));
+
+  const rises = (k: number): boolean =>
+    bands.some(({ sums, loudest: most }) => {
+      if (most <= 0) return false;
+      const ahead = mean(sums, k, k + AHEAD);
+      const behind = mean(sums, k - BEHIND, k);
+      // The floor keeps near-silence before a hit from making every hit an enormous jump, and
+      // noise in near-silence from being one.
+      const floor = most * 1e-6;
+      return ahead >= most * gate && ahead + floor >= (behind + floor) * jump;
+    });
+
+  const peak = (from: number, to: number): number => {
+    let most = 0;
+    for (let i = Math.max(origin, from); i < Math.min(last, to); i++) {
+      most = Math.max(most, Math.abs(sample(i)));
+    }
+    return most;
+  };
+
+  /** The first sample of the hit that hop \`k\` sees coming: the first to rise above what came before. */
+  const refine = (k: number): number => {
+    const from = Math.max(first, origin + k * hop);
+    const to = Math.min(last, origin + (k + AHEAD) * hop);
+    const threshold = Math.max(peak(from - AHEAD * hop, from), 0.2 * peak(from, to));
+    for (let i = from; i < to; i++) if (Math.abs(sample(i)) > threshold) return i;
+    // Nothing stands out sample by sample (a hit under something louder): the newest hop in view.
+    return Math.max(first, Math.min(last - 1, origin + (k + AHEAD - 1) * hop));
+  };
+
+  const onsets: number[] = [];
+  let next = 0;
+  for (let k = 0; k < hops; k++) {
+    // Not a hop whose view ends before \`start\`, nor one inside the gap after the last onset.
+    if (origin + (k + AHEAD) * hop <= first || origin + k * hop < next || !rises(k)) continue;
+    const frame = refine(k);
+    onsets.push(frame / sampleRate);
+    // Not again until this hit has left the window, nor within the gap asked for.
+    next = Math.max(frame + minGap * sampleRate, frame + (AHEAD + 1) * hop);
+  }
+  return onsets;
+}`}],native:[]},sliceByOnsets:{parts:[{file:`src/util/slices.ts`,line:58,endLine:69,code:`/**
+ * Slice boundaries where the hits of a sound begin, found by \`detectOnsets\` (which the options go
+ * to): the start of the sound, every onset, and the end.
+ */
+export function sliceByOnsets(source: AudioSource, options: OnsetOptions = {}): number[] {
+  const audio = audioData(source);
+  const duration = (audio.channels[0]?.length ?? 0) / audio.sampleRate;
+  const onsets = detectOnsets(audio, options).filter(
+    (time) => time >= MIN_SLICE && time <= duration - MIN_SLICE,
+  );
+  return [0, ...onsets.slice(0, MAX_SLICES - 1), duration];
+}`}],native:[]},addSlice:{parts:[{file:`src/util/slices.ts`,line:71,endLine:82,code:`/**
+ * The boundaries with one more, at \`time\`. Nothing is added within a millisecond of a boundary that
+ * is already there, or (with \`duration\` given) outside the sound. Returns a new list.
+ */
+export function addSlice(boundaries: readonly number[], time: number, duration?: number): number[] {
+  const current = normalizeSlices(boundaries, duration);
+  if (!Number.isFinite(time) || time < 0 || (duration !== undefined && time > duration)) {
+    return current;
+  }
+  if (current.some((other) => Math.abs(other - time) < MIN_SLICE)) return current;
+  return normalizeSlices([...current, time]);
+}`}],native:[]},moveSlice:{parts:[{file:`src/util/slices.ts`,line:84,endLine:105,code:`/**
+ * The boundaries with the one at \`index\` moved to \`time\`. It stays between its neighbours, a
+ * millisecond clear of each (and, with \`duration\` given, inside the sound), so the boundaries keep
+ * their order and their number while one is dragged. Returns a new list.
+ */
+export function moveSlice(
+  boundaries: readonly number[],
+  index: number,
+  time: number,
+  duration?: number,
+): number[] {
+  const current = normalizeSlices(boundaries, duration);
+  if (!Number.isInteger(index) || index < 0 || index >= current.length || !Number.isFinite(time)) {
+    return current;
+  }
+  const low = index === 0 ? 0 : current[index - 1]! + MIN_SLICE;
+  const high =
+    index === current.length - 1 ? (duration ?? Infinity) : current[index + 1]! - MIN_SLICE;
+  // Neighbours too close to move between: it stays where it is.
+  if (high >= low) current[index] = Math.min(Math.max(time, low), high);
+  return current;
+}`}],native:[]},removeSlice:{parts:[{file:`src/util/slices.ts`,line:107,endLine:114,code:`/** The boundaries without the one at \`index\`. Returns a new list. */
+export function removeSlice(
+  boundaries: readonly number[],
+  index: number,
+  duration?: number,
+): number[] {
+  return normalizeSlices(boundaries, duration).filter((_, at) => at !== index);
+}`}],native:[]},normalizeSlices:{parts:[{file:`src/util/slices.ts`,line:14,endLine:24,code:`/**
+ * Slice boundaries as a buffer wants them: only finite numbers, in ascending order, each one once,
+ * and with \`duration\` given, none outside the sound (those are moved to its start or end).
+ */
+export function normalizeSlices(boundaries: readonly number[], duration?: number): number[] {
+  const inside = boundaries
+    .filter((time) => Number.isFinite(time))
+    .map((time) => (duration === undefined ? time : Math.min(Math.max(time, 0), duration)))
+    .sort((a, b) => a - b);
+  return inside.filter((time, index) => index === 0 || time !== inside[index - 1]);
+}`}],native:[]},sliceAt:{parts:[{file:`src/util/slices.ts`,line:116,endLine:123,code:`/** Which slice a time falls in: the number to give \`trigger({ slice })\`. -1 outside every slice. */
+export function sliceAt(boundaries: readonly number[], time: number): number {
+  if (boundaries.length < 2 || !(time >= boundaries[0]!)) return -1;
+  for (let index = 0; index < boundaries.length - 1; index++) {
+    if (time < boundaries[index + 1]!) return index;
+  }
+  return -1;
 }`}],native:[]},scale:{parts:[{file:`src/util/music.ts`,line:27,endLine:52,code:`/**
  * Maps \`value\` from the input range to the output range.
  * - linear: ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin. Not rounded.

@@ -240,7 +240,9 @@ export interface Transport {
 
   /**
    * Calls back on an animation frame at the moment each sequence event is heard. Use this, never the
-   * sequence callback, to move playheads: sequence callbacks run ahead of the sound.
+   * sequence callback, to move playheads: sequence callbacks run ahead of the sound. A scope's view
+   * hears only that scope's sequences and its listeners go when the scope is disposed; the engine's
+   * view hears every scope's. Steps not yet heard when the transport stops or pauses are dropped.
    */
   onDisplay(listener: (event: SequenceEvent) => void): Unsubscribe;
 

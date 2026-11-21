@@ -1722,11 +1722,22 @@ const stop = scope.transport.get('steps').on('step', (ev) =&gt; {
           on that frame, in time order.
         </p>
         <p>
+          Like a <code>step</code> listener, it belongs to the view it was added through. A scope's
+          <code>scope.transport.onDisplay</code> hears only that scope's sequences, and is removed
+          when the scope is disposed. <code>engine.transport.onDisplay</code> hears every scope's. A
+          listener added while a script builds is added again by each rebuild, so keep the function
+          it returns and call it first, or add it from the page rather than the script.
+        </p>
+        <p>
+          Stopping or pausing the transport drops the steps still waiting to be heard after that
+          moment, so a playhead does not keep moving once you press stop.
+        </p>
+        <p>
           It is a page feature. It needs <code>requestAnimationFrame</code> and a live audio
           context, so it never calls back during an offline render or where there are no animation
           frames, and a script in a <a href="#sandbox">sandbox</a>
           does not have it. A listener that throws is logged to the console and the others still
-          run. Listeners are removed when the engine is disposed.
+          run. Listeners are removed when their scope or the engine is disposed.
         </p>
 
         <h3 id="callback-errors">When a callback throws</h3>

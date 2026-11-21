@@ -502,7 +502,8 @@ export class TransportImpl {
    * order added, or null when there are none. Replaced, never changed in place, like a sequence's.
    */
   private stepListeners: readonly { owner: Owner; listener: StepListener }[] | null = null;
-  private displayListeners = new Set<(event: SequenceEvent) => void>();
+  /** `onDisplay` listeners with the owner of the view each was added through. */
+  private displayListeners = new Set<{ owner: Owner; listener: (event: SequenceEvent) => void }>();
   private displayQueue: SequenceEvent[] = [];
   private frame: number | null = null;
 
@@ -721,6 +722,7 @@ export class TransportImpl {
     const resumeFrom = this.processing ? this.processed + 4 * EPSILON : this.processed;
     this.restPosition = next === 'paused' ? Math.max(position, resumeFrom) : 0;
     this.ticker.stop();
+    this.dropDisplayFrom(time);
     this.events.emit('stop', { time, beat: position, bar: this.barOf(position) });
   }
 
@@ -1143,6 +1145,11 @@ export class TransportImpl {
   release(owner: Owner): void {
     this.clearOwned(owner);
     this.views.delete(owner);
+    if (owner !== null) {
+      for (const entry of this.displayListeners) {
+        if (entry.owner === owner) this.displayListeners.delete(entry);
+      }
+    }
     if (owner !== null && this.stepListeners !== null) {
       const rest = this.stepListeners.filter((entry) => entry.owner !== owner);
       this.stepListeners = rest.length > 0 ? rest : null;
@@ -1172,11 +1179,20 @@ export class TransportImpl {
 
   // --- Display sync -------------------------------------------------------------------------------
 
-  onDisplay(listener: (event: SequenceEvent) => void): Unsubscribe {
-    this.displayListeners.add(listener);
+  /** Calls back once a step is heard: for an owner's sequences only, or with no owner everyone's. */
+  onDisplay(owner: Owner, listener: (event: SequenceEvent) => void): Unsubscribe {
+    if (typeof listener !== 'function')
+      throw new TypeError('An onDisplay listener must be a function.');
+    const entry = { owner, listener };
+    this.displayListeners.add(entry);
     return () => {
-      this.displayListeners.delete(listener);
+      this.displayListeners.delete(entry);
     };
+  }
+
+  /** Drops steps waiting to be shown that would be heard at or after `time`: they will not be. */
+  private dropDisplayFrom(time: number): void {
+    this.displayQueue = this.displayQueue.filter((event) => event.time < time);
   }
 
   private requestFrame(): void {
@@ -1189,9 +1205,11 @@ export class TransportImpl {
       let due = 0;
       while (due < this.displayQueue.length && this.displayQueue[due]!.time <= heard) due++;
       for (const event of this.displayQueue.splice(0, due)) {
-        for (const listener of this.displayListeners) {
+        const owner = (event.sequence as unknown as SequenceImpl).owner;
+        for (const entry of this.displayListeners) {
+          if (entry.owner !== null && entry.owner !== owner) continue;
           try {
-            listener(event);
+            entry.listener(event);
           } catch (error) {
             console.error('cracked-up: an onDisplay listener threw', error);
           }
@@ -1393,7 +1411,7 @@ export class TransportView {
   }
 
   onDisplay(listener: (event: SequenceEvent) => void): Unsubscribe {
-    return this.impl.onDisplay(listener);
+    return this.impl.onDisplay(this.owner, listener);
   }
 
   toAudioTime(position: Position): number {

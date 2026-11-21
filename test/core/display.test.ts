@@ -105,6 +105,62 @@ describe('transport.onDisplay', () => {
     }
   });
 
+  it("a scope's onDisplay hears only that scope's sequences, and goes when the scope is disposed", async (ctx) => {
+    const { engine, context, running } = await liveEngine();
+    if (!running) ctx.skip();
+    try {
+      engine.transport.bpm = 240;
+      const one = engine.root.scope('one');
+      const two = engine.root.scope('two');
+      one.transport.sequence('a', { steps: 4, step: '1/16' }, () => undefined);
+      two.transport.sequence('b', { steps: 4, step: '1/16' }, () => undefined);
+      const heardByOne: string[] = [];
+      const heardByAll: string[] = [];
+      let afterDispose = 0;
+      one.transport.onDisplay((ev) => heardByOne.push(ev.sequence.name ?? ''));
+      engine.transport.onDisplay((ev) => heardByAll.push(ev.sequence.name ?? ''));
+      two.transport.onDisplay(() => afterDispose++);
+      engine.transport.start();
+      for (let waited = 0; heardByOne.length < 2 && waited < 3000; waited += 50) await wait(50);
+      two.dispose();
+      afterDispose = 0;
+      await wait(300);
+      engine.transport.stop();
+
+      expect(heardByOne.length).toBeGreaterThan(0);
+      expect(new Set(heardByOne)).toEqual(new Set(['a']));
+      expect(new Set(heardByAll)).toEqual(new Set(['a', 'b']));
+      expect(afterDispose).toBe(0);
+    } finally {
+      engine.dispose();
+      await context.close();
+    }
+  });
+
+  it('stopping drops the steps not yet heard: nothing is shown after stop()', async (ctx) => {
+    const { engine, context, running } = await liveEngine();
+    if (!running) ctx.skip();
+    try {
+      engine.transport.bpm = 240;
+      // a long look-ahead, so steps are queued well before they are heard
+      engine.transport.lookahead = 0.5;
+      engine.transport.sequence('beat', { steps: 8, step: '1/16' }, () => undefined);
+      let shown = 0;
+      engine.transport.onDisplay(() => shown++);
+      engine.transport.start();
+      for (let waited = 0; shown < 1 && waited < 3000; waited += 20) await wait(20);
+      engine.transport.stop();
+      const atStop = shown;
+      await wait(700);
+
+      expect(atStop).toBeGreaterThan(0);
+      expect(shown).toBe(atStop);
+    } finally {
+      engine.dispose();
+      await context.close();
+    }
+  });
+
   it('never calls back while rendering offline', async () => {
     const engine = await offlineEngine(0.5);
     engine.transport.bpm = 240;

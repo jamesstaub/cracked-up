@@ -229,6 +229,11 @@ Demo and docs:
 
 ### Fixed
 
+- `transport.onDisplay` added through a scope's view hears only that scope's sequences and is
+  removed when the scope is disposed, like a `step` listener; `engine.transport.onDisplay` still
+  hears every scope's. Stopping or pausing the transport drops the steps still waiting to be heard,
+  so a playhead no longer moves on after stop.
+
 - **`ramp` during a ramp.** `ramp` without `from` starts from the value the parameter has at `at`,
   as its documentation said, and the ramp that was in flight stops there. It used to jump to the
   earlier ramp's target first.

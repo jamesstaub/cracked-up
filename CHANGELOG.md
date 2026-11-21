@@ -164,6 +164,10 @@ Demo and docs:
 - The guide's part on buses is rewritten around one picture of a bus (input, inserts, level, output,
   destination) and six routings, each with its graph drawn from the example's own code. The docs
   say "a chain from the bus" for `bus.chain()` and "destination" for `bus.to()` throughout.
+- **`engine.stopAll({ fade?, at? })`** stops everything at once: the transport stops, the main
+  output fades out, every node is cut off (voices, envelopes, loops, and the tails of delays and
+  reverbs), and the output fades back in. Nothing is rebuilt. A node type says what silencing means
+  for it with `silence(at)` on what `build` returns; without one, `release` is called.
 - Guide sections on branching from existing nodes with a selection's `chain()`, and on
   `transport.onDisplay` for drawing what is heard (it reports only steps whose callback ran, and
   never in an offline render or a sandbox). `onDisplay` is in the editor's completion and the

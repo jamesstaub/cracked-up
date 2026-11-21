@@ -332,6 +332,10 @@ export const sampler = defineNode({
       release(_options, at) {
         stopVoicesBefore(at);
       },
+      silence(at) {
+        // every voice, those due to start later too (a voice stopped before it starts is never heard)
+        for (const voice of voices) stopVoice(voice, at);
+      },
       buffer: () => sounds[sounds.length - 1] ?? null,
       playheads(at, into) {
         for (const voice of voices) {

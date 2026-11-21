@@ -398,6 +398,25 @@ export class NodeImpl {
     return into;
   }
 
+  /**
+   * Cuts off everything the node sounds or holds from `at` (see `BuiltNode.silence`): a macro's inner
+   * nodes each in turn, an ordinary node through its own `silence`, or its `release` if it has none.
+   * A node that fails is logged and the rest go on, since this is what a host calls to make it quiet.
+   */
+  silence(at: number): void {
+    if (this.disposed) return;
+    if (this.entry.isMacro) {
+      for (const node of this.inner) node.silence(at);
+      return;
+    }
+    try {
+      if (this.built.silence) this.built.silence(at);
+      else this.built.release?.({}, at);
+    } catch (error) {
+      console.error(`cracked-up: silencing ${this.type} "${this.id}" failed`, error);
+    }
+  }
+
   // --- Lifetime -----------------------------------------------------------------------------------
 
   dispose(): void {

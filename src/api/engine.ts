@@ -132,6 +132,18 @@ export interface Engine {
   select(selector: string): Selection;
   bus(name: string): Bus;
 
+  /**
+   * Stops everything: the transport stops, the main output fades out over `fade` seconds (default
+   * 0.03), and when it is silent every node in every scope is cut off (`BuiltNode.silence`): voices,
+   * envelopes, loops, and the tails of delays and reverbs. The output then fades back in, so the next
+   * thing played is heard; a source that runs by itself, such as an oscillator whose gate is open, is
+   * heard again too. Nothing is rebuilt and no setting changes. Returns the audio time at which the
+   * cut happens. A delay or reverb keeps its own output closed until its old tail has run out, so an
+   * echo of something played straight after can be missing for up to that long. `at` starts it at
+   * another audio time; inside a transport callback it defaults to the event's time.
+   */
+  stopAll(options?: { fade?: number; at?: number }): number;
+
   /** Resumes a live context. Call from a user gesture; browsers start contexts suspended. */
   resume(): Promise<void>;
 

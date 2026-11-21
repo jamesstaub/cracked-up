@@ -24,7 +24,8 @@ describe('transport.onDisplay', () => {
         shown.push({ event, at: context.currentTime - (context.outputLatency ?? 0) });
       });
       engine.transport.start();
-      await wait(700);
+      // (up to 3 s for four steps: frames come late on a busy machine)
+      for (let waited = 0; shown.length < 4 && waited < 3000; waited += 50) await wait(50);
       engine.transport.stop();
 
       expect(shown.length).toBeGreaterThanOrEqual(4);

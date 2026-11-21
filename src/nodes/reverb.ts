@@ -1,5 +1,6 @@
 import type { BufferSource } from '../api';
 import { defineNode } from '../define';
+import { closeFor } from './tail';
 import { createMix, mixParam } from './mix';
 
 /**
@@ -92,16 +93,24 @@ export const reverb = defineNode({
       else ref.ready.then(use, () => {}); // the buffer store reports load failures
     }
 
+    // Shut when the node is silenced, for as long as the tail lasts, so it empties (see tail.ts).
+    const into = new GainNode(audio);
+    const out = new GainNode(audio);
     input.connect(mix.dry).connect(output);
-    input.connect(convolver).connect(mix.wet).connect(output);
+    input.connect(into).connect(convolver).connect(out).connect(mix.wet).connect(output);
 
     return {
       input,
       output,
       params: { mix: mix.handler },
+      silence(at) {
+        closeFor([into, out], at, (convolver.buffer?.duration ?? 0) + 0.05);
+      },
       dispose() {
         disposed = true;
-        for (const node of [input, output, convolver, mix.dry, mix.wet]) node.disconnect();
+        for (const node of [input, output, into, out, convolver, mix.dry, mix.wet]) {
+          node.disconnect();
+        }
       },
     };
   },

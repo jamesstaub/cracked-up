@@ -294,6 +294,23 @@ export class EngineImpl {
     return this.root.chain();
   }
 
+  stopAll(options: { fade?: number; at?: number } = {}): number {
+    const fade = Math.max(0, options.fade ?? 0.03);
+    const now = this.resolveAt(options.at);
+    const cut = now + fade;
+    this.transport.stop({ at: now });
+    const main = this.root.busImpl('main').gain;
+    const level = main.value;
+    main.set(0, fade > 0 ? { at: now, glide: fade } : { at: now });
+    const visit = (scope: ScopeImpl): void => {
+      for (const node of scope.nodes) node.silence(cut);
+      for (const child of scope.children) visit(child);
+    };
+    visit(this.root);
+    main.set(level, fade > 0 ? { at: cut, glide: fade } : { at: cut });
+    return cut;
+  }
+
   select(selector: string): SelectionImpl {
     return this.root.select(selector);
   }

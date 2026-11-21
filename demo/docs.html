@@ -952,6 +952,35 @@ __.transport.every('1/4', () => __('#blip').trigger({ duration: 0.08 }));</code>
           takes.
         </p>
 
+        <h3 id="stop-all">Stopping everything: <code>engine.stopAll()</code></h3>
+        <p>
+          Stopping the transport stops new steps, but what is already sounding goes on: a looping
+          sample, a held note, the echoes in a delay and the tail of a reverb.
+          <code>engine.stopAll()</code> is the button that makes everything quiet. It stops the
+          transport, fades the main output out over <code>fade</code> seconds (0.03 by default, so
+          there is no click), cuts off every node in every scope once it is silent, and fades the
+          output back in.
+        </p>
+        <pre data-static><code>stopButton.onclick = () =&gt; engine.stopAll();
+// a longer fade, from a given audio time
+engine.stopAll({ fade: 0.2, at: engine.context.currentTime + 0.1 });</code></pre>
+        <p>
+          Voices stop, envelopes drop to 0, and whatever was already scheduled after the cut is
+          cancelled, which includes the notes a sequence had queued a moment ahead. Delays and
+          reverbs let go of their tails: each keeps its own input and output shut until what it held
+          has run out, so an echo of something played straight after can be missing for that long. A
+          looper stops recording and playing and keeps its loop; <code>call('play')</code> brings it
+          back. Nothing is rebuilt and no parameter changes, and a source that runs by itself, such
+          as an oscillator made with its gate open, is heard again when the output comes back. It
+          returns the audio time of the cut.
+        </p>
+        <p>
+          A node type of your own can say what silencing means for it with
+          <code>silence(at)</code> in what its <code>build</code> returns. Without it,
+          <code>stopAll</code> calls <code>release</code>. A macro's inner nodes are silenced one by
+          one.
+        </p>
+
         <h2 id="buffers">Samplers and where their audio comes from</h2>
         <p>
           A sampler plays a <em>buffer</em>: a piece of recorded sound held in memory. The engine

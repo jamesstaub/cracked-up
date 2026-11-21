@@ -418,6 +418,14 @@ export interface BuiltNode {
   params: Record<string, AudioParam | ParamHandler>;
   trigger?(options: At & Record<string, unknown>, at: number): void;
   release?(options: ReleaseOptions, at: number): void;
+  /**
+   * Cuts off, from the audio time `at`, everything this node is sounding or holding: voices stop
+   * without a release, an envelope drops to 0, a delay or reverb lets go of its tail, and whatever was
+   * scheduled after `at` is cancelled. The node stays as it is otherwise (parameters, connections,
+   * options), ready to be played again. `engine.stopAll()` calls it on every node once the output has
+   * faded out, so it may be abrupt. Omitted: `release` is called in its place.
+   */
+  silence?(at: number): void;
   /** Extra operations, reachable as `node.call(name, args)` and as `call` commands. */
   methods?: Record<string, (args: Readonly<Record<string, unknown>>, at: number) => void>;
   /**

@@ -96,6 +96,11 @@ export const noise = defineNode({
       release(_options, at) {
         gate.gain.setValueAtTime(0, at);
       },
+      silence(at) {
+        // back to how it was made: a gate made closed shuts, one made open stays open
+        gate.gain.cancelScheduledValues(at);
+        gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
+      },
       dispose() {
         source.stop();
         source.disconnect();

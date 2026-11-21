@@ -151,6 +151,11 @@ export const adsr = defineNode({
       release(_options, at) {
         releaseAt(at, context.value('release', at) as number);
       },
+      silence(at) {
+        holdAt(at);
+        gain.setValueAtTime(0, at);
+        segments[segments.length - 1] = { t0: at, v0: 0, t1: at, v1: 0 };
+      },
       dispose() {
         gain.cancelScheduledValues(0);
         node.disconnect();

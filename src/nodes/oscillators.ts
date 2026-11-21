@@ -60,6 +60,11 @@ function oscillator<K extends string>(
         release(_options, at) {
           gate.gain.setValueAtTime(0, at);
         },
+        silence(at) {
+          // Back to how it was made: a gate made closed shuts, one made open stays open (a drone).
+          gate.gain.cancelScheduledValues(at);
+          gate.gain.setValueAtTime(init['gate'] === 'closed' ? 0 : 1, at);
+        },
         dispose() {
           osc.stop();
           osc.disconnect();

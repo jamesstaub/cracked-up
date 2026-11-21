@@ -264,6 +264,11 @@ export const looper = defineNode({
       release(_options, at) {
         record.set(0, record.frame(at + latency));
       },
+      silence(at) {
+        // Stops recording and playback; the loop is kept, and call('play') brings it back.
+        record.set(0, record.frame(at));
+        gate('play').set(0, record.frame(at));
+      },
       methods: {
         undo(_args, at) {
           gate('undo').pulse(record.frame(at));

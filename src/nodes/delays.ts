@@ -1,6 +1,7 @@
 import type { NodeDefinition, ParamMetaInput } from '../api';
 import { defineNode } from '../define';
 import { createMix, mixParam } from './mix';
+import { closeFor, heldBy } from './tail';
 
 interface EchoSpec {
   description: string;
@@ -57,11 +58,16 @@ function echo<K extends string>(type: K, spec: EchoSpec): NodeDefinition<K> {
       const tone = new BiquadFilterNode(audio, { type: 'lowpass', Q: -3.0103 });
       const feedback = new GainNode(audio);
       const mix = createMix(audio);
+      // Shut when the node is silenced, so the delay line empties (see tail.ts). The loop passes
+      // through the outer one, so the repeats stop being written back in as well.
+      const into = new GainNode(audio);
+      const out = new GainNode(audio);
 
       input.connect(mix.dry).connect(output);
-      input.connect(delay);
-      delay.connect(mix.wet).connect(output);
-      delay.connect(tone).connect(feedback).connect(delay);
+      input.connect(into).connect(delay);
+      delay.connect(out);
+      out.connect(mix.wet).connect(output);
+      out.connect(tone).connect(feedback).connect(delay);
 
       return {
         input,
@@ -72,8 +78,11 @@ function echo<K extends string>(type: K, spec: EchoSpec): NodeDefinition<K> {
           cutoff: tone.frequency,
           mix: mix.handler,
         },
+        silence(at) {
+          closeFor([into, out], at, heldBy(delay, 5));
+        },
         dispose() {
-          for (const node of [input, output, delay, tone, feedback, mix.dry, mix.wet]) {
+          for (const node of [input, output, into, out, delay, tone, feedback, mix.dry, mix.wet]) {
             node.disconnect();
           }
         },
@@ -127,7 +136,21 @@ export const delayline = defineNode({
   build(context) {
     // Nothing but the delay lies between input and output. A loop made through this node therefore
     // always has a delay in it, which browsers require: Firefox silences a loop that has a way round.
+    // (the gates are for silencing: shut, they let the line empty; see tail.ts)
+    const into = new GainNode(context.audio);
     const node = new DelayNode(context.audio, { maxDelayTime: 5 });
-    return { input: node, output: node, params: { time: node.delayTime } };
+    const out = new GainNode(context.audio);
+    into.connect(node).connect(out);
+    return {
+      input: into,
+      output: out,
+      params: { time: node.delayTime },
+      silence(at) {
+        closeFor([into, out], at, heldBy(node, 5));
+      },
+      dispose() {
+        for (const each of [into, node, out]) each.disconnect();
+      },
+    };
   },
 });

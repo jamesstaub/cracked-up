@@ -250,6 +250,10 @@ const view = EditorView.theme({
     borderRadius: '6px',
     boxShadow: `0 4px 16px ${v('shadow')}`,
   },
+  // A tooltip with more to say than the room it is given scrolls inside its box: CodeMirror cuts its
+  // height to the room above or below the line, and the text would otherwise spill out. (Not the
+  // completion list's own box: the docs beside it are a child laid outside it, which that would clip.)
+  '.cm-tooltip:not(.cm-tooltip-autocomplete)': { overflowY: 'auto' },
   // A gap between a tooltip and the line it is about, so it never covers the line being typed.
   '.cm-tooltip.cm-tooltip-above': { transform: 'translateY(-8px)' },
   '.cm-tooltip.cm-tooltip-below': { transform: 'translateY(8px)' },
@@ -291,7 +295,12 @@ const view = EditorView.theme({
     fontSize: '11px',
   },
   '.cm-completionIcon': { color: v('muted'), opacity: '0.8', width: '1.2em' },
-  '.cm-tooltip.cm-completionInfo': { padding: '0', maxWidth: '480px', width: 'max-content' },
+  '.cm-tooltip.cm-completionInfo': {
+    padding: '0',
+    maxWidth: '480px',
+    width: 'max-content',
+    maxHeight: 'min(24em, 50vh)',
+  },
   '.cu-signature-help .cu-doc': { padding: '4px 10px' },
 });
 

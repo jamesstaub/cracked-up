@@ -8,7 +8,7 @@ import type {
   ScopeApi,
 } from '../api';
 import { defineMacro } from '../define';
-import { pitchToFreq } from '../util/music';
+import { freqToPitch, pitchToFreq } from '../util/music';
 
 type Shape = 'sine' | 'saw' | 'square' | 'triangle';
 const SHAPES: readonly Shape[] = ['sine', 'saw', 'square', 'triangle'];
@@ -16,8 +16,19 @@ const SHAPES: readonly Shape[] = ['sine', 'saw', 'square', 'triangle'];
 /** Shared parameter set. `target(name)` says which inner nodes (by selector) a parameter drives. */
 function synthParams(
   target: (name: 'osc' | 'filter' | 'env') => string,
+  frequencyDrives: MacroParam['drives'],
 ): Record<string, MacroParam> {
   return {
+    frequency: {
+      default: pitchToFreq(48),
+      min: pitchToFreq(12),
+      max: pitchToFreq(119),
+      unit: 'hz',
+      curve: 'log',
+      description:
+        'The note a trigger with no pitch plays, in Hz (C3, 130.8 Hz, to begin). Set it on each step and the steps are a melody. A trigger with a pitch plays that note instead.',
+      drives: frequencyDrives,
+    },
     cutoff: {
       default: 2000,
       min: 20,
@@ -123,7 +134,8 @@ const shapeOption: OptionInfo = {
 const triggerOptions: Record<string, OptionInfo> = {
   pitch: {
     type: 'number',
-    description: 'MIDI note number (60 is middle C, 69 is A 440). Fractions are allowed. Required.',
+    description:
+      'MIDI note number (60 is middle C, 69 is A 440). Fractions are allowed. Omitted: the note of the frequency parameter.',
   },
   velocity: {
     type: 'number',
@@ -158,13 +170,26 @@ interface Note {
   duration: number | undefined;
 }
 
-function readNote(args: Readonly<Record<string, unknown>>): Note {
-  const pitch = args['pitch'];
-  if (typeof pitch !== 'number' || !Number.isFinite(pitch)) {
-    throw new Error('A synth note needs a numeric `pitch` (a MIDI note number).');
+/**
+ * The note a trigger asks for: its own `pitch`, else the note of the instance's `frequency` parameter at
+ * the trigger's time. `explicit` says which.
+ */
+function readNote(
+  args: Readonly<Record<string, unknown>>,
+  macro: MacroContext,
+  at: number,
+): Note & { explicit: boolean } {
+  const given = args['pitch'];
+  const explicit = given !== undefined;
+  if (explicit && (typeof given !== 'number' || !Number.isFinite(given))) {
+    throw new Error("A synth note's `pitch` must be a number (a MIDI note number).");
   }
+  const pitch = explicit
+    ? (given as number)
+    : freqToPitch(num(macro.value('frequency', at), pitchToFreq(48)));
   const duration = args['duration'];
   return {
+    explicit,
     pitch,
     velocity: Math.min(1, Math.max(0, num(args['velocity'], 1))),
     duration: typeof duration === 'number' && Number.isFinite(duration) ? duration : undefined,
@@ -183,14 +208,18 @@ export const monosynth: MacroDefinition<'monosynth'> = defineMacro({
   type: 'monosynth',
   category: 'synth',
   description:
-    'A one-voice synthesiser: an oscillator through a lowpass filter and an envelope, with an optional vibrato. A new note while one is sounding moves the pitch and retriggers the envelope, like a classic monophonic keyboard. Play it with trigger({ pitch }).',
-  params: synthParams((name) => `#${name}`),
+    'A one-voice synthesiser: an oscillator through a lowpass filter and an envelope, with an optional vibrato. A new note while one is sounding moves the pitch and retriggers the envelope, like a classic monophonic keyboard. Play it with trigger(): it plays the note of its frequency parameter, which can be set on every step for a melody, or trigger({ pitch }) for a note of its own.',
+  params: synthParams((name) => `#${name}`, [{ select: '#osc', param: 'frequency' }]),
   options: { shape: shapeOption },
   triggerOptions,
   build(__, init, macro) {
     const value = (name: string) => num(macro.value(name), 0);
     buildLfo(__, macro);
-    oscillator(__(), shapeOf(init), { id: 'osc', detune: value('detune') })
+    oscillator(__(), shapeOf(init), {
+      id: 'osc',
+      frequency: value('frequency'),
+      detune: value('detune'),
+    })
       .lowpass({ id: 'filter', frequency: value('cutoff'), q: value('resonance') })
       .adsr({
         id: 'env',
@@ -203,15 +232,15 @@ export const monosynth: MacroDefinition<'monosynth'> = defineMacro({
       .to('out');
     __('#lfo').chain().modulate('#osc', 'frequency');
   },
-  trigger(__, options) {
-    playMono(__, options);
+  trigger(__, options, macro) {
+    playMono(__, options, macro);
   },
   release(__, options) {
     __('#env').release({ at: options.at as number });
   },
   methods: {
-    noteOn(__, args, at) {
-      playMono(__, { ...args, at });
+    noteOn(__, args, at, macro) {
+      playMono(__, { ...args, at }, macro);
     },
     noteOff(__, _args, at) {
       __('#env').release({ at });
@@ -219,10 +248,25 @@ export const monosynth: MacroDefinition<'monosynth'> = defineMacro({
   },
 });
 
-function playMono(__: ScopeApi, options: Readonly<Record<string, unknown>>): void {
-  const note = readNote(options);
+/**
+ * Whether each monosynth instance's oscillator was last moved by a trigger's own pitch, away from its
+ * frequency parameter (which otherwise drives it, glides included). Keyed by the instance's scope.
+ */
+const offParam = new WeakMap<ScopeApi, boolean>();
+
+function playMono(
+  __: ScopeApi,
+  options: Readonly<Record<string, unknown>>,
+  macro: MacroContext,
+): void {
   const at = options['at'] as number;
-  __('#osc').set({ frequency: pitchToFreq(note.pitch) }, { at });
+  const note = readNote(options, macro, at);
+  // A note of its own moves the oscillator there. A trigger with none plays where the frequency
+  // parameter has it already, and the oscillator is only moved back to it after a note of its own.
+  if (note.explicit || offParam.get(__)) {
+    __('#osc').set({ frequency: pitchToFreq(note.pitch) }, { at });
+  }
+  offParam.set(__, note.explicit);
   __('#env').trigger({
     at,
     velocity: note.velocity,
@@ -299,7 +343,7 @@ function playPoly(
   at: number,
   macro: MacroContext,
 ): void {
-  const note = readNote(args);
+  const note = readNote(args, macro, at);
   const state = stateOf(__);
   const init = state.init;
   const max = Math.max(1, Math.floor(num(init['voices'], 8)));
@@ -361,8 +405,10 @@ export const polysynth: MacroDefinition<'polysynth'> = defineMacro({
   type: 'polysynth',
   category: 'synth',
   description:
-    'A several-voice synthesiser: every note gets its own oscillator, lowpass filter and envelope, so chords ring together and each note fades on its own. Play notes with trigger({ pitch }) and end them with release({ pitch }), or release() for all. When all voices are busy, the oldest note is cut short to make room.',
-  params: synthParams((name) => `.${name}`),
+    'A several-voice synthesiser: every note gets its own oscillator, lowpass filter and envelope, so chords ring together and each note fades on its own. Play notes with trigger({ pitch }) (or trigger() for the note of its frequency parameter) and end them with release({ pitch }), or release() for all. When all voices are busy, the oldest note is cut short to make room.',
+  // (its frequency drives no voice: a voice plays the note it was triggered with, which the parameter
+  // gives where the trigger has no pitch)
+  params: synthParams((name) => `.${name}`, []),
   options: {
     shape: shapeOption,
     voices: {

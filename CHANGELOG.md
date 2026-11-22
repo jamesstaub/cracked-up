@@ -176,6 +176,16 @@ Demo and docs:
   method, and a contents list that links to each part of a section and to every method, helper and
   node type.
 
+Per-step melodies and slices:
+
+- **`monosynth` and `polysynth` have a `frequency` parameter** (Hz, C3 to begin): the note a
+  `trigger()` with no `pitch` plays. Set it on each step and the steps are a melody; it glides like
+  any parameter. `trigger({ pitch })` still plays a note of its own, and on a monosynth the next
+  trigger with no pitch goes back to the parameter's note.
+- **`sampler` has a `slice` parameter**: which slice a trigger plays, counting from 1 (0, the
+  default, plays the region). Set on each step it plays a loop's slices in a new order. A trigger's
+  own `slice` option (counting from 0) still wins.
+
 ### Changed
 
 - **`scope.build()` is all or nothing.** If the builder throws, or asks for anything that cannot
@@ -227,8 +237,13 @@ Demo and docs:
   page's contents list keeps its own scroll.
 - `npm run lint` also checks that `src/editor/sources.generated.ts` is up to date.
 
+- `trigger()` on a synth no longer requires a `pitch` (see the `frequency` parameter); a `pitch`
+  that is not a number is still an error.
+
 ### Fixed
 
+- The editor's tooltips (a type's parameters, a completion's docs) scroll inside their box when
+  they have more to say than the room above or below the line; they no longer spill out of it.
 - `transport.onDisplay` added through a scope's view hears only that scope's sequences and is
   removed when the scope is disposed, like a `step` listener; `engine.transport.onDisplay` still
   hears every scope's. Stopping or pausing the transport drops the steps still waiting to be heard,

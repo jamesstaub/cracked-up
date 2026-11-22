@@ -71,6 +71,11 @@ export interface SamplerParams {
   loopStart: number;
   loopEnd: number;
   reverse: boolean;
+  /**
+   * Which slice a trigger plays, counting from 1 (wrapping past the last); 0, the default, plays the
+   * region. A trigger's own `slice` (counting from 0) wins.
+   */
+  slice: number;
   gain: number;
 }
 
@@ -139,6 +144,8 @@ export type SynthShape = 'sine' | 'saw' | 'square' | 'triangle';
 
 /** The parameters `monosynth` and `polysynth` share. */
 export interface SynthParams extends EnvelopeParams {
+  /** Hz: the note a trigger with no `pitch` plays (C3 to begin). Set on each step, a melody. */
+  frequency: number;
   /** Hz: lowpass frequency. */
   cutoff: number;
   /** Emphasis at the cutoff (the filter's q). */
@@ -170,13 +177,16 @@ export interface GateTrigger {
 }
 
 export interface SamplerTrigger extends GateTrigger {
-  /** Index into the buffer's slice boundaries. Overrides `start` and `end` for this voice. */
+  /**
+   * Index into the buffer's slice boundaries, from 0. Overrides `start` and `end`, and the `slice`
+   * parameter, for this voice.
+   */
   slice?: number;
 }
 
 export interface NoteTrigger extends GateTrigger {
-  /** MIDI note number; fractional values are allowed. */
-  pitch: number;
+  /** MIDI note number; fractional values are allowed. Omitted: the note of the `frequency` parameter. */
+  pitch?: number;
 }
 
 /** Augment this interface (declaration merging) when registering custom node types. */

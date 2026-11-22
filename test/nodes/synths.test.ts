@@ -189,17 +189,49 @@ describe('monosynth', () => {
     expect(peak(between(data, 1.51, 2))).toBe(0);
   });
 
-  it('requires a pitch', async () => {
-    const { synth, engine } = await mono(0.1);
-    const errors: string[] = [];
-    engine.on('error', (error) => errors.push(error.message));
-    expect(() => synth.trigger({})).toThrowError(/pitch/);
+  it('a pitch that is not a number is an error', async () => {
+    const { synth } = await mono(0.1);
+    // (as a script without types might write it)
+    expect(() => synth.trigger({ pitch: 'C4' as unknown as number })).toThrowError(/pitch/);
+  });
+
+  it('with no pitch it plays its frequency parameter, C3 to begin', async () => {
+    const { synth, engine } = await mono(1);
+    synth.trigger({ at: 0 });
+    const found = crossingFrequency(between(await render(engine), 0.1, 0.9));
+    expect(Math.abs(found / 130.8128 - 1)).toBeLessThan(0.01);
+  });
+
+  it('its frequency parameter, set per step, is a melody; a note of its own is played and then left', async () => {
+    const { synth, engine } = await mono(1.6, { frequency: 220 });
+    synth.trigger({ at: 0 }); // 220, the parameter
+    synth.set({ frequency: 330 }, { at: 0.4 });
+    synth.trigger({ at: 0.4 }); // 330
+    synth.trigger({ pitch: 69, at: 0.8 }); // 440, its own
+    synth.trigger({ at: 1.2 }); // back to the parameter's 330
+    const data = await render(engine);
+    for (const [from, hz] of [
+      [0.05, 220],
+      [0.45, 330],
+      [0.85, 440],
+      [1.25, 330],
+    ] as const) {
+      const found = crossingFrequency(between(data, from, from + 0.3));
+      expect(Math.abs(found / hz - 1), `${from}`).toBeLessThan(0.01);
+    }
   });
 });
 
 // ---------------------------------------------------------------------------------------------------
 
 describe('polysynth', () => {
+  it('with no pitch a note is its frequency parameter', async () => {
+    const { synth, engine } = await poly(1, { frequency: 220 });
+    synth.trigger({ at: 0 });
+    const found = crossingFrequency(between(await render(engine), 0.1, 0.9));
+    expect(Math.abs(found / 220 - 1)).toBeLessThan(0.01);
+  });
+
   it('two pitches sound together', async () => {
     const { synth, engine } = await poly(1);
     synth.trigger({ pitch: 60, at: 0 });

@@ -180,6 +180,16 @@ export const sampler = defineNode({
         'With loop on, where in the buffer playback jumps back to loopStart. At or before loopStart means the whole region repeats.',
     },
     reverse: { default: false, description: 'Plays the region backwards.' },
+    slice: {
+      default: 0,
+      min: 0,
+      max: 128,
+      step: 1,
+      unit: 'none',
+      rate: 'control',
+      description:
+        "Which slice a trigger plays, counting from 1, by the buffer's slice boundaries (wrapping past the last). 0 plays the region from start to end. Set it on each step to play a loop's slices in a new order. A trigger's own slice option (counting from 0) wins.",
+    },
     gain: { default: 1, min: 0, max: 2, unit: 'gain', description: 'Output level.' },
   },
   triggerable: true,
@@ -251,11 +261,14 @@ export const sampler = defineNode({
 
         let start = number('start');
         let end = number('end');
-        if (typeof options['slice'] === 'number') {
+        // the trigger's own slice (from 0), else the slice parameter's (from 1; 0 is none)
+        const own = options['slice'];
+        const chosen = typeof own === 'number' ? Math.floor(own) : Math.round(number('slice')) - 1;
+        if (typeof own === 'number' || chosen >= 0) {
           const boundaries = ref.slices;
           const count = boundaries.length - 1;
           if (count >= 1) {
-            const index = ((Math.floor(options['slice']) % count) + count) % count;
+            const index = ((chosen % count) + count) % count;
             start = boundaries[index]!;
             end = boundaries[index + 1]!;
           }

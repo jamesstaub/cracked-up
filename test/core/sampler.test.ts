@@ -91,6 +91,32 @@ describe('sampler', () => {
     expect(valueAt(audio, 0.7)).toBeCloseTo(0.25, 6);
   });
 
+  it('plays the slice its slice parameter names (from 1), and the region where it is 0', async () => {
+    const steps = makeBuffer(1, (_i, t) => (t < 0.5 ? 0.25 : 0.75));
+    const engine = await offlineEngine(1.6);
+    const ref = engine.buffers.add('steps', steps);
+    ref.slices = [0, 0.5, 1];
+    engine.chain().sampler({ id: 's', buffer: ref, slice: 2 }).to('main');
+    const s = engine.select('#s');
+    s.trigger({ at: 0 }); // slice 2: 0.75
+    s.set({ slice: 1 }, { at: 0.6 });
+    s.trigger({ at: 0.6 }); // slice 1: 0.25
+    s.trigger({ at: 1.2, slice: 1 }); // the trigger's own, from 0: the second, 0.75
+    const audio = await engine.render();
+    expect(valueAt(audio, 0.1)).toBeCloseTo(0.75, 6);
+    expect(valueAt(audio, 0.7)).toBeCloseTo(0.25, 6);
+    expect(valueAt(audio, 1.3)).toBeCloseTo(0.75, 6);
+
+    const whole = await offlineEngine(1);
+    const again = whole.buffers.add('steps', steps);
+    again.slices = [0, 0.5, 1];
+    whole.chain().sampler({ id: 's', buffer: again }).to('main');
+    whole.select('#s').trigger({ at: 0 });
+    const all = await whole.render();
+    expect(valueAt(all, 0.1)).toBeCloseTo(0.25, 6);
+    expect(valueAt(all, 0.7)).toBeCloseTo(0.75, 6);
+  });
+
   it('reverses', async () => {
     const rising = makeBuffer(0.5, (_i, t) => t * 2);
     const engine = await offlineEngine(0.5);

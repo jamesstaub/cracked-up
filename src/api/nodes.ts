@@ -11,7 +11,7 @@
 
 import type { At, ParamMetaInput, ParamValue } from './params';
 import type { BufferRef, BufferSource } from './engine';
-import type { ScopeApi } from './graph';
+import type { Node, ScopeApi } from './graph';
 
 type None = Record<never, never>;
 
@@ -510,8 +510,25 @@ export type MacroParam = ParamMetaInput & {
 /**
  * How an exposed value becomes an inner one: a function, or `value * multiply + add` as data. Use
  * the data form in a macro defined inside a sandbox, where a function cannot travel to the host.
+ *
+ * The function is called once per node the selector finds, and is told which node it is scaling for,
+ * so one parameter can give each of many nodes its own value. A chord from one root frequency:
+ *
+ * ```ts
+ * drives: [{ select: '.voice', param: 'frequency', scale: (root, { node }) => root * Number(node.tags.ratio) }]
+ * ```
  */
-export type DriveScale = ((value: number) => number) | { multiply?: number; add?: number };
+export type DriveScale =
+  ((value: number, target: DriveTarget) => number) | { multiply?: number; add?: number };
+
+/** The inner node a `DriveScale` function is scaling for, among all the drive's selector found. */
+export interface DriveTarget {
+  readonly node: Node;
+  /** Its place among the nodes the selector found, in the order they were made: 0, 1, 2... */
+  readonly index: number;
+  /** How many nodes the selector found this time. */
+  readonly count: number;
+}
 
 export interface MacroDefinition<K extends string = string> {
   readonly type: K;

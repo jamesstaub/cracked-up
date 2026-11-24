@@ -103,6 +103,42 @@ describe('macros', () => {
     expect(f.param('amount').value).toBe(0);
   });
 
+  it('a scale function is told which of the selected nodes it is scaling for', async () => {
+    const chord = defineMacro({
+      type: 'chord',
+      params: {
+        root: {
+          default: 100,
+          min: 20,
+          max: 2000,
+          drives: [
+            {
+              select: '.voice',
+              param: 'frequency',
+              scale: (root, { node }) => root * Number(node.tags['ratio']),
+            },
+            {
+              select: '.voice',
+              param: 'detune',
+              scale: (_root, { index, count }) => (index / (count - 1)) * 10,
+            },
+          ],
+        },
+      },
+      build(__) {
+        for (const ratio of [1, 1.25, 1.5])
+          loose(__()).sine!({ class: 'voice', tags: { ratio } }).to('out');
+      },
+    });
+    const engine = await engineWith(0.1, chord);
+    loose(engine.chain()).chord!({ id: 'c' }).to('main');
+    const voices = () => engine.select('#c .voice');
+    expect(voices().nodes.map((node) => node.param('frequency').value)).toEqual([100, 125, 150]);
+    expect(voices().nodes.map((node) => node.param('detune').value)).toEqual([0, 5, 10]);
+    engine.select('#c').set({ root: 200 });
+    expect(voices().nodes.map((node) => node.param('frequency').value)).toEqual([200, 250, 300]);
+  });
+
   it('an exposed parameter can be modulated when it drives an audio-rate parameter unscaled', async () => {
     const engine = await engineWith(0.2, fader);
     constantInto(engine, 0.2).fader!({ id: 'f', amount: 0.25 }).to('main');

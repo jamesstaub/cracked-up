@@ -162,23 +162,24 @@ export class NodeImpl {
     // Exposed parameters drive inner ones. Bound after the build so starting values reach the nodes it made.
     for (const [name, spec] of Object.entries(definition.params)) {
       this.params[name]?.bindLinks(() =>
-        spec.drives.flatMap((drive) =>
-          inner.select(drive.select).nodes.flatMap((node) => {
+        spec.drives.flatMap((drive) => {
+          const nodes = inner.select(drive.select).nodes;
+          return nodes.flatMap((node, index) => {
             const param = node.findParam(drive.param);
             if (!param) return [];
             if (!drive.scale) return [{ param }];
             const scale = drive.scale;
-            return [
-              {
-                param,
-                scale:
-                  typeof scale === 'function'
-                    ? scale
-                    : (value: number) => value * (scale.multiply ?? 1) + (scale.add ?? 0),
-              },
-            ];
-          }),
-        ),
+            if (typeof scale !== 'function')
+              return [
+                {
+                  param,
+                  scale: (value: number) => value * (scale.multiply ?? 1) + (scale.add ?? 0),
+                },
+              ];
+            const target = { node: node as unknown as Node, index, count: nodes.length };
+            return [{ param, scale: (value: number) => scale(value, target) }];
+          });
+        }),
       );
     }
 

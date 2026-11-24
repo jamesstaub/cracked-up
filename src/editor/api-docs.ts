@@ -1003,7 +1003,7 @@ export const DEFINITION_OPTIONS: readonly ApiOption[] = [
     name: 'params',
     type: 'object',
     description:
-      'Its own parameters by name: { default, min, max, unit, curve, description, drives: [{ select, param, scale }] }. Each entry in drives is an inner selector and the parameter to set on what it finds; scale converts the value on the way, as { multiply, add } or a function (data only in a sandbox). drives: [] for one the macro only reads with macro.value.',
+      'Its own parameters by name: { default, min, max, unit, curve, description, drives: [{ select, param, scale }] }. Each entry in drives is an inner selector and the parameter to set on what it finds; scale converts the value on the way, as { multiply, add } or a function (data only in a sandbox). A function is called once per node the selector finds, as scale(value, { node, index, count }), so one parameter can give each node its own value, e.g. (root, { node }) => root * node.tags.ratio. drives: [] for one the macro only reads with macro.value.',
   },
   { name: 'shorthand', type: 'string', description: 'The parameter a bare argument sets.' },
   {

@@ -25,6 +25,7 @@ describe('docs: macros', () => {
   }
   const blip = blocks.find((block) => block.includes("type: 'blip'")) ?? '';
   const drum = blocks.find((block) => block.includes("type: 'drum'")) ?? '';
+  const chord = blocks.find((block) => block.includes("type: 'chord'")) ?? '';
 
   /** Runs a script the way the live demo does: through `build` on a scope called `live`. */
   async function run(engine: Engine, code: string): Promise<Scope> {
@@ -62,6 +63,7 @@ describe('docs: macros', () => {
     expect(blip.split('\n').length).toBeLessThanOrEqual(18);
     for (const id of [
       'macro-drum',
+      'macro-chord',
       'macro-definition',
       'macro-outside',
       'macro-changing',
@@ -85,6 +87,19 @@ describe('docs: macros', () => {
       expect(peak, block.slice(0, 60)).toBeGreaterThan(0.01);
       expect(peak, block.slice(0, 60)).toBeLessThan(1);
     }
+  });
+
+  it('the chord gives each voice its own value from one parameter', async () => {
+    expect(chord).not.toBe('');
+    const engine = await offlineEngine(1);
+    const scope = await run(engine, chord);
+    const voices = (param: string) =>
+      scope.select('#pad .voice').nodes.map((node) => node.param(param).value as number);
+    expect(voices('frequency')).toEqual([110, 132, 165, 198].map((hz) => expect.closeTo(hz, 9)));
+    expect(voices('detune')).toEqual([-12, -4, 4, 12].map((c) => expect.closeTo(c, 9)));
+    scope.select('#pad').set({ root: 100, spread: 0 });
+    expect(voices('frequency')).toEqual([100, 120, 150, 180].map((hz) => expect.closeTo(hz, 9)));
+    expect(voices('detune')).toEqual([0, 0, 0, 0].map((c) => expect.closeTo(c, 9)));
   });
 
   it('the drum is what the walk-through says it is', async () => {

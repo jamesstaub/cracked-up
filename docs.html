@@ -4,11 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>cracked-up docs</title>
-    <script type="module" crossorigin src="./assets/docs-C8NitJ-Z.js"></script>
+    <script type="module" crossorigin src="./assets/docs-D7uLEcLR.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
     <link rel="modulepreload" crossorigin href="./assets/sequence-options-D3oAkxZi.js">
-    <link rel="modulepreload" crossorigin href="./assets/engine-DUE3rsl5.js">
-    <link rel="modulepreload" crossorigin href="./assets/api-docs-DmMQT3jK.js">
+    <link rel="modulepreload" crossorigin href="./assets/engine-DZEmX8X_.js">
+    <link rel="modulepreload" crossorigin href="./assets/api-docs-BWvvu4oX.js">
     <link rel="modulepreload" crossorigin href="./assets/interaction-CUygnLWq.js">
     <link rel="modulepreload" crossorigin href="./assets/helper-docs-BvQ88Rqr.js">
     <link rel="modulepreload" crossorigin href="./assets/highlight-Df64llIk.js">
@@ -2253,7 +2253,8 @@ __.transport.sequence('tone', { steps: [0.2, 0.9], step: '1 bar' }, (ev) =&gt; {
             inner nodes with a <a href="#selecting">selector</a> and one of their parameters.
             <code>scale</code> converts the value on the way: <code>{ multiply, add }</code> for a
             straight line, or a function for a curve, as <code>tone</code> does to get from 0 to 1
-            to 200 to 12,800 Hz.
+            to 200 to 12,800 Hz. A selector that finds several nodes sets them all; the
+            <a href="#macro-chord">chord</a> below gives each one its own value.
           </li>
           <li>
             <strong>Starting values.</strong> When a drum is made, each of its parameters is given
@@ -2287,6 +2288,76 @@ __.transport.sequence('tone', { steps: [0.2, 0.9], step: '1 bar' }, (ev) =&gt; {
             parameter, and the last sequence sets <code>tone</code> with a
             <a href="#following-a-fader"><code>glide</code></a
             >, which glides the filter and the click level inside each drum.
+          </li>
+        </ul>
+
+        <h3 id="macro-chord">One parameter, many nodes: a chord</h3>
+        <p>
+          A drive's selector can find many nodes, by class or by type, and each of them is set. With
+          a <code>scale</code> that is a function, each can be set differently: the function is
+          called once for every node the selector finds, with the value and a second argument,
+          <code>{ node, index, count }</code>. <code>node</code> is the node it is scaling for, so
+          it can read that node's <a href="#selecting">tags</a> or classes; <code>index</code> is
+          its place among the nodes found, in the order they were made, and <code>count</code> how
+          many there are. This chord is four saws, and one number, the root, tunes them all.
+        </p>
+        <pre><code>// Each voice's interval above the root, as a ratio of frequencies.
+const MINOR_SEVENTH = [1, 6 / 5, 3 / 2, 9 / 5];
+
+define({
+  type: 'chord',
+  description: 'Four saws a minor seventh chord apart, played from one root.',
+  params: {
+    root: {
+      default: 110, min: 30, max: 1000, unit: 'hz', curve: 'log',
+      // Called once per voice: each reads its own interval from its tags.
+      drives: [
+        { select: '.voice', param: 'frequency', scale: (root, { node }) =&gt; root * node.tags.ratio },
+      ],
+    },
+    spread: {
+      default: 8, min: 0, max: 50, unit: 'cents',
+      // By place among the voices found: the first goes flat by this much, the last as sharp.
+      drives: [
+        {
+          select: '.voice', param: 'detune',
+          scale: (cents, { index, count }) =&gt; cents * ((2 * index) / (count - 1) - 1),
+        },
+      ],
+    },
+  },
+  build(__) {
+    __().lowpass({ id: 'tone', frequency: 1200 }).gain(0.15).to('out');
+    for (const ratio of MINOR_SEVENTH) {
+      __().saw({ class: 'voice', tags: { ratio } }).connect('#tone');
+    }
+  },
+});
+
+__().chord({ id: 'pad', spread: 12 }).to('main');
+
+// A new root every bar: all four voices glide there together.
+__.transport.sequence('roots', { steps: [110, 98, 82.4, 73.4], step: '1 bar' }, (ev) =&gt; {
+  __('#pad').set({ root: ev.value }, { glide: 0.2 });
+});</code></pre>
+        <ul>
+          <li>
+            <strong>Looked up each time.</strong> As with any drive, the voices are found again
+            whenever <code>root</code> changes, and <code>index</code> and <code>count</code> are
+            counted then. A voice the macro makes later is included, and the others move along.
+          </li>
+          <li>
+            <strong>Tags or place.</strong> Reading a tag ties each value to its node, wherever it
+            sits. <code>index</code> needs nothing on the nodes, but depends on the order they were
+            made.
+          </li>
+          <li>
+            <strong>Not in a sandbox.</strong> There a <code>scale</code> has to be data, which is
+            the same for every node. Give each node its own drive instead:
+            <code
+              >drives: MINOR_SEVENTH.map((ratio, i) =&gt; ({ select: `#voice${i}`, param:
+              'frequency', scale: { multiply: ratio } }))</code
+            >.
           </li>
         </ul>
 
@@ -2438,10 +2509,12 @@ __.transport.sequence('tone', { steps: [0.2, 0.9], step: '1 bar' }, (ev) =&gt; {
                 <td>
                   Required. A list of <code>{ select, param, scale }</code>: a selector inside the
                   macro, the parameter to set on every node it finds, and optionally how to convert
-                  the value, as <code>{ multiply, add }</code> or a function. The nodes are looked
-                  up each time the value changes, so ones the macro makes later are included, and a
-                  node without that parameter is passed over. <code>[]</code> for a parameter the
-                  macro only reads with <code>macro.value</code>
+                  the value, as <code>{ multiply, add }</code> or a function. A function is called
+                  once per node found, as <code>scale(value, { node, index, count })</code>, so each
+                  can be given its own value (see <a href="#macro-chord">a chord</a>). The nodes are
+                  looked up each time the value changes, so ones the macro makes later are included,
+                  and a node without that parameter is passed over. <code>[]</code> for a parameter
+                  the macro only reads with <code>macro.value</code>
                 </td>
               </tr>
             </tbody>
